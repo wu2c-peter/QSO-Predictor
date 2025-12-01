@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTableView, QLabel, QHeaderView, QSplitter, 
                              QMessageBox, QProgressBar, QAbstractItemView)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
-from PyQt6.QtGui import QColor, QAction
+from PyQt6.QtGui import QColor, QAction, QKeySequence
 
 try:
     from config_manager import ConfigManager
@@ -27,7 +27,6 @@ try:
 except ImportError:
     SOLAR_AVAILABLE = False
 
-# --- CUSTOM MODEL FOR HIGH PERFORMANCE ---
 class DecodeTableModel(QAbstractTableModel):
     def __init__(self, headers, config):
         super().__init__()
@@ -36,7 +35,6 @@ class DecodeTableModel(QAbstractTableModel):
         self.config = config
         self.target_dx_call = ""
         
-        # Pre-calculate colors
         self.col_high = QColor(config.get('APPEARANCE', 'high_prob_color'))
         self.col_low = QColor(config.get('APPEARANCE', 'low_prob_color'))
         self.col_def = QColor("#EEEEEE")
@@ -46,7 +44,6 @@ class DecodeTableModel(QAbstractTableModel):
     def set_target_call(self, call):
         self.target_dx_call = call
         if call:
-            # Move target to top
             idx = -1
             for i, row in enumerate(self._data):
                 if call in row.get('message', '') or call == row.get('call', ''):
@@ -66,19 +63,15 @@ class DecodeTableModel(QAbstractTableModel):
         return len(self._headers)
 
     def sort(self, column, order):
-        """Sorts the data based on the column clicked."""
         self.layoutAboutToBeChanged.emit()
         
-        # Map column index to data key
         keys = ['time', 'snr', 'dt', 'freq', 'message', 'grid', 'prob', 'competition']
         if column >= len(keys): return
         key = keys[column]
-        
         reverse = (order == Qt.SortOrder.DescendingOrder)
         
         def sort_key(row):
             val = row.get(key, "")
-            # Numeric sorting logic
             if key in ['snr', 'freq']:
                 try: return float(val)
                 except: return -9999
@@ -92,10 +85,7 @@ class DecodeTableModel(QAbstractTableModel):
 
         self._data.sort(key=sort_key, reverse=reverse)
         
-        # If target exists, ensure it stays at top after sort? 
-        # Optional: Usually sorting overrides pinning, but let's keep pinning active
         if self.target_dx_call:
-            # Simple bubble up
             target_idx = -1
             for i, row in enumerate(self._data):
                 if self.target_dx_call in row.get('message', '') or self.target_dx_call == row.get('call', ''):
@@ -119,12 +109,12 @@ class DecodeTableModel(QAbstractTableModel):
                 return str(item.get(keys[col_idx], ""))
 
         elif role == Qt.ItemDataRole.TextAlignmentRole:
-            if col_idx == 4: # Message
+            if col_idx == 4: 
                 return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
             return Qt.AlignmentFlag.AlignCenter
 
         elif role == Qt.ItemDataRole.ForegroundRole:
-            if col_idx == 6: # Prob %
+            if col_idx == 6: 
                 prob_str = item.get('prob', "0%")
                 try:
                     val = int(prob_str.replace('%', ''))
@@ -150,7 +140,6 @@ class DecodeTableModel(QAbstractTableModel):
     def add_batch(self, new_rows):
         if not new_rows: return
         
-        # Basic pinning logic
         if self.target_dx_call:
             targets = []
             others = []
@@ -160,7 +149,6 @@ class DecodeTableModel(QAbstractTableModel):
                 else:
                     others.append(r)
             
-            # Check existing pin
             has_pinned = False
             if self._data:
                 top = self._data[0]
@@ -186,8 +174,7 @@ class DecodeTableModel(QAbstractTableModel):
             self._data[0:0] = new_rows
             self.endInsertRows()
 
-        # Trim
-        if len(self._data) > 200: # Increased buffer for sorting
+        if len(self._data) > 200: 
             self.beginRemoveRows(QModelIndex(), 200, len(self._data)-1)
             del self._data[200:]
             self.endRemoveRows()
@@ -238,10 +225,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("QSO Predictor")
         self.resize(1000, 850)
         
-        # --- FEATURE: Load Window State ---
         geom = self.config.get('WINDOW', 'geometry')
-        if geom:
-            self.restoreGeometry(QByteArray.fromHex(geom.encode()))
+        if geom: self.restoreGeometry(QByteArray.fromHex(geom.encode()))
         
         font = self.config.get('APPEARANCE', 'font_family')
         size = self.config.get('APPEARANCE', 'font_size')
@@ -251,6 +236,14 @@ class MainWindow(QMainWindow):
         menubar.setStyleSheet("background-color: #333; color: #FFF;")
         
         file_menu = menubar.addMenu('File')
+        
+        refresh_action = QAction('Refresh Spots', self)
+        refresh_action.setShortcut(QKeySequence("F5"))
+        refresh_action.triggered.connect(self.analyzer.force_refresh)
+        file_menu.addAction(refresh_action)
+        
+        file_menu.addSeparator()
+        
         settings_action = QAction('Settings', self)
         settings_action.triggered.connect(self.open_settings)
         file_menu.addAction(settings_action)
@@ -285,8 +278,6 @@ class MainWindow(QMainWindow):
         cols = ["UTC", "dB", "DT", "Freq", "Message", "Grid", "Prob %", "Competition"]
         self.model = DecodeTableModel(cols, self.config)
         self.table.setModel(self.model)
-        
-        # --- FEATURE: Sorting Enabled ---
         self.table.setSortingEnabled(True)
         
         self.table.verticalHeader().setVisible(False)
@@ -298,6 +289,9 @@ class MainWindow(QMainWindow):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch) 
+        # --- FIXED COLUMN WIDTH ---
+        # Set Competition (Col 7) to ResizeToContents
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(False)
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         
@@ -390,7 +384,6 @@ class MainWindow(QMainWindow):
 
         self.model.add_batch(processed_rows)
         
-        # Only auto-scroll if sorting is NOT active
         if not self.table.model()._data or self.table.verticalHeader().sortIndicatorOrder() == -1:
              if self.table.verticalScrollBar().value() < 5:
                 self.table.scrollToTop()
@@ -464,10 +457,8 @@ class MainWindow(QMainWindow):
         self.info_bar.setStyleSheet(f"background-color: {bg_color}; color: #FFF; padding: 4px; font-weight: bold;")
 
     def closeEvent(self, event):
-        # --- FEATURE: Save Window State ---
         geom = self.saveGeometry().toHex().data().decode('ascii')
         self.config.save_setting('WINDOW', 'geometry', geom)
-        
         self.udp.stop()
         event.accept()
 
