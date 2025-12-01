@@ -1,22 +1,10 @@
 # QSO Predictor
 # Copyright (C) 2025 [Peter Hirst/WU2C]
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-
 
 import socket
 import threading
 import struct
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import QMessageBox
 
 class UDPHandler(QObject):
     new_decode = pyqtSignal(dict)
@@ -33,6 +21,7 @@ class UDPHandler(QObject):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             self.sock.bind((self.ip, self.port))
+            print(f"UDP Bound to {self.port}")
         except Exception as e:
             print(f"Bind Error: {e}")
 
@@ -62,6 +51,7 @@ class UDPHandler(QObject):
 
     def _parse_packet(self, data):
         if len(data) < 12: return
+        
         magic = struct.unpack('>I', data[0:4])[0]
         if magic != 2914763738 and magic != 2914831322: return
 
@@ -71,61 +61,83 @@ class UDPHandler(QObject):
                 self._process_status(data)
             elif msg_type == 2: # Decode
                 self._process_decode(data)
-        except: pass
+        except Exception as e:
+            print(f"Header Error: {e}")
+
+    def _read_utf8(self, data, idx):
+        if idx + 4 > len(data): return "", idx
+        length = struct.unpack('>I', data[idx:idx+4])[0]
+        idx += 4
+        if length == 0xFFFFFFFF: return None, idx
+        if length == 0: return "", idx
+        
+        if idx + length > len(data): return "", idx
+        val = data[idx:idx+length].decode('utf-8', errors='replace')
+        return val, idx + length
 
     def _process_status(self, data):
-        idx = 12
-        def read_utf8(d, i):
-            l = struct.unpack('>I', d[i:i+4])[0]
-            i += 4
-            if l == 0xFFFFFFFF: return None, i
-            if l == 0: return "", i
-            return d[i:i+l].decode('utf-8', errors='replace'), i+l
-
+        idx = 12 
         try:
             # 1. ID
-            _, idx = read_utf8(data, idx) 
-            # 2. Dial Freq (8 bytes)
+            _, idx = self._read_utf8(data, idx) 
+            # 2. Dial Freq
             dial_freq = struct.unpack('>Q', data[idx:idx+8])[0]
             idx += 8
-            # 3. Mode (utf8)
-            _, idx = read_utf8(data, idx)
-            # 4. DX Call (utf8) <--- THIS IS WHAT WE WANT
-            dx_call, idx = read_utf8(data, idx)
+            # 3. Mode
+            _, idx = self._read_utf8(data, idx)
+            # 4. DX Call
+            dx_call, idx = self._read_utf8(data, idx)
+            # 5. Report
+            _, idx = self._read_utf8(data, idx)
+            # 6. Tx Mode
+            _, idx = self._read_utf8(data, idx)
+            # 7. Tx Enabled
+            idx += 1 
+            # 8. Transmitting
+            idx += 1
+            # 9. Decoding
+            idx += 1
+            # 10. Rx DF
+            idx += 4
             
-            self.status_update.emit({
-                'dial_freq': dial_freq,
-                'dx_call': dx_call
-            })
+            # 11. Tx DF
+            if idx + 4 <= len(data):
+                tx_df = struct.unpack('>I', data[idx:idx+4])[0]
+                self.status_update.emit({
+                    'dial_freq': dial_freq,
+                    'dx_call': dx_call,
+                    'tx_df': tx_df
+                })
         except: pass
 
     def _process_decode(self, data):
-        idx = 12
-        def read_utf8(d, i):
-            l = struct.unpack('>I', d[i:i+4])[0]
-            i += 4
-            if l == 0xFFFFFFFF: return None, i
-            if l == 0: return "", i
-            return d[i:i+l].decode('utf-8', errors='replace'), i+l
-
+        idx = 12 
         try:
-            _, idx = read_utf8(data, idx) # ID
-            idx += 1 # New
+            # 1. ID
+            _, idx = self._read_utf8(data, idx)
+            # 2. New
+            idx += 1 
+            # 3. Time
             ms_midnight = struct.unpack('>I', data[idx:idx+4])[0]
             idx += 4
             hours = ms_midnight // 3600000
             mins = (ms_midnight % 3600000) // 60000
             time_str = f"{hours:02d}{mins:02d}"
-            
+            # 4. SNR
             snr = struct.unpack('>i', data[idx:idx+4])[0]
             idx += 4
+            # 5. DT
             dt = struct.unpack('>d', data[idx:idx+8])[0]
             idx += 8
+            # 6. Freq
             freq = struct.unpack('>I', data[idx:idx+4])[0]
             idx += 4
-            mode, idx = read_utf8(data, idx)
-            message, idx = read_utf8(data, idx)
+            # 7. Mode
+            mode, idx = self._read_utf8(data, idx)
+            # 8. Message
+            message, idx = self._read_utf8(data, idx)
             
+            # Logic
             parts = message.strip().split()
             grid = ""
             call = ""
@@ -142,5 +154,3 @@ class UDPHandler(QObject):
                 'call': call, 'grid': grid
             })
         except: pass
-
-
