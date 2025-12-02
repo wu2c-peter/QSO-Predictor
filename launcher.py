@@ -1,27 +1,18 @@
 # QSO Predictor
 # Copyright (C) 2025 [Peter Hirst/WU2C]
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-
 
 import sys
 import subprocess
 import importlib.util
 import os
-import traceback # <--- Added to catch crashes
+import traceback
 
+# --- ADDED: paho (for MQTT) ---
 REQUIRED_PACKAGES = [
     ("PyQt6", "PyQt6"),
     ("requests", "requests"),
-    ("numpy", "numpy")
+    ("numpy", "numpy"),
+    ("paho-mqtt", "paho") 
 ]
 
 def check_and_install():
@@ -30,8 +21,11 @@ def check_and_install():
     
     for package, import_name in REQUIRED_PACKAGES:
         # Check if installed
-        spec = importlib.util.find_spec(import_name)
-        
+        try:
+            spec = importlib.util.find_spec(import_name)
+        except (ImportError, ModuleNotFoundError):
+            spec = None
+            
         if spec is None:
             print(f" [ MISSING ] {package} not found. Installing...")
             try:
@@ -70,12 +64,8 @@ if __name__ == "__main__":
         if check_and_install():
             launch_app()
     except Exception:
-        # Catch ANY crash and print it
         print("\nCRITICAL LAUNCHER CRASH:")
         traceback.print_exc()
     
-    # Keep window open no matter what
     print("\n------------------------------------------------")
     input("Press Enter to close this window...")
-
-

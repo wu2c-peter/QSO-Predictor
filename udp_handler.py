@@ -52,11 +52,14 @@ class UDPHandler(QObject):
     def _parse_packet(self, data):
         if len(data) < 12: return
         
+        # Check Magic Number
         magic = struct.unpack('>I', data[0:4])[0]
         if magic != 2914763738 and magic != 2914831322: return
 
         try:
+            # Message Type
             msg_type = struct.unpack('>I', data[8:12])[0]
+            
             if msg_type == 1: # Status
                 self._process_status(data)
             elif msg_type == 2: # Decode
@@ -65,50 +68,67 @@ class UDPHandler(QObject):
             print(f"Header Error: {e}")
 
     def _read_utf8(self, data, idx):
+        """Reads a WSJT-X style UTF-8 string (Length + Bytes)"""
         if idx + 4 > len(data): return "", idx
         length = struct.unpack('>I', data[idx:idx+4])[0]
         idx += 4
-        if length == 0xFFFFFFFF: return None, idx
-        if length == 0: return "", idx
+        
+        if length == 0xFFFFFFFF: return None, idx # Null string
+        if length == 0: return "", idx # Empty string
         
         if idx + length > len(data): return "", idx
+        
         val = data[idx:idx+length].decode('utf-8', errors='replace')
         return val, idx + length
 
     def _process_status(self, data):
+        # WSJT-X Status Packet Format (Type 1)
         idx = 12 
         try:
-            # 1. ID
+            # 1. ID (String)
             _, idx = self._read_utf8(data, idx) 
-            # 2. Dial Freq
+            
+            # 2. Dial Freq (8 bytes - quint64)
             dial_freq = struct.unpack('>Q', data[idx:idx+8])[0]
             idx += 8
-            # 3. Mode
+            
+            # 3. Mode (String)
             _, idx = self._read_utf8(data, idx)
-            # 4. DX Call
+            
+            # 4. DX Call (String)
             dx_call, idx = self._read_utf8(data, idx)
-            # 5. Report
+            
+            # 5. Report (String)
             _, idx = self._read_utf8(data, idx)
-            # 6. Tx Mode
+            
+            # 6. Tx Mode (String)
             _, idx = self._read_utf8(data, idx)
-            # 7. Tx Enabled
+            
+            # 7. Tx Enabled (1 byte bool)
             idx += 1 
-            # 8. Transmitting
+            
+            # 8. Transmitting (1 byte bool)
             idx += 1
-            # 9. Decoding
+            
+            # 9. Decoding (1 byte bool)
             idx += 1
-            # 10. Rx DF
+            
+            # 10. Rx DF (4 bytes - quint32)
             idx += 4
             
-            # 11. Tx DF
+            # 11. Tx DF (4 bytes - quint32) <--- THIS IS WHAT WE NEED
             if idx + 4 <= len(data):
                 tx_df = struct.unpack('>I', data[idx:idx+4])[0]
+                
+                # Emit the update!
                 self.status_update.emit({
                     'dial_freq': dial_freq,
                     'dx_call': dx_call,
                     'tx_df': tx_df
                 })
-        except: pass
+        except Exception:
+            # Silently fail on bad packet, but don't crash thread
+            pass
 
     def _process_decode(self, data):
         idx = 12 
@@ -137,48 +157,36 @@ class UDPHandler(QObject):
             # 8. Message
             message, idx = self._read_utf8(data, idx)
             
-            # --- IMPROVED PARSING LOGIC ---
+            # --- Parsing Logic ---
             parts = message.strip().split()
             grid = ""
             call = ""
 
-            # Helper to identify common suffixes that are NOT callsigns
             def is_suffix(s):
                 s = s.upper()
-                # Standard endings
                 if s in ['73', 'RR73', 'RRR']: return True
-                # Signal reports (e.g., -10, +05, R-15)
                 if s.startswith(('+', '-', 'R+', 'R-')) and len(s) > 1: return True
                 return False
 
-            # Helper to identify a Grid (4 chars, Alpha-Alpha-Digit-Digit, e.g., FN42)
             def is_grid(s):
                 if len(s) != 4: return False
                 return s[0].isalpha() and s[1].isalpha() and s[2].isdigit() and s[3].isdigit()
 
             if len(parts) >= 3:
-                # Pattern: [TARGET] [SENDER] [GRID/SUFFIX]
                 last = parts[-1]
-                
                 if is_grid(last):
                     grid = last
                     call = parts[-2]
                 elif is_suffix(last):
                     call = parts[-2]
                 else:
-                    # Fallback: ambiguous, assume last part is call (e.g. CQ DX CALL)
-                    # unless it looks like a country prefix, but simple fallback is usually safest
                     call = last 
                     
             elif len(parts) == 2:
-                # Pattern: [TARGET] [SENDER] or [CQ] [SENDER]
-                # Usually the second item is the sender
                 call = parts[1]
 
-            # Cleanup callsign (strip <> if present, e.g. <W1ABC>)
             call = call.strip('<>')
-            
-            # ------------------------------
+            # ---------------------
             
             self.new_decode.emit({
                 'time': time_str, 'snr': snr, 'dt': round(dt, 1),
@@ -186,5 +194,4 @@ class UDPHandler(QObject):
                 'call': call, 'grid': grid
             })
         except Exception as e:
-            # It's good to at least print errors during debugging so you know if packets are failing
             print(f"Decode Error: {e}")
