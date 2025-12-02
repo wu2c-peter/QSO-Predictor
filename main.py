@@ -4,11 +4,11 @@
 import sys
 import threading
 from collections import deque
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QTableView, QLabel, QHeaderView, QSplitter, 
-                             QMessageBox, QProgressBar, QAbstractItemView)
+                             QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
-from PyQt6.QtGui import QColor, QAction, QKeySequence
+from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont
 
 try:
     from config_manager import ConfigManager
@@ -27,109 +27,236 @@ try:
 except ImportError:
     SOLAR_AVAILABLE = False
 
+# --- WIDGET: TARGET DASHBOARD ---
+# --- WIDGET: TARGET DASHBOARD ---
+class TargetDashboard(QFrame):
+    def __init__(self):
+        super().__init__()
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setStyleSheet("""
+            QFrame { 
+                background-color: #003333; 
+                border-top: 2px solid #00AAAA; 
+                border-bottom: 1px solid #000;
+            }
+            QLabel { color: #DDD; font-size: 11pt; border: none; padding: 0 5px; }
+            QLabel#header { color: #888; font-size: 8pt; font-weight: bold; }
+            QLabel#data { font-weight: bold; color: #FFF; }
+            QLabel#target { color: #FF00FF; font-size: 16pt; font-weight: bold; padding-right: 15px; }
+            QLabel#rec { 
+                font-family: Consolas, monospace; 
+                font-weight: bold; 
+                border: 1px solid #444; 
+                border-radius: 4px; 
+                padding: 4px; 
+                background-color: #001100; 
+            }
+        """)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 5, 10, 5)
+        layout.setSpacing(10)
+        
+        # 1. Target Call (The Anchor)
+        self.lbl_target = QLabel("NO TARGET")
+        self.lbl_target.setObjectName("target")
+        layout.addWidget(self.lbl_target)
+        
+        # Helper to build fields
+        def add_field(label_text, width=None, stretch=False):
+            container = QWidget()
+            vbox = QVBoxLayout(container)
+            vbox.setContentsMargins(0,0,0,0)
+            vbox.setSpacing(0)
+            
+            lbl_title = QLabel(label_text)
+            lbl_title.setObjectName("header")
+            lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            lbl_val = QLabel("--")
+            lbl_val.setObjectName("data")
+            lbl_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            vbox.addWidget(lbl_title)
+            vbox.addWidget(lbl_val)
+            
+            if width: container.setFixedWidth(width)
+            layout.addWidget(container)
+            if stretch: layout.setStretchFactor(container, 1)
+            return lbl_val
+
+        # 2. Table Fields
+        self.val_utc = add_field("UTC", 50)
+        self.val_snr = add_field("dB", 40)
+        self.val_dt = add_field("DT", 40)
+        self.val_freq = add_field("Freq", 50)
+        self.val_msg = add_field("Message", stretch=True) 
+        self.val_msg.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.val_grid = add_field("Grid", 50)
+        self.val_prob = add_field("Prob %", 60)
+        self.val_comp = add_field("Competition", 100)
+
+        # 3. Rec Tx (Far Right - Now with HTML Colors)
+        layout.addSpacing(10)
+        self.lbl_rec = QLabel()
+        self.lbl_rec.setObjectName("rec")
+        self.lbl_rec.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        
+        # Initialize with the table immediately so it doesn't jump later
+        self.update_rec("----", "----") 
+        layout.addWidget(self.lbl_rec)
+
+    def update_data(self, data):
+        if not data:
+            self.lbl_target.setText("NO TARGET")
+            self.val_utc.setText("--")
+            self.val_snr.setText("--")
+            self.val_dt.setText("--")
+            self.val_freq.setText("--")
+            self.val_msg.setText("")
+            self.val_grid.setText("--")
+            self.val_prob.setText("--")
+            self.val_comp.setText("--")
+            return
+
+        # Update Target Call
+        self.lbl_target.setText(data.get('call', '???'))
+        
+        # Update Fields
+        self.val_utc.setText(str(data.get('time', '')))
+        
+        snr = str(data.get('snr', '--'))
+        self.val_snr.setText(snr)
+        # Color SNR
+        try:
+            val = int(snr)
+            col = "#00FF00" if val >= 0 else ("#FFFF00" if val >= -10 else "#FF5555")
+            self.val_snr.setStyleSheet(f"color: {col}; font-weight: bold;")
+        except: self.val_snr.setStyleSheet("")
+
+        self.val_dt.setText(str(data.get('dt', '')))
+        self.val_freq.setText(str(data.get('freq', '')))
+        self.val_msg.setText(str(data.get('message', '')))
+        self.val_grid.setText(str(data.get('grid', '')))
+        
+        prob = str(data.get('prob', '--'))
+        self.val_prob.setText(prob)
+        # Color Prob
+        try:
+            val = int(prob.replace('%', ''))
+            col = "#00FF00" if val > 75 else ("#FF5555" if val < 30 else "#DDDDDD")
+            self.val_prob.setStyleSheet(f"color: {col}; font-weight: bold;")
+        except: self.val_prob.setStyleSheet("")
+            
+        self.val_comp.setText(str(data.get('competition', '')))
+
+    def update_rec(self, rec_freq, cur_freq):
+        """
+        Updates the Recommended vs Current frequency display using an HTML table
+        for perfect vertical alignment.
+        """
+        # 1. Determine Color for Current Freq
+        if str(rec_freq) == str(cur_freq) and str(rec_freq) != "----":
+            cur_color = "#00FF00"  # Green
+        elif str(rec_freq) == "----":
+            cur_color = "#BBBBBB"  # Grey if no recommendation yet
+        else:
+            cur_color = "#FF5555"  # Red (Mismatch warning)
+            
+        # 2. Build the HTML Table
+        html_text = f"""
+        <html>
+        <head>
+            <style>
+                td {{ padding-right: 12px; }}
+            </style>
+        </head>
+        <body>
+            <table cellspacing="0" cellpadding="0">
+                <tr>
+                    <td style="color: #BBBBBB;">Rec:</td> 
+                    <td style="color: #00FF00; font-weight: bold;">{rec_freq} Hz</td>
+                </tr>
+                <tr>
+                    <td style="color: #BBBBBB;">Cur:</td> 
+                    <td style="color: {cur_color}; font-weight: bold;">{cur_freq} Hz</td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        """
+        self.lbl_rec.setText(html_text)
+
+# --- MODEL: DECODE TABLE ---
 class DecodeTableModel(QAbstractTableModel):
     def __init__(self, headers, config):
         super().__init__()
-        self._data = []
         self._headers = headers
+        self._data = []
         self.config = config
-        self.target_dx_call = ""
-        
-        self.col_high = QColor(config.get('APPEARANCE', 'high_prob_color'))
-        self.col_low = QColor(config.get('APPEARANCE', 'low_prob_color'))
-        self.col_def = QColor("#EEEEEE")
-        self.col_pin = QColor("#004444")
-        self.col_text = QColor("#EEEEEE")
+        self.target_call = None  # <--- Added missing attribute
 
-    def set_target_call(self, call):
-        self.target_dx_call = call
-        if call:
-            idx = -1
-            for i, row in enumerate(self._data):
-                if call in row.get('message', '') or call == row.get('call', ''):
-                    idx = i
-                    break
-            if idx > 0:
-                self.beginMoveRows(QModelIndex(), idx, idx, QModelIndex(), 0)
-                item = self._data.pop(idx)
-                self._data.insert(0, item)
-                self.endMoveRows()
+    def set_target_call(self, callsign):
+        """Updates the target callsign to keep pinned at the top."""
+        self.target_call = callsign
+        # Trigger a re-sort to apply pinning immediately if needed
+        # (Assuming default sort is by Time or SNR, but pinning overrides)
         self.layoutChanged.emit()
 
-    def rowCount(self, parent=None):
+    def rowCount(self, parent=QModelIndex()):
         return len(self._data)
 
-    def columnCount(self, parent=None):
+    def columnCount(self, parent=QModelIndex()):
         return len(self._headers)
 
-    def sort(self, column, order):
-        self.layoutAboutToBeChanged.emit()
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
         
-        keys = ['time', 'snr', 'dt', 'freq', 'message', 'grid', 'prob', 'competition']
-        if column >= len(keys): return
-        key = keys[column]
-        reverse = (order == Qt.SortOrder.DescendingOrder)
+        row_item = self._data[index.row()]
+        col_name = self._headers[index.column()]
+
+        # Map Column Name to Data Key
+        key_map = {
+            "UTC": "time",
+            "Call": "call",
+            "Grid": "grid",
+            "dB": "snr",
+            "DT": "dt",
+            "Freq": "freq",
+            "Message": "message",
+            "Prob %": "prob",
+            "Competition": "competition"
+        }
         
-        def sort_key(row):
-            val = row.get(key, "")
-            if key in ['snr', 'freq']:
-                try: return float(val)
-                except: return -9999
-            if key == 'dt':
-                try: return float(val)
-                except: return 0.0
-            if key == 'prob':
-                try: return int(val.replace('%', ''))
-                except: return -1
-            return str(val).lower()
-
-        self._data.sort(key=sort_key, reverse=reverse)
+        key = key_map.get(col_name, col_name.lower())
         
-        if self.target_dx_call:
-            target_idx = -1
-            for i, row in enumerate(self._data):
-                if self.target_dx_call in row.get('message', '') or self.target_dx_call == row.get('call', ''):
-                    target_idx = i
-                    break
-            if target_idx > 0:
-                item = self._data.pop(target_idx)
-                self._data.insert(0, item)
-
-        self.layoutChanged.emit()
-
-    def data(self, index, role):
-        if not index.isValid(): return None
-        row_idx = index.row()
-        col_idx = index.column()
-        item = self._data[row_idx]
-
         if role == Qt.ItemDataRole.DisplayRole:
-            keys = ['time', 'snr', 'dt', 'freq', 'message', 'grid', 'prob', 'competition']
-            if col_idx < len(keys):
-                return str(item.get(keys[col_idx], ""))
-
-        elif role == Qt.ItemDataRole.TextAlignmentRole:
-            if col_idx == 4: 
-                return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-            return Qt.AlignmentFlag.AlignCenter
-
+            return str(row_item.get(key, ""))
+            
         elif role == Qt.ItemDataRole.ForegroundRole:
-            if col_idx == 6: 
-                prob_str = item.get('prob', "0%")
+            # Color logic for SNR and Probability
+            if key == "snr":
                 try:
-                    val = int(prob_str.replace('%', ''))
-                    if val > 75: return self.col_high
-                    elif val < 30: return self.col_low
+                    val = int(row_item.get('snr', -99))
+                    if val >= 0: return QColor("#00FF00")       # Green
+                    elif val >= -10: return QColor("#FFFF00")   # Yellow
+                    return QColor("#FF5555")                    # Red
                 except: pass
-            return self.col_text
+            
+            if key == "prob":
+                try:
+                    val_str = str(row_item.get('prob', '0')).replace('%', '')
+                    val = int(val_str)
+                    if val > 75: return QColor("#00FF00")
+                    elif val < 30: return QColor("#FF5555")
+                except: pass
 
         elif role == Qt.ItemDataRole.BackgroundRole:
-            if self.target_dx_call:
-                msg = item.get('message', '')
-                call = item.get('call', '')
-                if self.target_dx_call in msg or self.target_dx_call == call:
-                    return self.col_pin
-        
+            # Highlight the Target Station Row
+            if self.target_call and row_item.get('call') == self.target_call:
+                return QColor("#004444") # Dark Cyan highlight for Target
+
         return None
 
     def headerData(self, section, orientation, role):
@@ -137,52 +264,70 @@ class DecodeTableModel(QAbstractTableModel):
             return self._headers[section]
         return None
 
-    def add_batch(self, new_rows):
-        if not new_rows: return
+    def sort(self, column, order):
+        """Sorts the table, but keeps Target Call pinned to top."""
+        col_name = self._headers[column]
         
-        if self.target_dx_call:
+        key_map = {
+            "UTC": "time", "Call": "call", "Grid": "grid", "dB": "snr",
+            "DT": "dt", "Freq": "freq", "Message": "message", 
+            "Prob %": "prob", "Competition": "competition"
+        }
+        key = key_map.get(col_name, col_name.lower())
+        
+        reverse = (order == Qt.SortOrder.DescendingOrder)
+        
+        def sort_key(row):
+            val = row.get(key, "")
+            # Numeric sort for specific columns
+            if key in ['snr', 'prob', 'freq', 'dt', 'time']:
+                try: 
+                    # Strip % for probability
+                    s = str(val).replace('%', '')
+                    return float(s)
+                except: return -99999.0
+            return str(val).lower()
+
+        self.layoutAboutToBeChanged.emit()
+        
+        # 1. Standard Sort
+        self._data.sort(key=sort_key, reverse=reverse)
+        
+        # 2. Pin Target to Top (if exists)
+        if self.target_call:
             targets = []
             others = []
-            for r in new_rows:
-                if self.target_dx_call in r.get('message', '') or self.target_dx_call == r.get('call', ''):
-                    targets.append(r)
+            for row in self._data:
+                if row.get('call') == self.target_call:
+                    targets.append(row)
                 else:
-                    others.append(r)
+                    others.append(row)
+            self._data = targets + others
             
-            has_pinned = False
-            if self._data:
-                top = self._data[0]
-                if self.target_dx_call in top.get('message', '') or self.target_dx_call == top.get('call', ''):
-                    has_pinned = True
+        self.layoutChanged.emit()
 
-            if targets:
-                to_add = targets + others
-                self.beginInsertRows(QModelIndex(), 0, len(to_add) - 1)
-                self._data[0:0] = to_add
-                self.endInsertRows()
-            elif has_pinned:
-                if others:
-                    self.beginInsertRows(QModelIndex(), 1, len(others)) 
-                    self._data[1:1] = others
-                    self.endInsertRows()
-            else:
-                self.beginInsertRows(QModelIndex(), 0, len(new_rows) - 1)
-                self._data[0:0] = new_rows
-                self.endInsertRows()
-        else:
-            self.beginInsertRows(QModelIndex(), 0, len(new_rows) - 1)
-            self._data[0:0] = new_rows
-            self.endInsertRows()
-
-        if len(self._data) > 200: 
-            self.beginRemoveRows(QModelIndex(), 200, len(self._data)-1)
-            del self._data[200:]
+    def add_batch(self, new_rows):
+        if not new_rows: return
+        start = len(self._data)
+        self.beginInsertRows(QModelIndex(), start, start + len(new_rows) - 1)
+        self._data.extend(new_rows)
+        self.endInsertRows()
+        
+        # Keep buffer size manageable (Max 500 rows)
+        if len(self._data) > 500:
+            remove_count = len(self._data) - 500
+            self.beginRemoveRows(QModelIndex(), 0, remove_count - 1)
+            del self._data[:remove_count]
             self.endRemoveRows()
 
     def update_data_in_place(self, analyzer_func):
+        """Allows the analyzer to update Prob/Comp fields without adding new rows."""
         if not self._data: return
+        
         for item in self._data:
             analyzer_func(item)
+            
+        # Refresh the whole table view
         tl = self.index(0, 0)
         br = self.index(len(self._data)-1, len(self._headers)-1)
         self.dataChanged.emit(tl, br)
@@ -236,14 +381,11 @@ class MainWindow(QMainWindow):
         menubar.setStyleSheet("background-color: #333; color: #FFF;")
         
         file_menu = menubar.addMenu('File')
-        
         refresh_action = QAction('Refresh Spots', self)
         refresh_action.setShortcut(QKeySequence("F5"))
         refresh_action.triggered.connect(self.analyzer.force_refresh)
         file_menu.addAction(refresh_action)
-        
         file_menu.addSeparator()
-        
         settings_action = QAction('Settings', self)
         settings_action.triggered.connect(self.open_settings)
         file_menu.addAction(settings_action)
@@ -274,6 +416,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
+        # Table
         self.table = QTableView()
         cols = ["UTC", "dB", "DT", "Freq", "Message", "Grid", "Prob %", "Competition"]
         self.model = DecodeTableModel(cols, self.config)
@@ -289,25 +432,26 @@ class MainWindow(QMainWindow):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch) 
-        # --- FIXED COLUMN WIDTH ---
-        # Set Competition (Col 7) to ResizeToContents
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(False)
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         
         splitter.addWidget(self.table)
 
+        # Dashboard & Map
         map_container = QWidget()
         map_layout = QVBoxLayout(map_container)
         map_layout.setContentsMargins(0,0,0,0)
-        self.lbl_rec = QLabel("Recommended Tx Offset: Calculating...")
-        self.lbl_rec.setStyleSheet("font-weight: bold; color: #00FF00; padding: 5px;")
+        map_layout.setSpacing(0)
+        
+        self.dashboard = TargetDashboard()
+        map_layout.addWidget(self.dashboard)
+        
         self.band_map = BandMapWidget()
-        map_layout.addWidget(self.lbl_rec)
         map_layout.addWidget(self.band_map)
         splitter.addWidget(map_container)
         
-        splitter.setSizes([500, 300])
+        splitter.setSizes([600, 300])
         layout.addWidget(splitter)
 
     def update_header(self):
@@ -331,18 +475,14 @@ class MainWindow(QMainWindow):
 
     def handle_rec_update(self, freq):
         self.rec_tx_df = freq
-        self.update_info_label()
-        
-    def update_info_label(self):
-        self.lbl_rec.setText(f"Recommended Tx Offset: {self.rec_tx_df} Hz (Current: {self.current_tx_df} Hz)")
+        self.dashboard.update_rec(self.rec_tx_df, self.current_tx_df)
 
     def handle_status_update(self, status):
         if 'dial_freq' in status:
             freq = status['dial_freq']
             self.analyzer.set_dial_freq(freq)
             freq_str = f"{freq/1000000:.3f} MHz"
-            target_txt = f" (Target: {self.target_dx_call})" if self.target_dx_call else ""
-            self.str_dial = f"Dial: {freq_str}{target_txt}"
+            self.str_dial = f"Dial: {freq_str}"
             self.update_header()
 
         if 'dx_call' in status:
@@ -350,16 +490,34 @@ class MainWindow(QMainWindow):
             new_call = raw_call.strip() if raw_call else ""
             if new_call != self.target_dx_call:
                 self.target_dx_call = new_call
+                # When WSJT-X changes target, allow a model scan to populate data
+                self.populate_dashboard_from_model(new_call)
+                # But also update model highlight
                 self.model.set_target_call(new_call)
-                self.refresh_pinning()
                 
         if 'tx_df' in status:
             self.current_tx_df = int(status['tx_df'])
             self.band_map.set_current_tx_freq(self.current_tx_df)
-            self.update_info_label()
+            self.dashboard.update_rec(self.rec_tx_df, self.current_tx_df)
 
-    def refresh_pinning(self):
-        self.table.viewport().update()
+    def populate_dashboard_from_model(self, call):
+        if not call:
+            self.dashboard.update_data(None)
+            return
+        
+        # Search for data
+        rows = self.model._data
+        found_data = None
+        for i in range(len(rows)-1, -1, -1):
+            row = rows[i]
+            if call in row.get('message', '') or call == row.get('call', ''):
+                found_data = row
+                break
+        
+        if found_data:
+            self.dashboard.update_data(found_data)
+        else:
+            self.dashboard.update_data({'call': call})
 
     def handle_new_decode(self, raw_data):
         self.raw_queue.append(raw_data)
@@ -377,19 +535,29 @@ class MainWindow(QMainWindow):
         best_offset = self.band_map.best_offset
         
         processed_rows = []
+        target_update = None
+        
         for raw_data in batch:
             raw_data['rec_offset'] = best_offset
             data = self.analyzer.analyze_decode(raw_data)
             processed_rows.append(data)
+            
+            if self.target_dx_call and (self.target_dx_call in data['message'] or self.target_dx_call == data['call']):
+                target_update = data
 
         self.model.add_batch(processed_rows)
         
+        if target_update:
+            self.dashboard.update_data(target_update)
+        
         if not self.table.model()._data or self.table.verticalHeader().sortIndicatorOrder() == -1:
-             if self.table.verticalScrollBar().value() < 5:
-                self.table.scrollToTop()
+             scrollbar = self.table.verticalScrollBar()
+             if scrollbar.value() >= (scrollbar.maximum() - 20):
+                self.table.scrollToBottom()
 
     def refresh_table_data(self):
         self.model.update_data_in_place(self.analyzer.get_analysis_immediate)
+        self.populate_dashboard_from_model(self.target_dx_call)
 
     def on_table_selection(self, selected, deselected):
         indexes = self.table.selectionModel().selectedRows()
@@ -401,6 +569,15 @@ class MainWindow(QMainWindow):
         row = indexes[0].row()
         item = self.model._data[row]
         
+        # --- FIXED CLICK LOGIC ---
+        # 1. Update Global Target
+        call = item.get('call', '')
+        if call:
+            self.target_dx_call = call
+            self.model.set_target_call(call) # Updates table highlight
+            self.dashboard.update_data(item) # Updates dashboard immediately
+        
+        # 2. Update Map
         if 'freq' in item:
             try:
                 self.band_map.set_target_freq(int(item['freq']))
@@ -449,7 +626,6 @@ class MainWindow(QMainWindow):
     def update_solar_ui(self, data):
         self.str_solar = f"Solar: SFI {data['sfi']} | K {data['k']} ({data['condx']})"
         self.update_header()
-        
         bg_color = "#2A2A2A"
         if data['k'] >= 5: bg_color = "#880000"
         elif data['k'] >= 4: bg_color = "#884400"

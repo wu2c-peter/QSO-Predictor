@@ -137,20 +137,54 @@ class UDPHandler(QObject):
             # 8. Message
             message, idx = self._read_utf8(data, idx)
             
-            # Logic
+            # --- IMPROVED PARSING LOGIC ---
             parts = message.strip().split()
             grid = ""
             call = ""
+
+            # Helper to identify common suffixes that are NOT callsigns
+            def is_suffix(s):
+                s = s.upper()
+                # Standard endings
+                if s in ['73', 'RR73', 'RRR']: return True
+                # Signal reports (e.g., -10, +05, R-15)
+                if s.startswith(('+', '-', 'R+', 'R-')) and len(s) > 1: return True
+                return False
+
+            # Helper to identify a Grid (4 chars, Alpha-Alpha-Digit-Digit, e.g., FN42)
+            def is_grid(s):
+                if len(s) != 4: return False
+                return s[0].isalpha() and s[1].isalpha() and s[2].isdigit() and s[3].isdigit()
+
             if len(parts) >= 3:
-                if len(parts[-1]) == 4 and parts[-1][0].isalpha() and parts[-1][2].isdigit():
-                    grid = parts[-1]
+                # Pattern: [TARGET] [SENDER] [GRID/SUFFIX]
+                last = parts[-1]
+                
+                if is_grid(last):
+                    grid = last
+                    call = parts[-2]
+                elif is_suffix(last):
                     call = parts[-2]
                 else:
-                    call = parts[-1]
+                    # Fallback: ambiguous, assume last part is call (e.g. CQ DX CALL)
+                    # unless it looks like a country prefix, but simple fallback is usually safest
+                    call = last 
+                    
+            elif len(parts) == 2:
+                # Pattern: [TARGET] [SENDER] or [CQ] [SENDER]
+                # Usually the second item is the sender
+                call = parts[1]
+
+            # Cleanup callsign (strip <> if present, e.g. <W1ABC>)
+            call = call.strip('<>')
+            
+            # ------------------------------
             
             self.new_decode.emit({
                 'time': time_str, 'snr': snr, 'dt': round(dt, 1),
                 'freq': freq, 'mode': mode, 'message': message,
                 'call': call, 'grid': grid
             })
-        except: pass
+        except Exception as e:
+            # It's good to at least print errors during debugging so you know if packets are failing
+            print(f"Decode Error: {e}")
