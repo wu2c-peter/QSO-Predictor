@@ -15,6 +15,9 @@ class QSOAnalyzer(QObject):
         self.config = config
         self.my_call = config.get('ANALYSIS', 'my_callsign', fallback='N0CALL')
         
+        # --- THREAD SAFETY LOCK ---
+        self.lock = threading.Lock() 
+        
         self.mqtt = MQTTClient()
         self.mqtt.spot_received.connect(self.handle_live_spot)
         self.mqtt.status_message.connect(self.relay_status)
@@ -34,13 +37,17 @@ class QSOAnalyzer(QObject):
 
     def set_dial_freq(self, freq):
         if self.current_dial_freq != freq:
-            self.current_dial_freq = freq
-            self.band_cache.clear()
-            self.my_reception_cache.clear()
+            # LOCK: Modifying cache
+            with self.lock:
+                self.current_dial_freq = freq
+                self.band_cache.clear()
+                self.my_reception_cache.clear()
+            
             self.mqtt.update_subscriptions(self.my_call, freq)
             self.cache_updated.emit()
 
     def force_refresh(self):
+        # Read freq safely (integer read is atomic, but good practice)
         f = self.current_dial_freq if self.current_dial_freq > 0 else 14074000
         self.mqtt.update_subscriptions(self.my_call, f)
 
@@ -54,39 +61,45 @@ class QSOAnalyzer(QObject):
             else: spot['snr'] = int(spot['snr'])
 
             spot_freq = int(spot['freq'])
-            if self.current_dial_freq == 0:
-                self.current_dial_freq = int(spot_freq / 1000) * 1000 
             
-            if spot['sender'] == self.my_call:
-                self.my_reception_cache.append(spot)
-            
-            if abs(spot_freq - self.current_dial_freq) < 5000:
-                if spot_freq not in self.band_cache:
-                    self.band_cache[spot_freq] = []
-                self.band_cache[spot_freq].append(spot)
+            # LOCK: Writing to cache
+            with self.lock:
+                if self.current_dial_freq == 0:
+                    self.current_dial_freq = int(spot_freq / 1000) * 1000 
+                
+                if spot['sender'] == self.my_call:
+                    self.my_reception_cache.append(spot)
+                
+                if abs(spot_freq - self.current_dial_freq) < 5000:
+                    if spot_freq not in self.band_cache:
+                        self.band_cache[spot_freq] = []
+                    self.band_cache[spot_freq].append(spot)
         except Exception: pass
 
     def get_qrm_for_freq(self, target_freq_in):
         """Returns RECENT spots overlapping the target."""
         target_rf = int(target_freq_in)
-        if target_rf < 10000 and self.current_dial_freq > 0:
-            target_rf += self.current_dial_freq
+        
+        # LOCK: Reading cache (prevent iteration error)
+        with self.lock:
+            if target_rf < 10000 and self.current_dial_freq > 0:
+                target_rf += self.current_dial_freq
+                
+            overlapping_spots = []
+            seen_senders = set()
             
-        overlapping_spots = []
-        seen_senders = set()
-        
-        # TIME FILTER: Only count signals heard in the last 45 seconds
-        recent_limit = time.time() - 45
-        
-        for cached_freq, reports in self.band_cache.items():
-            # 60Hz Match Window
-            if abs(cached_freq - target_rf) < 60:
-                for r in reports:
-                    # CHECK TIMESTAMP
-                    if r['time'] > recent_limit:
-                        if r['sender'] not in seen_senders:
-                            overlapping_spots.append(r)
-                            seen_senders.add(r['sender'])
+            # TIME FILTER: Only count signals heard in the last 45 seconds
+            recent_limit = time.time() - 45
+            
+            for cached_freq, reports in self.band_cache.items():
+                # 60Hz Match Window
+                if abs(cached_freq - target_rf) < 60:
+                    for r in reports:
+                        # CHECK TIMESTAMP
+                        if r['time'] > recent_limit:
+                            if r['sender'] not in seen_senders:
+                                overlapping_spots.append(r)
+                                seen_senders.add(r['sender'])
         
         return overlapping_spots
 
@@ -105,7 +118,7 @@ class QSOAnalyzer(QObject):
         # --- FIXED COMPETITION LOGIC (Time-Aware) ---
         raw_freq = decode_data.get('freq', 0)
         
-        # Only gets spots from last 45s
+        # Only gets spots from last 45s (Thread Safe Now)
         qrm_spots = self.get_qrm_for_freq(raw_freq)
         
         count = len(qrm_spots)
@@ -143,7 +156,13 @@ class QSOAnalyzer(QObject):
         direct_hit = False
         target_call = decode_data.get('call', '')
         
-        for my_rep in self.my_reception_cache:
+        # LOCK: Reading my_reception_cache
+        with self.lock:
+            # We copy the list or iterate quickly. Iteration is safe if locked.
+            # Since this is a short loop, locking is fine.
+            my_reception_snapshot = list(self.my_reception_cache)
+
+        for my_rep in my_reception_snapshot:
             if my_rep['receiver'] == target_call:
                  geo_bonus = 100; direct_hit = True; comp_str = "CONNECTED"
                  break
@@ -154,7 +173,7 @@ class QSOAnalyzer(QObject):
                 target_major = target_grid[:2] 
                 target_minor = target_grid[:4] 
                 
-                for my_rep in self.my_reception_cache:
+                for my_rep in my_reception_snapshot:
                     r_grid = my_rep.get('grid', "")
                     if len(r_grid) >= 4:
                         if r_grid == target_minor:
@@ -194,20 +213,22 @@ class QSOAnalyzer(QObject):
             now = time.time()
             cutoff = now - (15 * 60) # Keep 15 mins for BAND MAP history
             
-            keys_to_remove = []
-            total_signals = 0
-            for f in self.band_cache:
-                self.band_cache[f] = [r for r in self.band_cache[f] if r['time'] > cutoff]
-                if not self.band_cache[f]:
-                    keys_to_remove.append(f)
-                else:
-                    total_signals += len(self.band_cache[f])
-            
-            for k in keys_to_remove:
-                del self.band_cache[k]
+            # LOCK: Modifying cache
+            with self.lock:
+                keys_to_remove = []
+                total_signals = 0
+                for f in self.band_cache:
+                    self.band_cache[f] = [r for r in self.band_cache[f] if r['time'] > cutoff]
+                    if not self.band_cache[f]:
+                        keys_to_remove.append(f)
+                    else:
+                        total_signals += len(self.band_cache[f])
                 
-            self.my_reception_cache = [r for r in self.my_reception_cache if r['time'] > cutoff]
-            hearing_me_count = len(self.my_reception_cache)
+                for k in keys_to_remove:
+                    del self.band_cache[k]
+                    
+                self.my_reception_cache = [r for r in self.my_reception_cache if r['time'] > cutoff]
+                hearing_me_count = len(self.my_reception_cache)
             
             self.cache_updated.emit()
             self.status_message.emit(
