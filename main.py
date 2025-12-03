@@ -475,29 +475,41 @@ class MainWindow(QMainWindow):
         else:
             self.model.set_target_call(None)
 
+ 
     def on_row_click(self, index):
         row = index.row()
         if row < len(self.model._data):
             data = self.model._data[row]
             self.dashboard.update_data(data)
-            self.band_map.set_target_freq(data.get('freq', 0))
             
-            if 'freq' in data and self.analyzer.current_dial_freq > 0:
-                rf_freq = data['freq']
-                qrm_rf_list = self.analyzer.get_qrm_for_freq(rf_freq)
+            # 1. Update Target Info
+            self.band_map.set_target_freq(data.get('freq', 0))
+            self.band_map.set_target_call(data.get('call', ''))
+            
+            # 2. Get GLOBAL Band Traffic (The Fix)
+            if self.analyzer.current_dial_freq > 0:
+                # Use the new "Get All" function
+                all_spots = self.analyzer.get_band_spots()
                 
                 qrm_audio_list = []
-                for spot in qrm_rf_list:
+                for spot in all_spots:
                     offset = int(spot['freq']) - self.analyzer.current_dial_freq
                     if 0 <= offset <= 3000:
                         qrm_audio_list.append({
                             'freq': offset,
-                            'snr': int(spot.get('snr', -10))
+                            'snr': int(spot.get('snr', -10)),
+                            'receiver': spot.get('receiver', '') 
                         }) 
                 
-                self.band_map.set_remote_qrm(qrm_audio_list)
+                # Update map
+                self.band_map.remote_qrm = [] 
+                self.band_map.update_qrm(qrm_audio_list)
+                
             else:
-                self.band_map.set_remote_qrm([])
+                self.band_map.remote_qrm = []
+                self.band_map.repaint()
+
+
 
     def on_recommendation(self, freq):
         cur = self.band_map.current_tx_freq

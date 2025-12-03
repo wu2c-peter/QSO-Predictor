@@ -47,7 +47,7 @@ class QSOAnalyzer(QObject):
             self.cache_updated.emit()
 
     def force_refresh(self):
-        # Read freq safely (integer read is atomic, but good practice)
+        # Read freq safely
         f = self.current_dial_freq if self.current_dial_freq > 0 else 14074000
         self.mqtt.update_subscriptions(self.my_call, f)
 
@@ -80,7 +80,7 @@ class QSOAnalyzer(QObject):
         """Returns RECENT spots overlapping the target."""
         target_rf = int(target_freq_in)
         
-        # LOCK: Reading cache (prevent iteration error)
+        # LOCK: Reading cache
         with self.lock:
             if target_rf < 10000 and self.current_dial_freq > 0:
                 target_rf += self.current_dial_freq
@@ -95,13 +95,29 @@ class QSOAnalyzer(QObject):
                 # 60Hz Match Window
                 if abs(cached_freq - target_rf) < 60:
                     for r in reports:
-                        # CHECK TIMESTAMP
                         if r['time'] > recent_limit:
                             if r['sender'] not in seen_senders:
                                 overlapping_spots.append(r)
                                 seen_senders.add(r['sender'])
         
         return overlapping_spots
+
+    def get_band_spots(self):
+        """Returns ALL spots currently in the 3kHz passband."""
+        spots = []
+        # LOCK: Reading cache
+        with self.lock:
+            if self.current_dial_freq > 0:
+                # We only want spots that fall into the audio window (Dial to Dial+3000)
+                recent_limit = time.time() - 45
+                
+                for f, reports in self.band_cache.items():
+                    # Check if freq is in our 3kHz window
+                    if self.current_dial_freq <= f <= self.current_dial_freq + 3000:
+                        for r in reports:
+                            if r['time'] > recent_limit:
+                                spots.append(r)
+        return spots
 
     def analyze_decode(self, decode_data, update_callback=None):
         if 'competition' not in decode_data:
@@ -115,10 +131,8 @@ class QSOAnalyzer(QObject):
         elif snr > -20: base_prob = 20
         else: base_prob = 5
         
-        # --- FIXED COMPETITION LOGIC (Time-Aware) ---
+        # --- COMPETITION LOGIC ---
         raw_freq = decode_data.get('freq', 0)
-        
-        # Only gets spots from last 45s (Thread Safe Now)
         qrm_spots = self.get_qrm_for_freq(raw_freq)
         
         count = len(qrm_spots)
@@ -158,8 +172,6 @@ class QSOAnalyzer(QObject):
         
         # LOCK: Reading my_reception_cache
         with self.lock:
-            # We copy the list or iterate quickly. Iteration is safe if locked.
-            # Since this is a short loop, locking is fine.
             my_reception_snapshot = list(self.my_reception_cache)
 
         for my_rep in my_reception_snapshot:
