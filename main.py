@@ -1,14 +1,15 @@
 # QSO Predictor
 # Copyright (C) 2025 [Peter Hirst/WU2C]
 
+import ctypes
 import sys
 import threading
 from collections import deque
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QTableView, QLabel, QHeaderView, QSplitter, 
-                             QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy)
+                             QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, QSystemTrayIcon, QMenu)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
-from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont
+from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon
 
 try:
     from config_manager import ConfigManager
@@ -284,7 +285,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config = ConfigManager()
-        self.setWindowTitle("QSO Predictor")
+        self.setWindowTitle("QSO Predictor by WU2C")
         self.resize(1100, 800)
         
         geo = self.config.get('WINDOW', 'geometry')
@@ -408,6 +409,27 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
+        # --- ICON SETUP ---
+        app_icon = QIcon("icon.ico")
+        self.setWindowIcon(app_icon) # Top-left of window & Taskbar
+
+        # --- SYSTEM TRAY ---
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(app_icon) 
+        
+        # Tray Menu
+        tray_menu = QMenu()
+        show_action = QAction("Show Dashboard", self)
+        show_action.triggered.connect(self.show)
+        tray_menu.addAction(show_action)
+        
+        quit_action = QAction("Exit", self)
+        quit_action.triggered.connect(self.close)
+        tray_menu.addAction(quit_action)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
+
     def setup_connections(self):
         self.udp.new_decode.connect(self.handle_decode)
         self.udp.status_update.connect(self.handle_status_update)
@@ -525,6 +547,13 @@ class MainWindow(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
+    # --- ADD THIS BLOCK ---
+    myappid = 'wu2c.qsopredictor.v1.3' # Arbitrary unique ID
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except ImportError:
+        pass
+    # ----------------------
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = MainWindow()
