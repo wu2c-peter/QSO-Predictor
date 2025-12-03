@@ -235,10 +235,21 @@ class QSOAnalyzer(QObject):
                                 spots.append(r)
         return spots
 
-    def analyze_decode(self, decode_data, update_callback=None):
-        if 'competition' not in decode_data:
-            decode_data['competition'] = "Analyzing..."
-            
+    def analyze_decode(self, decode_data, update_callback=None, use_perspective=False):
+        """
+        Analyze a decode and calculate probability, path status, and competition.
+        
+        Args:
+            decode_data: The decode dict to analyze (modified in place)
+            update_callback: Optional callback after analysis
+            use_perspective: If True, also compute full competition from target's perspective.
+                           This is expensive - only use for selected target (dashboard).
+        
+        Sets:
+            'path': Path status for table column (CONNECTED, Path Open, or blank)
+            'prob': Success probability percentage
+            'competition': Full competition analysis (only when use_perspective=True)
+        """
         snr = decode_data.get('snr', -20)
         base_prob = 0
         if snr > 0: base_prob = 80
@@ -247,89 +258,226 @@ class QSOAnalyzer(QObject):
         elif snr > -20: base_prob = 20
         else: base_prob = 5
         
-        # --- COMPETITION LOGIC ---
-        raw_freq = decode_data.get('freq', 0)
-        qrm_spots = self.get_qrm_for_freq(raw_freq)
-        
-        count = len(qrm_spots)
-        strong_qrm = False
-        for r in qrm_spots:
-            if r.get('snr', -99) > 0:
-                strong_qrm = True
-                break
-        
-        comp_str = "Clear"
-        qrm_penalty = 0
-
-        if count > 0:
-            if count <= 1:
-                intensity = "Low"
-                qrm_penalty = 5
-            elif count <= 3:
-                intensity = "Medium"
-                qrm_penalty = 15
-            elif count <= 6:
-                intensity = "High"
-                qrm_penalty = 30
-            else:
-                intensity = "PILEUP"
-                qrm_penalty = 50
-                
-            comp_str = f"{intensity} ({count})"
-            if strong_qrm:
-                comp_str += " + QRM"
-                qrm_penalty += 20
-
-        geo_bonus = 0
-        target_grid = decode_data.get('grid', "")
-        
-        direct_hit = False
         target_call = decode_data.get('call', '')
+        target_grid = decode_data.get('grid', '')
+        target_freq = decode_data.get('freq', 0)
         
-        # LOCK: Reading my_reception_cache
+        # --- PATH STATUS (cheap, always computed) ---
+        # Check if target or nearby stations have heard us
+        path_str = ""
+        geo_bonus = 0
+        direct_hit = False
+        
         with self.lock:
             my_reception_snapshot = list(self.my_reception_cache)
+            
+            # Check if there are any reporters near target
+            has_nearby_reporters = False
+            if target_grid and len(target_grid) >= 2:
+                target_major = target_grid[:2]
+                target_minor = target_grid[:4] if len(target_grid) >= 4 else ""
+                
+                # Check grid_cache for reporters in same grid or field
+                for grid_key in self.grid_cache:
+                    if target_minor and grid_key == target_minor:
+                        has_nearby_reporters = True
+                        break
+                    elif grid_key[:2] == target_major:
+                        has_nearby_reporters = True
+                        break
+                
+                # Also check receiver_cache for the target itself
+                if target_call in self.receiver_cache:
+                    has_nearby_reporters = True
 
+        # Check for direct connection (target heard us)
         for my_rep in my_reception_snapshot:
             if my_rep['receiver'] == target_call:
-                 geo_bonus = 100; direct_hit = True; comp_str = "CONNECTED"
-                 break
+                geo_bonus = 100
+                direct_hit = True
+                path_str = "CONNECTED"
+                break
         
-        if not direct_hit:
-            path_bonus = 0
-            if target_grid and len(target_grid) >= 2:
-                target_major = target_grid[:2] 
-                target_minor = target_grid[:4] 
-                
-                for my_rep in my_reception_snapshot:
-                    r_grid = my_rep.get('grid', "")
-                    if len(r_grid) >= 4:
-                        if r_grid == target_minor:
-                            path_bonus = 25 
-                            break
-                        elif r_grid[:2] == target_major:
-                            path_bonus = 15 
+        # Check for path open (nearby station heard us)
+        if not direct_hit and target_grid and len(target_grid) >= 2:
+            target_major = target_grid[:2] 
+            target_minor = target_grid[:4] if len(target_grid) >= 4 else ""
             
-            if path_bonus > 0:
-                geo_bonus += path_bonus
-                if "Path" not in comp_str: comp_str += " (Path Open)"
-
-            if count > 0:
-                geo_bonus += 10
-                if decode_data.get('snr', -20) > -10: geo_bonus += 10
-            else:
-                snr = decode_data.get('snr', -20)
-                if snr > -5: geo_bonus += 10 
-                elif snr > -12: geo_bonus += 0  
-                else: geo_bonus -= 15 
-
-        final_prob = max(5, min(99, base_prob - qrm_penalty + geo_bonus))
+            for my_rep in my_reception_snapshot:
+                r_grid = my_rep.get('grid', "")
+                if len(r_grid) >= 4:
+                    if target_minor and r_grid[:4] == target_minor:
+                        geo_bonus = 25 
+                        path_str = "Path Open"
+                        break
+                    elif r_grid[:2] == target_major:
+                        geo_bonus = 15
+                        path_str = "Path Open"
         
+        # If no path found, distinguish between "no reporters" vs "not heard"
+        if not path_str:
+            if has_nearby_reporters:
+                path_str = "No Path"
+            else:
+                path_str = "No Nearby Reporters"
+        
+        # SNR-based probability adjustment (when no path data)
+        if not direct_hit and geo_bonus == 0:
+            if snr > -5: geo_bonus = 10 
+            elif snr > -12: geo_bonus = 0  
+            else: geo_bonus = -15 
+        
+        decode_data['path'] = path_str
+        
+        # --- COMPETITION (expensive, only for selected target) ---
+        if use_perspective:
+            # Convert target_freq to RF if it's an audio offset
+            if target_freq < 10000 and self.current_dial_freq > 0:
+                target_rf = target_freq + self.current_dial_freq
+            else:
+                target_rf = target_freq
+            
+            perspective = self.get_target_perspective(target_call, target_grid)
+            seen_senders = set()
+            competition_count = 0
+            strong_qrm = False
+            
+            # Count Tier 1 and Tier 2 at full weight
+            for tier_name in ['tier1', 'tier2']:
+                for spot in perspective.get(tier_name, []):
+                    spot_freq = spot.get('freq', 0)
+                    sender = spot.get('sender', '')
+                    if abs(spot_freq - target_rf) < 60:
+                        if sender and sender not in seen_senders:
+                            competition_count += 1
+                            seen_senders.add(sender)
+                            if spot.get('snr', -99) > 0:
+                                strong_qrm = True
+            
+            # Count Tier 3 at 50% weight
+            tier3_count = 0
+            for spot in perspective.get('tier3', []):
+                spot_freq = spot.get('freq', 0)
+                sender = spot.get('sender', '')
+                if abs(spot_freq - target_rf) < 60:
+                    if sender and sender not in seen_senders:
+                        tier3_count += 1
+                        seen_senders.add(sender)
+            competition_count += tier3_count // 2
+            
+            total_perspective = (len(perspective.get('tier1', [])) + 
+                                len(perspective.get('tier2', [])) + 
+                                len(perspective.get('tier3', [])))
+            
+            # Build competition string
+            comp_str = "Clear"
+            qrm_penalty = 0
+
+            if competition_count > 0:
+                if competition_count <= 1:
+                    intensity = "Low"
+                    qrm_penalty = 5
+                elif competition_count <= 3:
+                    intensity = "Medium"
+                    qrm_penalty = 15
+                elif competition_count <= 6:
+                    intensity = "High"
+                    qrm_penalty = 30
+                else:
+                    intensity = "PILEUP"
+                    qrm_penalty = 50
+                    
+                comp_str = f"{intensity} ({competition_count})"
+                if strong_qrm:
+                    comp_str += " + QRM"
+                    qrm_penalty += 20
+            
+            # No perspective data available
+            if total_perspective == 0 and competition_count == 0:
+                comp_str = "Unknown"
+            
+            # Override with path status if connected
+            if direct_hit:
+                comp_str = "CONNECTED"
+            
+            decode_data['competition'] = comp_str
+            geo_bonus -= qrm_penalty  # Factor competition into probability
+        else:
+            # For bulk analysis, just use path status as competition placeholder
+            decode_data['competition'] = path_str if path_str else ""
+
+        final_prob = max(5, min(99, base_prob + geo_bonus))
         decode_data['prob'] = f"{final_prob}%"
-        decode_data['competition'] = comp_str
         
         if update_callback:
             update_callback(decode_data)
+
+    def update_path_only(self, decode_data):
+        """
+        Lightweight path-only update. Much faster than full analyze_decode.
+        Use this for bulk updates when my_reception_cache changes.
+        
+        Path values:
+            CONNECTED - target heard me
+            Path Open - station in same grid/field heard me
+            No Path - reporters exist near target but haven't heard me
+            No Nearby Reporters - no reporters in target's region
+        """
+        target_call = decode_data.get('call', '')
+        target_grid = decode_data.get('grid', '')
+        
+        path_str = ""
+        
+        with self.lock:
+            my_reception_snapshot = list(self.my_reception_cache)
+            
+            # Check if there are any reporters near target
+            has_nearby_reporters = False
+            if target_grid and len(target_grid) >= 2:
+                target_major = target_grid[:2]
+                target_minor = target_grid[:4] if len(target_grid) >= 4 else ""
+                
+                # Check grid_cache for reporters in same grid or field
+                for grid_key in self.grid_cache:
+                    if target_minor and grid_key == target_minor:
+                        has_nearby_reporters = True
+                        break
+                    elif grid_key[:2] == target_major:
+                        has_nearby_reporters = True
+                        break
+                
+                # Also check receiver_cache for the target itself
+                if target_call in self.receiver_cache:
+                    has_nearby_reporters = True
+
+        # Check for direct connection (target heard us)
+        for my_rep in my_reception_snapshot:
+            if my_rep['receiver'] == target_call:
+                path_str = "CONNECTED"
+                break
+        
+        # Check for path open (nearby station heard us)
+        if not path_str and target_grid and len(target_grid) >= 2:
+            target_major = target_grid[:2] 
+            target_minor = target_grid[:4] if len(target_grid) >= 4 else ""
+            
+            for my_rep in my_reception_snapshot:
+                r_grid = my_rep.get('grid', "")
+                if len(r_grid) >= 4:
+                    if target_minor and r_grid[:4] == target_minor:
+                        path_str = "Path Open"
+                        break
+                    elif r_grid[:2] == target_major:
+                        path_str = "Path Open"
+        
+        # If no path found, distinguish between "no reporters" vs "not heard"
+        if not path_str:
+            if has_nearby_reporters:
+                path_str = "No Path"
+            else:
+                path_str = "No Nearby Reporters"
+        
+        decode_data['path'] = path_str
 
     def stop(self):
         self.running = False

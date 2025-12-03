@@ -84,6 +84,35 @@ Limited geographic intelligence. The display shows global activity, which may no
 **Scenario 4: Red bar on target frequency**
 A station the target can hear is transmitting on or near their frequency. **Wait.** The target is likely unable to decode you through the interference. Watch for the red bar to clear.
 
+### Reading the Path Column
+
+The **Path** column in the decode table shows whether you have a confirmed signal path to that station's region:
+
+| Status | Color | Meaning |
+| :--- | :--- | :--- |
+| **CONNECTED** | Cyan | Target has heard you — best case, call them! |
+| **Path Open** | Green | A station in the same grid or field has heard you — propagation confirmed |
+| **No Path** | Orange | Reporters exist near target but haven't heard you — path may not be open |
+| **No Nearby Reporters** | Gray | No PSK Reporter data from that region — unknown |
+
+This tells you at a glance which stations are reachable. Prioritize **CONNECTED** (cyan) and **Path Open** (green) stations — you know propagation is working.
+
+### Reading the Dashboard Competition
+
+When you select a target station (by clicking in the table or double-clicking in JTDX), the **Competition** field in the dashboard shows QRM at the target's location using the tiered perspective system:
+
+| Status | Color | Meaning |
+| :--- | :--- | :--- |
+| **CONNECTED** | Cyan | Target has heard you — you're in! |
+| **Clear** | Green | No competition detected at target's location |
+| **Low (1)** | Default | 1 competing station |
+| **Medium (2-3)** | Default | Light competition |
+| **High (4-6)** | Orange | Significant competition — consider waiting |
+| **PILEUP (7+)** | Red | Heavy pileup — difficult conditions |
+| **Unknown** | Gray | No data from target's region |
+
+The count reflects stations the target (Tier 1) or nearby stations (Tier 2/3) actually hear near that frequency, not global traffic.
+
 ### Reading the Probability Column
 
 The "Prob %" column in the decode table estimates your chance of completing a QSO:
@@ -139,20 +168,29 @@ The "Prob %" column in the decode table estimates your chance of completing a QS
     * New caches in `analyzer.py`: `receiver_cache` and `grid_cache` index spots by reporter location.
     * New method: `get_target_perspective(call, grid)` returns tiered intelligence.
 
+* **New Path Column (replaces Competition in table)**
+    * Shows signal path status: CONNECTED, Path Open, No Path, No Nearby Reporters.
+    * Lightweight updates every 2 seconds — no performance impact.
+    * Tells you at a glance which stations are reachable.
+
+* **Dashboard Competition (Target Perspective)**
+    * Full competition analysis shown in dashboard when you select a target.
+    * Uses tiered perspective to count QRM at the target's location.
+    * Expensive calculation only runs for selected station.
+
 * **JTDX/WSJT-X Integration**
     * Double-clicking a station in JTDX/WSJT-X immediately updates the target perspective.
     * No need to re-click in QSO Predictor — the band map responds to your logging software.
 
 * **Continuous Refresh**
     * Target perspective auto-updates every 3 seconds.
-    * No need to re-click the target row.
+    * Path column updates every 2 seconds for all rows.
 
 * **UI Improvements**
     * Updated band map legend with local signal SNR colors.
     * Collision detection now focuses on Tier 1/2 signals (the ones that matter).
     * Info bar shows current band and dial frequency.
-    * CONNECTED status highlighted in cyan (table and dashboard).
-    * Competition column color-coded: cyan (connected), red (pileup), orange (high), green (clear).
+    * CONNECTED rows highlighted with cyan text and teal background.
     * "Who hears me" count now uses 3-minute window for tactical relevance.
 
 ### v1.1.0 - The Tactical Update

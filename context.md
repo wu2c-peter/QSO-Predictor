@@ -68,7 +68,66 @@ Stations in the same grid square experience similar propagation. If K1ABC in FN4
 * If target doesn't upload, but neighbors do → Tier 2/3 data (good proxy)
 * If no nearby reporters → Tier 4 only (global fallback)
 
-### C. The Tactical Band Map (`band_map_widget.py`)
+### C. Path Column (`update_path_only`)
+
+The **Path** column in the decode table shows signal path status — whether you have a confirmed route to that station's region. This is a lightweight check that runs every 2 seconds for all rows.
+
+**How It Works:**
+
+```python
+def update_path_only(self, decode_data):
+    # Check my_reception_cache for who has heard me
+    # Check grid_cache/receiver_cache for nearby reporters
+    
+    if target heard me:
+        path_str = "CONNECTED"
+    elif station in same grid/field heard me:
+        path_str = "Path Open"
+    elif reporters exist near target:
+        path_str = "No Path"
+    else:
+        path_str = "No Nearby Reporters"
+```
+
+**Path Status Values:**
+
+| Status | Color | Meaning |
+|--------|-------|---------|
+| CONNECTED | Cyan | Target has heard you — best case |
+| Path Open | Green | Station in same grid/field heard you — propagation confirmed |
+| No Path | Orange | Reporters exist near target but haven't heard you |
+| No Nearby Reporters | Gray | No PSK Reporter data from that region |
+
+**Why This Replaces Competition in the Table:**
+
+The old "Competition" column tried to show QRM at the target's location for every row. This required calling `get_target_perspective()` 500 times every 2 seconds — too expensive. The Path column provides genuinely useful at-a-glance information (which stations can you reach?) with minimal CPU cost.
+
+### D. Dashboard Competition (`analyze_decode` with `use_perspective=True`)
+
+Full competition analysis is only computed for the **selected target** and shown in the dashboard. This uses the expensive `get_target_perspective()` call but only runs once per target selection (and refreshes every 3 seconds).
+
+**Competition Status Values:**
+
+| Status | Count | Color | Meaning |
+|--------|-------|-------|---------|
+| CONNECTED | — | Cyan | Target has heard you |
+| Clear | 0 | Green | No competition at target |
+| Low | 1 | Default | Minimal competition |
+| Medium | 2-3 | Default | Light competition |
+| High | 4-6 | Orange | Significant competition |
+| PILEUP | 7+ | Red | Heavy pileup |
+| Unknown | — | Gray | No Tier 1/2/3 data available |
+
+**The Split Architecture:**
+
+```
+Table (all rows):     Path column     → update_path_only()  → cheap, every 2s
+Dashboard (selected): Competition     → analyze_decode(use_perspective=True) → expensive, on-demand
+```
+
+This gives you the best of both worlds: quick path status for scanning the table, detailed competition analysis for your selected target.
+
+### E. The Tactical Band Map (`band_map_widget.py`)
 
 The Band Map is a **Split-Screen Tactical Display:**
 
@@ -106,21 +165,26 @@ The green "Rec" line shows the recommended TX frequency. The algorithm:
 4. Find the widest contiguous gap.
 5. Smooth the recommendation (90% old + 10% new) to prevent jitter.
 
-### D. Continuous Refresh System
+### F. Continuous Refresh System
 
 **The Problem:** User clicks target, sees perspective, but data decays after 60 seconds.
 
-**The Solution:** `perspective_timer` in `main.py` fires every 3 seconds:
+**The Solution:** Two timers in `main.py`:
+
+1. **`perspective_timer`** (3 seconds): Updates band map and dashboard competition for selected target
+2. **`cache_updated` signal** (2 seconds): Triggers `refresh_paths()` to update Path column for all rows
 
 ```python
+# Perspective refresh for selected target
 self.perspective_timer = QTimer()
 self.perspective_timer.timeout.connect(self.refresh_target_perspective)
 self.perspective_timer.start(3000)
+
+# Path refresh for all rows (lightweight)
+self.analyzer.cache_updated.connect(self.refresh_paths)
 ```
 
-When fired, if `current_target_call` is set, it re-queries the analyzer and updates the band map. The display stays current as new spots arrive from MQTT.
-
-### E. JTDX/WSJT-X Target Integration
+### G. JTDX/WSJT-X Target Integration
 
 **The Problem:** Double-clicking a station in JTDX/WSJT-X sends a `dx_call` via UDP, but the target perspective wasn't updating.
 
@@ -179,20 +243,24 @@ This means the band map responds immediately when you double-click a station in 
 │  │(by grid)  │_cache         │      │ │
 │  └───────────┴───────────────┘      │ │
 │                                     │ │
-│  get_target_perspective(call,       │ │
-│                         grid)       │ │
-│         │                           │ │
-└─────────┼───────────────────────────┘ │
-          │                             │
-          ▼                             │
+│  ┌─────────────────────────────┐    │ │
+│  │ update_path_only()          │◄───┼─┼─── cache_updated (2s)
+│  │   → Path column (all rows)  │    │ │       → refresh_paths()
+│  └─────────────────────────────┘    │ │
+│                                     │ │
+│  ┌─────────────────────────────┐    │ │
+│  │ analyze_decode(persp=True)  │◄───┼─┼─── perspective_timer (3s)
+│  │   → Dashboard Competition   │    │ │       → refresh_target_perspective()
+│  │   → get_target_perspective()│    │ │
+│  └─────────────────────────────┘    │ │
+│                                     │ │
+└─────────────────────────────────────┘ │
+                                        │
 ┌─────────────────────────────────────┐ │
 │         main.py                     │ │
-│  ┌─────────────────────────┐        │ │
-│  │ perspective_timer (3s)  │────────┼─┼──► refresh_target_perspective()
-│  └─────────────────────────┘        │ │
 │                                     │ │
 │  handle_status_update() ◄───────────┼─┘
-│    └─► if dx_call changed:          │    (JTDX double-click triggers
+│    └─► if jtdx_last_dx_call changed │    (JTDX double-click triggers
 │          _update_perspective_display│     immediate perspective update)
 │                                     │
 │  current_target_call                │
@@ -221,26 +289,35 @@ This means the band map responds immediately when you double-click a station in 
     * New method: `get_target_perspective(call, grid)` returns tiered spot data.
     * Band map now renders target's RF environment, not global noise.
 
+* **New Path Column (replaces Competition in table)**
+    * New `update_path_only()` method — lightweight path status check.
+    * Values: CONNECTED, Path Open, No Path, No Nearby Reporters.
+    * Updates every 2 seconds for all rows via `cache_updated` signal.
+    * Provides at-a-glance reachability info without performance impact.
+
+* **Dashboard Competition (Target Perspective)**
+    * Full competition analysis only for selected target.
+    * `analyze_decode(use_perspective=True)` computes competition from target's viewpoint.
+    * Values: CONNECTED, Clear, Low/Medium/High, PILEUP, Unknown.
+    * Runs on target selection and refreshes every 3 seconds.
+
 * **JTDX/WSJT-X Integration**
     * `handle_status_update()` now triggers perspective update when `dx_call` changes.
     * Double-clicking in JTDX/WSJT-X immediately updates the band map.
-    * Optimized to only update on target change (not every status packet).
+    * Tracks `jtdx_last_dx_call` separately to avoid overriding manual table selection.
 
 * **Continuous Refresh**
-    * Added `perspective_timer` (3-second interval) in `main.py`.
-    * Target state tracked in `current_target_call` and `current_target_grid`.
-    * Display stays current without re-clicking.
+    * `perspective_timer` (3s) updates selected target's perspective and competition.
+    * `cache_updated` signal (2s) triggers `refresh_paths()` for all rows.
 
 * **Collision Detection Improvement**
     * Red collision overlay now only triggers on Tier 1/2 signals.
     * Rationale: A collision only matters if the target (or nearby station) would hear it.
 
 * **UI Polish**
-    * Legend updated with Row 3 showing local signal SNR colors.
-    * Tier colors tuned for visual hierarchy (brightest = highest confidence).
-    * Info bar shows current band and dial frequency.
-    * Competition column color-coded (cyan/red/orange/green).
+    * Path column color-coded: cyan (CONNECTED), green (Path Open), orange (No Path), gray (No Nearby Reporters).
     * CONNECTED rows highlighted with teal background.
+    * Info bar shows current band and dial frequency.
     * "Who hears me" uses 3-minute window (was 15 minutes).
 
 ### v1.1.0 (The Tactical Update)

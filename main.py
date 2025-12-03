@@ -143,6 +143,8 @@ class TargetDashboard(QFrame):
             self.val_comp.setStyleSheet("color: #FF5555; font-weight: bold;")  # Red
         elif "High" in comp:
             self.val_comp.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
+        elif "Unknown" in comp:
+            self.val_comp.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
         elif "Clear" in comp:
             self.val_comp.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
         else:
@@ -196,7 +198,8 @@ class DecodeTableModel(QAbstractTableModel):
         key_map = {
             "UTC": "time", "Call": "call", "Grid": "grid", "dB": "snr",
             "DT": "dt", "Freq": "freq", "Message": "message",
-            "Prob %": "prob", "Competition": "competition"
+            "Prob %": "prob", "Competition": "competition", "Global Activity": "competition",
+            "Path": "path"
         }
         key = key_map.get(col_name, col_name.lower())
         
@@ -206,9 +209,9 @@ class DecodeTableModel(QAbstractTableModel):
         # --- FIX: ALIGNMENT LOGIC ---
         elif role == Qt.ItemDataRole.TextAlignmentRole:
             # Left align specified columns
-            if key in ['call', 'message', 'competition']:
+            if key in ['call', 'message']:
                 return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-            # Center align everything else (UTC, dB, DT, Freq, Grid, Prob)
+            # Center align everything else (UTC, dB, DT, Freq, Grid, Prob, Path)
             return Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
 
         elif role == Qt.ItemDataRole.ForegroundRole:
@@ -226,19 +229,21 @@ class DecodeTableModel(QAbstractTableModel):
                     if val > 75: return QColor("#00FF00")
                     elif val < 30: return QColor("#FF5555")
                 except: pass
-            if key == "competition":
-                comp = str(row_item.get('competition', ''))
-                if "CONNECTED" in comp:
+            if key == "path":
+                path = str(row_item.get('path', ''))
+                if "CONNECTED" in path:
                     return QColor("#00FFFF")  # Cyan - target hears you!
-                elif "PILEUP" in comp:
-                    return QColor("#FF5555")  # Red - heavy competition
-                elif "High" in comp:
-                    return QColor("#FFA500")  # Orange - significant competition
+                elif "Path Open" in path:
+                    return QColor("#00FF00")  # Green - path to region confirmed
+                elif "No Path" in path:
+                    return QColor("#FFA500")  # Orange - reporters exist but don't hear you
+                elif "No Nearby Reporters" in path:
+                    return QColor("#888888")  # Gray - no data available
 
         elif role == Qt.ItemDataRole.BackgroundRole:
             # Highlight CONNECTED rows with a subtle background
-            comp = str(row_item.get('competition', ''))
-            if "CONNECTED" in comp:
+            path = str(row_item.get('path', ''))
+            if "CONNECTED" in path:
                 return QColor("#004040")  # Teal background for connected
             if self.target_call and row_item.get('call') == self.target_call:
                 return QColor("#004444") 
@@ -259,7 +264,7 @@ class DecodeTableModel(QAbstractTableModel):
         key_map = {
             "UTC": "time", "Call": "call", "Grid": "grid", "dB": "snr",
             "DT": "dt", "Freq": "freq", "Message": "message", 
-            "Prob %": "prob", "Competition": "competition"
+            "Prob %": "prob", "Competition": "competition", "Path": "path"
         }
         key = key_map.get(col_name, col_name.lower())
         reverse = (order == Qt.SortOrder.DescendingOrder)
@@ -366,7 +371,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Vertical)
         
         # 1. TOP: Table View
-        cols = ["UTC", "dB", "DT", "Freq", "Call", "Grid", "Message", "Prob %", "Competition"]
+        cols = ["UTC", "dB", "DT", "Freq", "Call", "Grid", "Message", "Prob %", "Path"]
         self.model = DecodeTableModel(cols, self.config)
         self.table_view = QTableView()
         self.table_view.setModel(self.model)
@@ -467,7 +472,10 @@ class MainWindow(QMainWindow):
     def setup_connections(self):
         self.udp.new_decode.connect(self.handle_decode)
         self.udp.status_update.connect(self.handle_status_update)
-        self.analyzer.cache_updated.connect(self.refresh_analysis)
+        # Note: Removed cache_updated -> refresh_analysis connection
+        # With target perspective, re-analyzing all 500 rows every 2 seconds is too expensive.
+        # Reconnect cache_updated to lightweight path refresh (not full analysis)
+        self.analyzer.cache_updated.connect(self.refresh_paths)
         self.analyzer.status_message.connect(self.update_status_msg)
 
     def handle_decode(self, data):
@@ -481,6 +489,10 @@ class MainWindow(QMainWindow):
             self.analyzer.analyze_decode(item)
         self.model.add_batch(chunk)
         self.band_map.update_signals(chunk)
+
+    def refresh_paths(self):
+        """Lightweight refresh - just update path status for all rows."""
+        self.model.update_data_in_place(self.analyzer.update_path_only)
 
     def refresh_analysis(self):
         self.model.update_data_in_place(self.analyzer.analyze_decode)
@@ -511,14 +523,16 @@ class MainWindow(QMainWindow):
                 self.dashboard.lbl_target.setText(dx_call)
                 self.model.set_target_call(dx_call)
                 
-                # Find target in decode list
+                # Find target in decode list and analyze with full perspective
                 target_grid = ""
                 target_freq = 0
                 for row in self.model._data:
                     if row.get('call') == dx_call:
-                        self.dashboard.update_data(row)
                         target_freq = row.get('freq', 0)
                         target_grid = row.get('grid', '')
+                        # Re-analyze with full perspective for accurate competition
+                        self.analyzer.analyze_decode(row, use_perspective=True)
+                        self.dashboard.update_data(row)
                         break
                 
                 # Store target state for perspective refresh
@@ -540,7 +554,6 @@ class MainWindow(QMainWindow):
         row = index.row()
         if row < len(self.model._data):
             data = self.model._data[row]
-            self.dashboard.update_data(data)
             
             target_call = data.get('call', '')
             target_grid = data.get('grid', '')
@@ -559,7 +572,11 @@ class MainWindow(QMainWindow):
             self.band_map.set_target_call(target_call)
             self.band_map.set_target_grid(target_grid)
             
-            # 2. Get TARGET PERSPECTIVE (tiered by geographic proximity)
+            # 2. Re-analyze with FULL target perspective (for accurate competition)
+            self.analyzer.analyze_decode(data, use_perspective=True)
+            self.dashboard.update_data(data)
+            
+            # 3. Update band map perspective display
             self._update_perspective_display()
 
 
@@ -567,6 +584,14 @@ class MainWindow(QMainWindow):
     def refresh_target_perspective(self):
         """Called periodically by timer to keep target perspective current."""
         if self.current_target_call:
+            # Find and re-analyze the selected target with full perspective
+            for row in self.model._data:
+                if row.get('call') == self.current_target_call:
+                    self.analyzer.analyze_decode(row, use_perspective=True)
+                    self.dashboard.update_data(row)
+                    break
+            
+            # Update band map perspective
             self._update_perspective_display()
 
     def _update_perspective_display(self):
