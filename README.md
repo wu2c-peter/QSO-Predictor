@@ -1,18 +1,14 @@
-Here is a comprehensive, updated `README.md`. It reflects the architectural shift to MQTT, the visual overhauls, and includes a detailed "Changelog / History" section documenting our work.
-
------
-
 # QSO Predictor
 
 **Real-Time Tactical Assistant for FT8 & FT4** *Copyright (C) 2025 Peter Hirst (WU2C)*
 
 QSO Predictor is a "Moneyball" tool for digital amateur radio. It sits between **WSJT-X/JTDX** and the internet, analyzing live data to tell you **who you can work** and **where to transmit** to maximize your success rate.
 
-unlike standard mapping tools, this is a **Tactical Dashboard**. It calculates probabilities based on signal paths, pileup intensity, and remote QRM.
+Unlike standard mapping tools, this is a **Tactical Dashboard**. It calculates probabilities based on signal paths, pileup intensity, and remote QRM.
 
 -----
 
-## 🚀 Key Features
+## 噫 Key Features
 
 ### 1\. Real-Time MQTT Engine
 
@@ -40,7 +36,7 @@ Don't waste time calling stations that can't hear you.
 
 -----
 
-## 📦 Installation & Usage
+## 逃 Installation & Usage
 
 ### 1\. Requirements
 
@@ -71,7 +67,7 @@ On first launch, go to **File -\> Settings**:
 
 -----
 
-## 📊 Reading the Band Map
+## 投 Reading the Band Map
 
 The Band Map at the bottom of the window is your tactical view.
 
@@ -87,9 +83,9 @@ The Band Map at the bottom of the window is your tactical view.
 
 -----
 
-## 📜 Project History & Changelog
+## 糖 Project History & Changelog
 
-### v1.3 - The "Real-Time" Overhaul (Current)
+### v1.0.1 - The "Real-Time" Overhaul (Current)
 
   * **Architecture Shift:** Completely replaced `psk_client.py` (HTTP Polling) with `mqtt_client.py`.
       * *Benefit:* Data is now event-driven and instant. Removed "Fetching..." delays.
@@ -105,19 +101,19 @@ The Band Map at the bottom of the window is your tactical view.
       * Added `setStretchLastSection` to eliminate empty columns.
       * Added fallback logic to auto-detect bands if WSJT-X hasn't sent a UDP packet yet.
 
-### v1.2 - Visualization & Stability
+### v0.9.2 - Visualization & Stability
 
   * **Dashboard Upgrade:** Switched the "Rec/Cur" dashboard display to use an HTML Table layout for perfect vertical alignment of numbers.
   * **QRM Visualization:** Added the **Blue Bar** logic to the Band Map. If a station spots QRM, it is drawn over the local signals to show "Danger Zones."
   * **Crash Fixes:** Rewrote `udp_handler.py` to robustly handle variable-length UTF-8 strings in WSJT-X packets, preventing crashes on decoding generic status updates.
 
-### v1.1 - The "High Performance" Update
+### v0.9.1 - The "High Performance" Update
 
   * **Table Engine:** Migrated from `QTableWidget` to `QAbstractTableModel`. This allows the app to handle thousands of rows without UI freezing.
   * **Target Pinning:** Added logic to keep the currently selected target pinned to the top of the list, regardless of sorting.
   * **Smart sorting:** Added multi-type sorting (numeric for SNR/DT, string for Callsigns).
 
-### v1.0 - Initial Prototype
+### v0.1.0 - Initial Prototype
 
   * Basic UDP listening.
   * Simple HTTP polling of PSK Reporter.
@@ -125,7 +121,7 @@ The Band Map at the bottom of the window is your tactical view.
 
 -----
 
-## 📄 License
+## 塘 License
 
 **GNU General Public License v3 (GPLv3)** You may copy, distribute and modify the software as long as you track changes/dates in source files. Any modifications to or software including (via compiler) GPL-licensed code must also be made available under the GPL along with build & install instructions.
 
