@@ -26,6 +26,12 @@ class QSOAnalyzer(QObject):
         self.band_cache = {}      
         self.my_reception_cache = [] 
         
+        # --- NEW: Target Perspective Caches ---
+        # Keyed by receiver callsign -> list of spots (what each station hears)
+        self.receiver_cache = {}
+        # Keyed by grid[:4] (subsquare) -> list of spots (what stations in that grid hear)
+        self.grid_cache = {}
+        
         self.running = True
         self.mqtt.start()
         
@@ -42,6 +48,8 @@ class QSOAnalyzer(QObject):
                 self.current_dial_freq = freq
                 self.band_cache.clear()
                 self.my_reception_cache.clear()
+                self.receiver_cache.clear()
+                self.grid_cache.clear()
             
             self.mqtt.update_subscriptions(self.my_call, freq)
             self.cache_updated.emit()
@@ -61,6 +69,8 @@ class QSOAnalyzer(QObject):
             else: spot['snr'] = int(spot['snr'])
 
             spot_freq = int(spot['freq'])
+            receiver_call = spot.get('receiver', '').upper()
+            receiver_grid = spot.get('grid', '').upper()
             
             # LOCK: Writing to cache
             with self.lock:
@@ -70,11 +80,117 @@ class QSOAnalyzer(QObject):
                 if spot['sender'] == self.my_call:
                     self.my_reception_cache.append(spot)
                 
+                # Original band_cache (keyed by frequency)
                 if abs(spot_freq - self.current_dial_freq) < 5000:
                     if spot_freq not in self.band_cache:
                         self.band_cache[spot_freq] = []
                     self.band_cache[spot_freq].append(spot)
+                    
+                    # --- NEW: Populate receiver_cache ---
+                    if receiver_call:
+                        if receiver_call not in self.receiver_cache:
+                            self.receiver_cache[receiver_call] = []
+                        self.receiver_cache[receiver_call].append(spot)
+                    
+                    # --- NEW: Populate grid_cache ---
+                    if len(receiver_grid) >= 4:
+                        grid_key = receiver_grid[:4]
+                        if grid_key not in self.grid_cache:
+                            self.grid_cache[grid_key] = []
+                        self.grid_cache[grid_key].append(spot)
+                        
         except Exception: pass
+
+    def get_target_perspective(self, target_call, target_grid):
+        """
+        Returns spots representing what the target station (and nearby stations) hear.
+        
+        Returns dict with tiered results:
+        {
+            'tier1': [...],  # Direct: spots reported BY the target station
+            'tier2': [...],  # Same grid square (4-char match)
+            'tier3': [...],  # Same field (2-char match)
+            'global': [...]  # Everything else (background)
+        }
+        
+        Each spot includes 'tier' field for rendering priority.
+        """
+        target_call = (target_call or '').upper().strip()
+        target_grid = (target_grid or '').upper().strip()
+        
+        recent_limit = time.time() - 60  # 60 seconds for target perspective
+        
+        tier1 = []  # Direct from target
+        tier2 = []  # Same 4-char grid
+        tier3 = []  # Same 2-char field
+        global_spots = []  # Everything else
+        
+        # Track what we've already categorized to avoid duplicates
+        seen_spots = set()  # (sender, freq) tuples
+        
+        with self.lock:
+            dial = self.current_dial_freq
+            if dial <= 0:
+                return {'tier1': [], 'tier2': [], 'tier3': [], 'global': []}
+            
+            # --- TIER 1: Direct reports from target ---
+            if target_call and target_call in self.receiver_cache:
+                for spot in self.receiver_cache[target_call]:
+                    if spot['time'] > recent_limit:
+                        spot_key = (spot['sender'], spot['freq'])
+                        if spot_key not in seen_spots:
+                            spot_copy = spot.copy()
+                            spot_copy['tier'] = 1
+                            tier1.append(spot_copy)
+                            seen_spots.add(spot_key)
+            
+            # --- TIER 2: Same 4-char grid square ---
+            if len(target_grid) >= 4:
+                grid4 = target_grid[:4]
+                if grid4 in self.grid_cache:
+                    for spot in self.grid_cache[grid4]:
+                        if spot['time'] > recent_limit:
+                            spot_key = (spot['sender'], spot['freq'])
+                            if spot_key not in seen_spots:
+                                # Exclude if receiver IS the target (already in tier1)
+                                if spot.get('receiver', '').upper() != target_call:
+                                    spot_copy = spot.copy()
+                                    spot_copy['tier'] = 2
+                                    tier2.append(spot_copy)
+                                    seen_spots.add(spot_key)
+            
+            # --- TIER 3: Same 2-char field ---
+            if len(target_grid) >= 2:
+                field = target_grid[:2]
+                for grid_key, spots in self.grid_cache.items():
+                    if grid_key[:2] == field and grid_key != target_grid[:4]:
+                        for spot in spots:
+                            if spot['time'] > recent_limit:
+                                spot_key = (spot['sender'], spot['freq'])
+                                if spot_key not in seen_spots:
+                                    spot_copy = spot.copy()
+                                    spot_copy['tier'] = 3
+                                    tier3.append(spot_copy)
+                                    seen_spots.add(spot_key)
+            
+            # --- GLOBAL: Everything else in the passband ---
+            for freq, spots in self.band_cache.items():
+                if dial <= freq <= dial + 3000:
+                    for spot in spots:
+                        if spot['time'] > recent_limit:
+                            spot_key = (spot['sender'], spot['freq'])
+                            if spot_key not in seen_spots:
+                                spot_copy = spot.copy()
+                                spot_copy['tier'] = 4
+                                global_spots.append(spot_copy)
+                                seen_spots.add(spot_key)
+        
+        return {
+            'tier1': tier1,
+            'tier2': tier2,
+            'tier3': tier3,
+            'global': global_spots
+        }
 
     def get_qrm_for_freq(self, target_freq_in):
         """Returns RECENT spots overlapping the target."""
@@ -224,9 +340,11 @@ class QSOAnalyzer(QObject):
             time.sleep(2) 
             now = time.time()
             cutoff = now - (15 * 60) # Keep 15 mins for BAND MAP history
+            cutoff_recent = now - (3 * 60) # Keep 3 mins for "who hears me" (tactical relevance)
             
             # LOCK: Modifying cache
             with self.lock:
+                # --- Original band_cache cleanup ---
                 keys_to_remove = []
                 total_signals = 0
                 for f in self.band_cache:
@@ -238,11 +356,57 @@ class QSOAnalyzer(QObject):
                 
                 for k in keys_to_remove:
                     del self.band_cache[k]
-                    
-                self.my_reception_cache = [r for r in self.my_reception_cache if r['time'] > cutoff]
+                
+                # Use shorter window for "who hears me" - recent propagation matters
+                self.my_reception_cache = [r for r in self.my_reception_cache if r['time'] > cutoff_recent]
                 hearing_me_count = len(self.my_reception_cache)
+                
+                # --- NEW: Cleanup receiver_cache ---
+                receiver_keys_to_remove = []
+                for call in self.receiver_cache:
+                    self.receiver_cache[call] = [r for r in self.receiver_cache[call] if r['time'] > cutoff]
+                    if not self.receiver_cache[call]:
+                        receiver_keys_to_remove.append(call)
+                for k in receiver_keys_to_remove:
+                    del self.receiver_cache[k]
+                
+                # --- NEW: Cleanup grid_cache ---
+                grid_keys_to_remove = []
+                for grid in self.grid_cache:
+                    self.grid_cache[grid] = [r for r in self.grid_cache[grid] if r['time'] > cutoff]
+                    if not self.grid_cache[grid]:
+                        grid_keys_to_remove.append(grid)
+                for k in grid_keys_to_remove:
+                    del self.grid_cache[k]
+                
+                # Stats for status
+                receiver_count = len(self.receiver_cache)
+                grid_count = len(self.grid_cache)
+                
+                # Format dial frequency for display
+                dial_display = ""
+                if self.current_dial_freq > 0:
+                    freq_mhz = self.current_dial_freq / 1_000_000
+                    band = self._freq_to_band(self.current_dial_freq)
+                    dial_display = f"{band} ({freq_mhz:.3f} MHz) | "
             
             self.cache_updated.emit()
             self.status_message.emit(
-                f"Tracking {total_signals} signals | {hearing_me_count} stations hear {self.my_call}"
+                f"{dial_display}Tracking {total_signals} signals | {hearing_me_count} hear {self.my_call}"
             )
+    
+    def _freq_to_band(self, freq):
+        """Convert frequency in Hz to band name."""
+        f = freq / 1_000_000
+        if 1.8 <= f <= 2.0: return "160m"
+        if 3.5 <= f <= 4.0: return "80m"
+        if 5.3 <= f <= 5.4: return "60m"
+        if 7.0 <= f <= 7.3: return "40m"
+        if 10.1 <= f <= 10.15: return "30m"
+        if 14.0 <= f <= 14.35: return "20m"
+        if 18.068 <= f <= 18.168: return "17m"
+        if 21.0 <= f <= 21.45: return "15m"
+        if 24.89 <= f <= 24.99: return "12m"
+        if 28.0 <= f <= 29.7: return "10m"
+        if 50.0 <= f <= 54.0: return "6m"
+        return "??m"

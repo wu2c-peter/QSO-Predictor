@@ -17,14 +17,20 @@ class BandMapWidget(QWidget):
         self.bandwidth = 3000
         
         # Data Containers
-        self.active_signals = [] 
-        self.remote_qrm = []     
+        self.active_signals = []   # Local decodes (what WE hear)
+        self.perspective_data = {  # Target perspective (tiered)
+            'tier1': [],  # Direct from target
+            'tier2': [],  # Same grid square
+            'tier3': [],  # Same field
+            'global': []  # Background
+        }
         
         # State
         self.best_offset = 1500
         self.current_tx_freq = 0
         self.target_freq = 0
-        self.target_call = ""    
+        self.target_call = ""
+        self.target_grid = ""
         
         self.timer = QTimer()
         self.timer.timeout.connect(self._tick)
@@ -34,7 +40,12 @@ class BandMapWidget(QWidget):
         self.target_call = call.strip().upper()
         self.repaint()
 
+    def set_target_grid(self, grid):
+        self.target_grid = (grid or "").strip().upper()
+        self.repaint()
+
     def update_signals(self, signals):
+        """Update local decode signals (what we hear)."""
         now = time.time()
         for sig in signals:
             try:
@@ -46,14 +57,50 @@ class BandMapWidget(QWidget):
                     })
             except: pass
 
-    def update_qrm(self, spots):
+    def update_perspective(self, perspective_data):
+        """
+        Update the target perspective data (tiered).
+        
+        perspective_data = {
+            'tier1': [...],  # Direct from target
+            'tier2': [...],  # Same grid square
+            'tier3': [...],  # Same field
+            'global': [...]  # Background
+        }
+        """
         now = time.time()
-        # Keep old QRM longer now (60s)
-        self.remote_qrm = [s for s in self.remote_qrm if now - s['seen'] < 60]
+        
+        # Process each tier
+        for tier_name in ['tier1', 'tier2', 'tier3', 'global']:
+            tier_spots = perspective_data.get(tier_name, [])
+            processed = []
+            for spot in tier_spots:
+                try:
+                    freq = spot.get('freq', 0)
+                    snr = spot.get('snr', -20)
+                    receiver = spot.get('receiver', '')
+                    processed.append({
+                        'freq': freq,
+                        'snr': snr,
+                        'receiver': receiver,
+                        'seen': now,
+                        'decay': 1.0,
+                        'tier': spot.get('tier', 4)
+                    })
+                except: pass
+            self.perspective_data[tier_name] = processed
+        
+        self.repaint()
+
+    # Legacy method for backward compatibility
+    def update_qrm(self, spots):
+        """Legacy method - converts to global tier."""
+        now = time.time()
         for s in spots:
-            s['seen'] = now 
+            s['seen'] = now
             s['decay'] = 1.0
-            self.remote_qrm.append(s)
+            s['tier'] = 4
+        self.perspective_data['global'] = spots
 
     def set_current_tx_freq(self, freq):
         self.current_tx_freq = freq
@@ -71,54 +118,56 @@ class BandMapWidget(QWidget):
     def _cleanup_data(self):
         now = time.time()
         
-        # --- FIXED: LONG PERSISTENCE LOGIC ---
-        # We keep signals for 60 seconds (4 cycles)
-        # This ensures "Even" stations are visible while you TX on "Even"
-        
-        # 1. Local Signals
+        # 1. Local Signals - 60 second persistence with decay
         self.active_signals = [s for s in self.active_signals if now - s['seen'] < 60]
         for s in self.active_signals:
             age = now - s['seen']
             if age < 14:
-                # Brand new: 100% opacity
-                s['decay'] = 1.0
-            elif age < 29:
-                # Previous Cycle: 80% opacity (High visibility during TX)
-                s['decay'] = 0.8
-            else:
-                # Older: Fade from 80% to 0% over the remaining 30s
-                s['decay'] = max(0, 0.8 - ((age - 29) / 30.0))
-            
-        # 2. Remote QRM (Same logic)
-        self.remote_qrm = [s for s in self.remote_qrm if now - s['seen'] < 60]
-        for s in self.remote_qrm:
-            age = now - s['seen']
-            if age < 14:
                 s['decay'] = 1.0
             elif age < 29:
                 s['decay'] = 0.8
             else:
                 s['decay'] = max(0, 0.8 - ((age - 29) / 30.0))
+        
+        # 2. Perspective data - same decay logic per tier
+        for tier_name in ['tier1', 'tier2', 'tier3', 'global']:
+            tier_list = self.perspective_data.get(tier_name, [])
+            tier_list = [s for s in tier_list if now - s.get('seen', 0) < 60]
+            for s in tier_list:
+                age = now - s.get('seen', now)
+                if age < 14:
+                    s['decay'] = 1.0
+                elif age < 29:
+                    s['decay'] = 0.8
+                else:
+                    s['decay'] = max(0, 0.8 - ((age - 29) / 30.0))
+            self.perspective_data[tier_name] = tier_list
 
     def _calculate_best_frequency(self):
         busy_map = np.zeros(self.bandwidth, dtype=bool)
-        # Only count signals that are reasonably fresh (last 30s) for gap detection
-        # We don't want to avoid a gap just because a ghost from 60s ago was there
         
+        # Mark local signals
         for s in self.active_signals:
-            if s['decay'] > 0.4: # Ignore very old ghosts
+            if s['decay'] > 0.4:
                 f = s['freq']
                 start = max(0, f - 30); end = min(self.bandwidth, f + 30)
                 busy_map[start:end] = True
-            
-        for s in self.remote_qrm:
-            if s['decay'] > 0.4:
-                f = s['freq']
-                start = max(0, f - 20); end = min(self.bandwidth, f + 20)
-                busy_map[start:end] = True
-            
-        busy_map[0:200] = True; busy_map[2800:3000] = True
         
+        # Mark perspective data (weight by tier - tier1 matters most)
+        tier_weights = {'tier1': 1.0, 'tier2': 0.8, 'tier3': 0.5, 'global': 0.3}
+        for tier_name, weight in tier_weights.items():
+            for s in self.perspective_data.get(tier_name, []):
+                if s.get('decay', 0) > 0.4 * weight:
+                    f = s.get('freq', 0)
+                    if 0 < f < self.bandwidth:
+                        start = max(0, f - 20); end = min(self.bandwidth, f + 20)
+                        busy_map[start:end] = True
+        
+        # Avoid edges
+        busy_map[0:200] = True
+        busy_map[2800:3000] = True
+        
+        # Find gaps
         gaps = []
         current_gap_start = -1
         for i in range(len(busy_map)):
@@ -129,18 +178,17 @@ class BandMapWidget(QWidget):
                     gaps.append((current_gap_start, i))
                     current_gap_start = -1
         if not gaps: return
+        
         gaps.sort(key=lambda x: x[1] - x[0], reverse=True)
         best_gap = gaps[0]
         center = (best_gap[0] + best_gap[1]) // 2
         self.best_offset = int((self.best_offset * 0.9) + (center * 0.1))
 
-    # --- HELPER: Normalize Callsigns for Matching ---
     def _normalize_call(self, call):
         if not call: return ""
         call = call.replace('<', '').replace('>', '').upper()
         if '/' in call: return max(call.split('/'), key=len)
         return call
-    # -----------------------------------------------
 
     def paintEvent(self, event):
         qp = QPainter(self)
@@ -158,52 +206,35 @@ class BandMapWidget(QWidget):
         qp.setPen(QColor("#1A1A1A"))
         qp.drawLine(0, int(h/2), w, int(h/2))
 
-        # 2. CATEGORIZE SIGNALS
-        blue_traffic = []
-        orange_pileup = []
-        red_threats = []
-        cyan_confirmed = []
-
-        def is_in_cluster(target_spot, all_spots):
-            tf = target_spot['freq']
-            count = 0
-            for other in all_spots:
-                if abs(other['freq'] - tf) < 40: count += 1
-            return count >= 4
-
-        target_core = self._normalize_call(self.target_call)
-
-        for q in self.remote_qrm:
-            freq = q.get('freq', 0)
-            receiver = q.get('receiver', '')
-            receiver_core = self._normalize_call(receiver)
-            
-            # Logic Checks
-            is_heard_by_target = False
-            if len(target_core) > 2:
-                if target_core == receiver_core: is_heard_by_target = True
-                elif target_core in receiver: is_heard_by_target = True
-            
-            is_direct_hit = False
-            if self.target_freq > 0 and abs(freq - self.target_freq) < 35:
-                is_direct_hit = True
-            
-            is_dense = is_in_cluster(q, self.remote_qrm)
-            
-            # Assign
-            if is_heard_by_target: cyan_confirmed.append(q)
-            elif is_direct_hit: red_threats.append(q)
-            elif is_dense: orange_pileup.append(q)
-            else: blue_traffic.append(q)
-
-        # 3. DRAW REMOTE LAYERS (Top)
+        # 2. DRAW PERSPECTIVE LAYERS (Top Half) - Back to Front
         qp.setPen(Qt.PenStyle.NoPen)
-        for q in blue_traffic: self._draw_bar(qp, q, w, h, QColor(0, 100, 255), 0.6, is_top=True)
-        for q in orange_pileup: self._draw_bar(qp, q, w, h, QColor(255, 140, 0), 0.9, is_top=True)
-        for q in red_threats: self._draw_bar(qp, q, w, h, QColor(255, 0, 0), 1.0, is_top=True)
-        for q in cyan_confirmed: self._draw_bar(qp, q, w, h, QColor(0, 255, 255), 1.0, is_top=True)
+        
+        # Layer 4: Global (dimmest) - Dark Blue
+        for spot in self.perspective_data.get('global', []):
+            self._draw_perspective_bar(qp, spot, w, h, QColor(40, 60, 100), 0.3)
+        
+        # Layer 3: Same Field - Blue
+        for spot in self.perspective_data.get('tier3', []):
+            self._draw_perspective_bar(qp, spot, w, h, QColor(60, 100, 180), 0.5)
+        
+        # Layer 2: Same Grid Square - Bright Blue
+        for spot in self.perspective_data.get('tier2', []):
+            self._draw_perspective_bar(qp, spot, w, h, QColor(80, 140, 255), 0.8)
+        
+        # Layer 1: Direct from Target - Cyan (highest priority)
+        for spot in self.perspective_data.get('tier1', []):
+            self._draw_perspective_bar(qp, spot, w, h, QColor(0, 255, 255), 1.0)
 
-        # 4. DRAW LOCAL LAYERS (Bottom)
+        # 3. DRAW COLLISION/THREAT OVERLAY
+        # Any tier1/tier2 spot near target freq is a collision
+        if self.target_freq > 0:
+            for tier_name in ['tier1', 'tier2']:
+                for spot in self.perspective_data.get(tier_name, []):
+                    freq = spot.get('freq', 0)
+                    if 0 < freq < self.bandwidth and abs(freq - self.target_freq) < 35:
+                        self._draw_perspective_bar(qp, spot, w, h, QColor(255, 0, 0), 1.0)
+
+        # 4. DRAW LOCAL LAYERS (Bottom Half)
         for s in self.active_signals:
             freq = s['freq']; snr = s['snr']; decay = s['decay']
             x = (freq / 3000) * w; width = (50 / 3000) * w 
@@ -242,16 +273,23 @@ class BandMapWidget(QWidget):
         # 6. LEGEND
         self._draw_legend(qp)
 
-    def _draw_bar(self, qp, q, w, h, base_color, opacity_mult, is_top=True):
-        freq = q.get('freq', 0); snr = q.get('snr', -20)
-        decay = q.get('decay', 1.0)
-        if freq == 0: return
+    def _draw_perspective_bar(self, qp, spot, w, h, base_color, opacity_mult):
+        """Draw a bar in the top half representing target perspective."""
+        freq = spot.get('freq', 0)
+        snr = spot.get('snr', -20)
+        decay = spot.get('decay', 1.0)
+        
+        if freq <= 0 or freq >= self.bandwidth:
+            return
         
         alpha = int(255 * decay * opacity_mult)
         color = QColor(base_color)
         color.setAlpha(alpha)
         
-        x = (freq / 3000) * w; width = (40 / 3000) * w 
+        x = (freq / 3000) * w
+        width = (40 / 3000) * w
+        
+        # Height based on SNR
         norm = max(0.1, min(1.0, (snr + 25) / 35))
         bar_h = (h * 0.45) * norm
         
@@ -261,24 +299,52 @@ class BandMapWidget(QWidget):
     def _draw_legend(self, qp):
         qp.setFont(QFont("Segoe UI", 9))
         
-        # Row 1
-        qp.setPen(QColor("#FF00FF")); qp.drawText(10, 20, "― Target")
+        # Row 1: Lines
+        qp.setPen(QColor("#FF00FF")); qp.drawText(10, 20, "— Target")
         qp.setPen(QColor("#FFFF00")); qp.drawText(80, 20, "··· TX")
-        qp.setPen(QColor("#00FF00")); qp.drawText(140, 20, "― Rec")
+        qp.setPen(QColor("#00FF00")); qp.drawText(140, 20, "— Rec")
         
-        # Row 2
-        qp.setPen(Qt.PenStyle.NoPen); qp.setBrush(QColor(0, 100, 255))
+        # Row 2: Perspective Tiers (Top Half - What Target Hears)
+        qp.setPen(Qt.PenStyle.NoPen)
+        
+        qp.setBrush(QColor(0, 255, 255))
         qp.drawRect(10, 30, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(22, 38, "Traffic")
+        qp.setPen(QColor("#DDD")); qp.drawText(22, 38, "Target Hears")
 
-        qp.setPen(Qt.PenStyle.NoPen); qp.setBrush(QColor(255, 140, 0))
-        qp.drawRect(70, 30, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(82, 38, "Cluster")
+        qp.setPen(Qt.PenStyle.NoPen)
+        qp.setBrush(QColor(80, 140, 255))
+        qp.drawRect(110, 30, 8, 8)
+        qp.setPen(QColor("#DDD")); qp.drawText(122, 38, "Grid")
 
-        qp.setPen(Qt.PenStyle.NoPen); qp.setBrush(QColor(255, 0, 0))
-        qp.drawRect(130, 30, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(142, 38, "Collision")
+        qp.setPen(Qt.PenStyle.NoPen)
+        qp.setBrush(QColor(60, 100, 180))
+        qp.drawRect(160, 30, 8, 8)
+        qp.setPen(QColor("#DDD")); qp.drawText(172, 38, "Field")
 
-        qp.setPen(Qt.PenStyle.NoPen); qp.setBrush(QColor(0, 255, 255))
-        qp.drawRect(200, 30, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(212, 38, "Confirmed")
+        qp.setPen(Qt.PenStyle.NoPen)
+        qp.setBrush(QColor(40, 60, 100))
+        qp.drawRect(210, 30, 8, 8)
+        qp.setPen(QColor("#DDD")); qp.drawText(222, 38, "Global")
+        
+        qp.setPen(Qt.PenStyle.NoPen)
+        qp.setBrush(QColor(255, 0, 0))
+        qp.drawRect(270, 30, 8, 8)
+        qp.setPen(QColor("#DDD")); qp.drawText(282, 38, "Collision")
+        
+        # Row 3: Local Signals (Bottom Half - What You Hear)
+        qp.setPen(QColor("#888")); qp.drawText(10, 52, "Local:")
+        
+        qp.setPen(Qt.PenStyle.NoPen)
+        qp.setBrush(QColor(0, 255, 0))
+        qp.drawRect(50, 44, 8, 8)
+        qp.setPen(QColor("#DDD")); qp.drawText(62, 52, ">0dB")
+
+        qp.setPen(Qt.PenStyle.NoPen)
+        qp.setBrush(QColor(255, 255, 0))
+        qp.drawRect(100, 44, 8, 8)
+        qp.setPen(QColor("#DDD")); qp.drawText(112, 52, ">-10")
+
+        qp.setPen(Qt.PenStyle.NoPen)
+        qp.setBrush(QColor(255, 50, 50))
+        qp.drawRect(155, 44, 8, 8)
+        qp.setPen(QColor("#DDD")); qp.drawText(167, 52, "Weak")

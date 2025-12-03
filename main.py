@@ -133,8 +133,20 @@ class TargetDashboard(QFrame):
             col = "#00FF00" if val > 75 else ("#FF5555" if val < 30 else "#DDDDDD")
             self.val_prob.setStyleSheet(f"color: {col}; font-weight: bold;")
         except: self.val_prob.setStyleSheet("")
-            
-        self.val_comp.setText(str(data.get('competition', '')))
+        
+        comp = str(data.get('competition', ''))
+        self.val_comp.setText(comp)
+        # Color-code competition status
+        if "CONNECTED" in comp:
+            self.val_comp.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
+        elif "PILEUP" in comp:
+            self.val_comp.setStyleSheet("color: #FF5555; font-weight: bold;")  # Red
+        elif "High" in comp:
+            self.val_comp.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
+        elif "Clear" in comp:
+            self.val_comp.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
+        else:
+            self.val_comp.setStyleSheet("color: #DDDDDD;")
 
     def update_rec(self, rec_freq, cur_freq):
         if str(rec_freq) == str(cur_freq) and str(rec_freq) != "----":
@@ -214,8 +226,20 @@ class DecodeTableModel(QAbstractTableModel):
                     if val > 75: return QColor("#00FF00")
                     elif val < 30: return QColor("#FF5555")
                 except: pass
+            if key == "competition":
+                comp = str(row_item.get('competition', ''))
+                if "CONNECTED" in comp:
+                    return QColor("#00FFFF")  # Cyan - target hears you!
+                elif "PILEUP" in comp:
+                    return QColor("#FF5555")  # Red - heavy competition
+                elif "High" in comp:
+                    return QColor("#FFA500")  # Orange - significant competition
 
         elif role == Qt.ItemDataRole.BackgroundRole:
+            # Highlight CONNECTED rows with a subtle background
+            comp = str(row_item.get('competition', ''))
+            if "CONNECTED" in comp:
+                return QColor("#004040")  # Teal background for connected
             if self.target_call and row_item.get('call') == self.target_call:
                 return QColor("#004444") 
 
@@ -295,6 +319,11 @@ class MainWindow(QMainWindow):
         self.analyzer = QSOAnalyzer(self.config)
         self.udp = UDPHandler(self.config)
         
+        # --- TARGET TRACKING STATE ---
+        self.current_target_call = ""
+        self.current_target_grid = ""
+        self.jtdx_last_dx_call = ""  # Track what JTDX last sent (separate from our selection)
+        
         if SOLAR_AVAILABLE:
             self.solar = SolarClient()
             self.solar_update_signal.connect(self.update_solar_ui)
@@ -306,6 +335,11 @@ class MainWindow(QMainWindow):
         self.buffer_timer = QTimer()
         self.buffer_timer.timeout.connect(self.process_buffer)
         self.buffer_timer.start(500) 
+        
+        # --- PERSPECTIVE REFRESH TIMER ---
+        self.perspective_timer = QTimer()
+        self.perspective_timer.timeout.connect(self.refresh_target_perspective)
+        self.perspective_timer.start(3000)  # Refresh every 3 seconds
         
         self.udp.start()
         
@@ -463,17 +497,43 @@ class MainWindow(QMainWindow):
         rec = self.band_map.best_offset
         self.dashboard.update_rec(rec, cur_tx)
         
+        # --- TARGET HANDLING ---
+        # Only update our target when JTDX sends a NEW dx_call
+        # (not just repeating the same one, which would override manual table selection)
         dx_call = status.get('dx_call', '')
-        if dx_call:
-            self.dashboard.lbl_target.setText(dx_call)
-            self.model.set_target_call(dx_call)
-            for row in self.model._data:
-                if row.get('call') == dx_call:
-                    self.dashboard.update_data(row)
-                    self.band_map.set_target_freq(row.get('freq', 0))
-                    break
-        else:
-            self.model.set_target_call(None)
+        
+        if dx_call != self.jtdx_last_dx_call:
+            # JTDX user selected something NEW (or cleared selection)
+            self.jtdx_last_dx_call = dx_call
+            
+            if dx_call:
+                # Update to the new JTDX target
+                self.dashboard.lbl_target.setText(dx_call)
+                self.model.set_target_call(dx_call)
+                
+                # Find target in decode list
+                target_grid = ""
+                target_freq = 0
+                for row in self.model._data:
+                    if row.get('call') == dx_call:
+                        self.dashboard.update_data(row)
+                        target_freq = row.get('freq', 0)
+                        target_grid = row.get('grid', '')
+                        break
+                
+                # Store target state for perspective refresh
+                self.current_target_call = dx_call
+                self.current_target_grid = target_grid
+                
+                # Update band map
+                self.band_map.set_target_freq(target_freq)
+                self.band_map.set_target_call(dx_call)
+                self.band_map.set_target_grid(target_grid)
+                
+                # Trigger immediate perspective update
+                self._update_perspective_display()
+            # Note: If JTDX clears dx_call, we don't clear our target
+            # (user may have manually selected something in the table)
 
  
     def on_row_click(self, index):
@@ -482,32 +542,68 @@ class MainWindow(QMainWindow):
             data = self.model._data[row]
             self.dashboard.update_data(data)
             
-            # 1. Update Target Info
-            self.band_map.set_target_freq(data.get('freq', 0))
-            self.band_map.set_target_call(data.get('call', ''))
+            target_call = data.get('call', '')
+            target_grid = data.get('grid', '')
+            target_freq = data.get('freq', 0)
             
-            # 2. Get GLOBAL Band Traffic (The Fix)
-            if self.analyzer.current_dial_freq > 0:
-                # Use the new "Get All" function
-                all_spots = self.analyzer.get_band_spots()
-                
-                qrm_audio_list = []
-                for spot in all_spots:
-                    offset = int(spot['freq']) - self.analyzer.current_dial_freq
+            # --- STORE TARGET STATE FOR PERIODIC REFRESH ---
+            self.current_target_call = target_call
+            self.current_target_grid = target_grid
+            
+            # Update dashboard and table highlighting
+            self.dashboard.lbl_target.setText(target_call)
+            self.model.set_target_call(target_call)
+            
+            # 1. Update Target Info on Band Map
+            self.band_map.set_target_freq(target_freq)
+            self.band_map.set_target_call(target_call)
+            self.band_map.set_target_grid(target_grid)
+            
+            # 2. Get TARGET PERSPECTIVE (tiered by geographic proximity)
+            self._update_perspective_display()
+
+
+
+    def refresh_target_perspective(self):
+        """Called periodically by timer to keep target perspective current."""
+        if self.current_target_call:
+            self._update_perspective_display()
+
+    def _update_perspective_display(self):
+        """Fetch and display target perspective data on band map."""
+        if self.analyzer.current_dial_freq > 0 and self.current_target_call:
+            dial = self.analyzer.current_dial_freq
+            
+            # Get tiered perspective data
+            perspective = self.analyzer.get_target_perspective(
+                self.current_target_call, 
+                self.current_target_grid
+            )
+            
+            # Convert RF frequencies to audio offsets for each tier
+            converted = {}
+            for tier_name in ['tier1', 'tier2', 'tier3', 'global']:
+                tier_spots = perspective.get(tier_name, [])
+                converted[tier_name] = []
+                for spot in tier_spots:
+                    rf_freq = int(spot.get('freq', 0))
+                    offset = rf_freq - dial
                     if 0 <= offset <= 3000:
-                        qrm_audio_list.append({
+                        converted[tier_name].append({
                             'freq': offset,
                             'snr': int(spot.get('snr', -10)),
-                            'receiver': spot.get('receiver', '') 
-                        }) 
-                
-                # Update map
-                self.band_map.remote_qrm = [] 
-                self.band_map.update_qrm(qrm_audio_list)
-                
-            else:
-                self.band_map.remote_qrm = []
-                self.band_map.repaint()
+                            'receiver': spot.get('receiver', ''),
+                            'tier': spot.get('tier', 4)
+                        })
+            
+            # Update band map with tiered perspective
+            self.band_map.update_perspective(converted)
+            
+        else:
+            # No dial freq or no target - clear perspective
+            self.band_map.update_perspective({
+                'tier1': [], 'tier2': [], 'tier3': [], 'global': []
+            })
 
 
 
