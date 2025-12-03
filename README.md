@@ -2,7 +2,7 @@
 
 **Real-Time Tactical Assistant for FT8 & FT4** *Copyright (C) 2025 Peter Hirst (WU2C)*
 
-**Current Version:** v1.2.0 (The Target Perspective Update)
+**Current Version:** See [Releases](https://github.com/wu2c-peter/qso-predictor/releases) for latest
 
 QSO Predictor is a "Moneyball" tool for digital amateur radio. It sits between **WSJT-X/JTDX** and the internet, analyzing live data to tell you **who you can work** and **where to transmit** to maximize your success rate.
 
@@ -106,9 +106,22 @@ The **Path** column in the decode table shows whether you have a confirmed signa
 
 This tells you at a glance which stations are reachable. Prioritize **CONNECTED** (cyan) and **Path Open** (green) stations — you know propagation is working.
 
-### Reading the Dashboard Competition
+**Note:** Path status requires you to have transmitted recently — PSK Reporter needs spots of your signal. The feature is most useful once you're actively operating.
 
-When you select a target station (by clicking in the table or double-clicking in JTDX), the **Competition** field in the dashboard shows QRM at the target's location using the tiered perspective system:
+### Reading the Dashboard (Selected Target)
+
+When you select a target station (by clicking in the table or double-clicking in JTDX), the dashboard shows two key fields:
+
+**Path** — Same as the table column, but for your selected target:
+
+| Status | Color | Meaning |
+| :--- | :--- | :--- |
+| **CONNECTED** | Cyan | Target has heard you — you're in! |
+| **Path Open** | Green | Station near target heard you — propagation confirmed |
+| **No Path** | Orange | Reporters exist but haven't heard you |
+| **No Nearby Reporters** | Gray | No data from that region |
+
+**Competition** — QRM at the target's location using the tiered perspective system:
 
 | Status | Color | Meaning |
 | :--- | :--- | :--- |
@@ -169,7 +182,7 @@ The "Prob %" column in the decode table estimates your chance of completing a QS
 
 ## Project History & Changelog
 
-### v1.2.0 - The Target Perspective Update (Current)
+### v1.2.x - The Target Perspective Update
 
 * **Major Feature: Geographic Perspective Engine**
     * Band map now shows what the *target* hears, not global activity.
@@ -196,11 +209,17 @@ The "Prob %" column in the decode table estimates your chance of completing a QS
     * Path column updates every 2 seconds for all rows.
 
 * **UI Improvements**
+    * Dashboard now shows both Path and Competition (stacked layout).
     * Updated band map legend with local signal SNR colors.
     * Collision detection now focuses on Tier 1/2 signals (the ones that matter).
     * Info bar shows current band and dial frequency.
     * CONNECTED rows highlighted with cyan text and teal background.
     * "Who hears me" count now uses 3-minute window for tactical relevance.
+
+* **Technical Improvements**
+    * Config file now stored in platform-appropriate location (AppData on Windows, ~/.config on Linux).
+    * Version number auto-detected from git tags.
+    * Help menu with links to documentation and About dialog.
 
 ### v1.1.0 - The Tactical Update
 

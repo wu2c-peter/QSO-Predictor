@@ -121,7 +121,43 @@ class TargetDashboard(QFrame):
         self.val_msg.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.val_grid = add_field("Grid", 60)
         self.val_prob = add_field("Prob %", 70)
-        self.val_comp = add_field("Competition", 160)
+        
+        # Stacked Path / Competition field
+        path_comp_container = QWidget()
+        path_comp_vbox = QVBoxLayout(path_comp_container)
+        path_comp_vbox.setContentsMargins(0,0,0,0)
+        path_comp_vbox.setSpacing(2)
+        
+        # Path row
+        path_row = QWidget()
+        path_hbox = QHBoxLayout(path_row)
+        path_hbox.setContentsMargins(0,0,0,0)
+        path_hbox.setSpacing(4)
+        lbl_path_title = QLabel("Path")
+        lbl_path_title.setObjectName("header")
+        lbl_path_title.setFixedWidth(70)
+        self.val_path = QLabel("--")
+        self.val_path.setObjectName("data")
+        path_hbox.addWidget(lbl_path_title)
+        path_hbox.addWidget(self.val_path)
+        path_comp_vbox.addWidget(path_row)
+        
+        # Competition row
+        comp_row = QWidget()
+        comp_hbox = QHBoxLayout(comp_row)
+        comp_hbox.setContentsMargins(0,0,0,0)
+        comp_hbox.setSpacing(4)
+        lbl_comp_title = QLabel("Competition")
+        lbl_comp_title.setObjectName("header")
+        lbl_comp_title.setFixedWidth(70)
+        self.val_comp = QLabel("--")
+        self.val_comp.setObjectName("data")
+        comp_hbox.addWidget(lbl_comp_title)
+        comp_hbox.addWidget(self.val_comp)
+        path_comp_vbox.addWidget(comp_row)
+        
+        path_comp_container.setFixedWidth(180)
+        layout.addWidget(path_comp_container)
 
         layout.addSpacing(10)
         self.lbl_rec = QLabel()
@@ -140,7 +176,10 @@ class TargetDashboard(QFrame):
             self.val_msg.setText("")
             self.val_grid.setText("--")
             self.val_prob.setText("--")
+            self.val_path.setText("--")
+            self.val_path.setStyleSheet("")
             self.val_comp.setText("--")
+            self.val_comp.setStyleSheet("")
             return
 
         self.lbl_target.setText(data.get('call', '???'))
@@ -166,6 +205,20 @@ class TargetDashboard(QFrame):
             col = "#00FF00" if val > 75 else ("#FF5555" if val < 30 else "#DDDDDD")
             self.val_prob.setStyleSheet(f"color: {col}; font-weight: bold;")
         except: self.val_prob.setStyleSheet("")
+        
+        # Path status
+        path = str(data.get('path', '--'))
+        self.val_path.setText(path)
+        if "CONNECTED" in path:
+            self.val_path.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
+        elif "Path Open" in path:
+            self.val_path.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
+        elif "No Path" in path:
+            self.val_path.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
+        elif "No Nearby" in path:
+            self.val_path.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
+        else:
+            self.val_path.setStyleSheet("color: #DDDDDD;")
         
         comp = str(data.get('competition', ''))
         self.val_comp.setText(comp)
