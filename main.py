@@ -17,20 +17,29 @@ from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon
 
 def get_version():
     """Get version from git tag or VERSION file."""
-    # Try git first (works for developers running from repo)
-    try:
-        result = subprocess.run(
-            ["git", "describe", "--tags", "--always"],
-            capture_output=True, text=True, cwd=Path(__file__).parent
-        )
-        if result.returncode == 0:
-            return result.stdout.strip().lstrip('v')
-    except:
-        pass
+    # Determine base path (handles PyInstaller frozen exe)
+    if getattr(sys, 'frozen', False):
+        # Running as compiled exe
+        base_path = Path(sys._MEIPASS)
+    else:
+        # Running as script
+        base_path = Path(__file__).parent
     
-    # Fall back to VERSION file (works for zip downloads)
+    # Try git first (works for developers running from repo)
+    if not getattr(sys, 'frozen', False):
+        try:
+            result = subprocess.run(
+                ["git", "describe", "--tags", "--always"],
+                capture_output=True, text=True, cwd=base_path
+            )
+            if result.returncode == 0:
+                return result.stdout.strip().lstrip('v')
+        except:
+            pass
+    
+    # Fall back to VERSION file (works for zip downloads and frozen exe)
     try:
-        return (Path(__file__).parent / "VERSION").read_text().strip()
+        return (base_path / "VERSION").read_text().strip()
     except:
         return "dev"
 
