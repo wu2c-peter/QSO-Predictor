@@ -48,7 +48,8 @@ class BandMapWidget(QWidget):
 
     def update_qrm(self, spots):
         now = time.time()
-        self.remote_qrm = [s for s in self.remote_qrm if now - s['seen'] < 45]
+        # Keep old QRM longer now (60s)
+        self.remote_qrm = [s for s in self.remote_qrm if now - s['seen'] < 60]
         for s in spots:
             s['seen'] = now 
             s['decay'] = 1.0
@@ -69,23 +70,53 @@ class BandMapWidget(QWidget):
 
     def _cleanup_data(self):
         now = time.time()
-        self.active_signals = [s for s in self.active_signals if now - s['seen'] < 15]
+        
+        # --- FIXED: LONG PERSISTENCE LOGIC ---
+        # We keep signals for 60 seconds (4 cycles)
+        # This ensures "Even" stations are visible while you TX on "Even"
+        
+        # 1. Local Signals
+        self.active_signals = [s for s in self.active_signals if now - s['seen'] < 60]
         for s in self.active_signals:
-            s['decay'] = max(0, 1.0 - ((now - s['seen']) / 15.0))
-        self.remote_qrm = [s for s in self.remote_qrm if now - s['seen'] < 45]
+            age = now - s['seen']
+            if age < 14:
+                # Brand new: 100% opacity
+                s['decay'] = 1.0
+            elif age < 29:
+                # Previous Cycle: 80% opacity (High visibility during TX)
+                s['decay'] = 0.8
+            else:
+                # Older: Fade from 80% to 0% over the remaining 30s
+                s['decay'] = max(0, 0.8 - ((age - 29) / 30.0))
+            
+        # 2. Remote QRM (Same logic)
+        self.remote_qrm = [s for s in self.remote_qrm if now - s['seen'] < 60]
         for s in self.remote_qrm:
-            s['decay'] = max(0, 1.0 - ((now - s['seen']) / 45.0))
+            age = now - s['seen']
+            if age < 14:
+                s['decay'] = 1.0
+            elif age < 29:
+                s['decay'] = 0.8
+            else:
+                s['decay'] = max(0, 0.8 - ((age - 29) / 30.0))
 
     def _calculate_best_frequency(self):
         busy_map = np.zeros(self.bandwidth, dtype=bool)
+        # Only count signals that are reasonably fresh (last 30s) for gap detection
+        # We don't want to avoid a gap just because a ghost from 60s ago was there
+        
         for s in self.active_signals:
-            f = s['freq']
-            start = max(0, f - 30); end = min(self.bandwidth, f + 30)
-            busy_map[start:end] = True
+            if s['decay'] > 0.4: # Ignore very old ghosts
+                f = s['freq']
+                start = max(0, f - 30); end = min(self.bandwidth, f + 30)
+                busy_map[start:end] = True
+            
         for s in self.remote_qrm:
-            f = s['freq']
-            start = max(0, f - 20); end = min(self.bandwidth, f + 20)
-            busy_map[start:end] = True
+            if s['decay'] > 0.4:
+                f = s['freq']
+                start = max(0, f - 20); end = min(self.bandwidth, f + 20)
+                busy_map[start:end] = True
+            
         busy_map[0:200] = True; busy_map[2800:3000] = True
         
         gaps = []
@@ -123,15 +154,15 @@ class BandMapWidget(QWidget):
             x = (i / 3000) * w
             qp.drawLine(int(x), 0, int(x), h)
             
-        # Draw the "Safety Gap" (Center Line)
+        # Safety Gap (Center Line)
         qp.setPen(QColor("#1A1A1A"))
         qp.drawLine(0, int(h/2), w, int(h/2))
 
-        # 2. CATEGORIZE SIGNALS (Logic + Physics)
+        # 2. CATEGORIZE SIGNALS
         blue_traffic = []
         orange_pileup = []
         red_threats = []
-        cyan_confirmed = [] # <--- NEW COLOR (Cyan instead of Gold)
+        cyan_confirmed = []
 
         def is_in_cluster(target_spot, all_spots):
             tf = target_spot['freq']
@@ -147,49 +178,32 @@ class BandMapWidget(QWidget):
             receiver = q.get('receiver', '')
             receiver_core = self._normalize_call(receiver)
             
-            # 1. INTELLIGENCE CHECK: Is the Target hearing this?
+            # Logic Checks
             is_heard_by_target = False
             if len(target_core) > 2:
                 if target_core == receiver_core: is_heard_by_target = True
                 elif target_core in receiver: is_heard_by_target = True
             
-            # 2. PHYSICS CHECK: Collision or Pileup?
             is_direct_hit = False
             if self.target_freq > 0 and abs(freq - self.target_freq) < 35:
                 is_direct_hit = True
             
             is_dense = is_in_cluster(q, self.remote_qrm)
             
-            # 3. ASSIGN PRIORITY
-            if is_heard_by_target:
-                cyan_confirmed.append(q)
-            elif is_direct_hit:
-                red_threats.append(q)
-            elif is_dense:
-                orange_pileup.append(q)
-            else:
-                blue_traffic.append(q)
+            # Assign
+            if is_heard_by_target: cyan_confirmed.append(q)
+            elif is_direct_hit: red_threats.append(q)
+            elif is_dense: orange_pileup.append(q)
+            else: blue_traffic.append(q)
 
-        # 3. DRAW TOP LAYERS (Remote) - Max Height 45%
-        
-        # L1: Blue (Traffic) - Faint
+        # 3. DRAW REMOTE LAYERS (Top)
         qp.setPen(Qt.PenStyle.NoPen)
-        for q in blue_traffic:
-            self._draw_bar(qp, q, w, h, QColor(0, 100, 255), 0.6, is_top=True)
+        for q in blue_traffic: self._draw_bar(qp, q, w, h, QColor(0, 100, 255), 0.6, is_top=True)
+        for q in orange_pileup: self._draw_bar(qp, q, w, h, QColor(255, 140, 0), 0.9, is_top=True)
+        for q in red_threats: self._draw_bar(qp, q, w, h, QColor(255, 0, 0), 1.0, is_top=True)
+        for q in cyan_confirmed: self._draw_bar(qp, q, w, h, QColor(0, 255, 255), 1.0, is_top=True)
 
-        # L2: Orange (Pileup) - Opaque
-        for q in orange_pileup:
-            self._draw_bar(qp, q, w, h, QColor(255, 140, 0), 0.9, is_top=True)
-
-        # L3: Red (Collision) - Bright
-        for q in red_threats:
-            self._draw_bar(qp, q, w, h, QColor(255, 0, 0), 1.0, is_top=True)
-            
-        # L4: Cyan (Confirmed Heard) - THE STAR
-        for q in cyan_confirmed:
-            self._draw_bar(qp, q, w, h, QColor(0, 255, 255), 1.0, is_top=True)
-
-        # 4. DRAW BOTTOM LAYERS (Local) - Max Height 45%
+        # 4. DRAW LOCAL LAYERS (Bottom)
         for s in self.active_signals:
             freq = s['freq']; snr = s['snr']; decay = s['decay']
             x = (freq / 3000) * w; width = (50 / 3000) * w 
@@ -198,8 +212,7 @@ class BandMapWidget(QWidget):
             elif snr > -10: col = QColor(255, 255, 0, alpha)
             else: col = QColor(255, 50, 50, alpha)          
             
-            # --- NEW HEIGHT LOGIC (Capped at 45%) ---
-            norm = max(0, min(1, (snr + 24) / 44)) # 0.0 to 1.0
+            norm = max(0, min(1, (snr + 24) / 44))
             bar_h = (h * 0.45) * norm
             
             qp.setBrush(QBrush(col))
@@ -210,7 +223,6 @@ class BandMapWidget(QWidget):
             x = (self.target_freq / 3000) * w
             qp.setPen(QPen(QColor("#FF00FF"), 2))
             qp.drawLine(int(x), 0, int(x), h)
-            # Collision Box
             qp.setBrush(QColor(255, 0, 0, 30)); qp.setPen(Qt.PenStyle.NoPen)
             qp.drawRect(QRectF(x-15, 0, 30, h))
 
@@ -240,9 +252,6 @@ class BandMapWidget(QWidget):
         color.setAlpha(alpha)
         
         x = (freq / 3000) * w; width = (40 / 3000) * w 
-        
-        # --- NEW HEIGHT LOGIC (Capped at 45%) ---
-        # Map -30dB...0dB...+10dB to 0.1...0.9 range, then scale to 45% of screen
         norm = max(0.1, min(1.0, (snr + 25) / 35))
         bar_h = (h * 0.45) * norm
         
@@ -257,23 +266,19 @@ class BandMapWidget(QWidget):
         qp.setPen(QColor("#FFFF00")); qp.drawText(80, 20, "··· TX")
         qp.setPen(QColor("#00FF00")); qp.drawText(140, 20, "― Rec")
         
-        # Row 2 (Tuned Legend)
-        # Blue
+        # Row 2
         qp.setPen(Qt.PenStyle.NoPen); qp.setBrush(QColor(0, 100, 255))
         qp.drawRect(10, 30, 8, 8)
         qp.setPen(QColor("#DDD")); qp.drawText(22, 38, "Traffic")
 
-        # Orange
         qp.setPen(Qt.PenStyle.NoPen); qp.setBrush(QColor(255, 140, 0))
         qp.drawRect(70, 30, 8, 8)
         qp.setPen(QColor("#DDD")); qp.drawText(82, 38, "Cluster")
 
-        # Red
         qp.setPen(Qt.PenStyle.NoPen); qp.setBrush(QColor(255, 0, 0))
         qp.drawRect(130, 30, 8, 8)
         qp.setPen(QColor("#DDD")); qp.drawText(142, 38, "Collision")
 
-        # Cyan
         qp.setPen(Qt.PenStyle.NoPen); qp.setBrush(QColor(0, 255, 255))
         qp.drawRect(200, 30, 8, 8)
         qp.setPen(QColor("#DDD")); qp.drawText(212, 38, "Confirmed")
