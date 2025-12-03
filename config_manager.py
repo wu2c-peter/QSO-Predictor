@@ -13,9 +13,28 @@
 
 
 import configparser
-import os
+import sys
+from pathlib import Path
 
-CONFIG_FILE = 'qso_predictor.ini'
+
+def get_config_dir():
+    """Get platform-appropriate config directory."""
+    if sys.platform == "win32":
+        # Windows: AppData/Roaming
+        base = Path.home() / "AppData" / "Roaming"
+    elif sys.platform == "darwin":
+        # macOS: ~/Library/Application Support
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        # Linux: ~/.config
+        base = Path.home() / ".config"
+    
+    config_dir = base / "QSO Predictor"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+
+CONFIG_FILE = get_config_dir() / 'qso_predictor.ini'
 
 DEFAULT_CONFIG = {
     'NETWORK': {
@@ -42,7 +61,7 @@ class ConfigManager:
         self.load_config()
 
     def load_config(self):
-        if not os.path.exists(CONFIG_FILE):
+        if not CONFIG_FILE.exists():
             self.create_default_config()
         self.config.read(CONFIG_FILE)
 
@@ -70,4 +89,3 @@ class ConfigManager:
             return [int(p.strip()) for p in ports_str.split(',') if p.strip()]
         except ValueError:
             return []
-
