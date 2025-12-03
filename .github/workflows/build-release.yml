@@ -66,11 +66,15 @@ jobs:
             
             Extract the zip and run `QSO Predictor.exe`. No Python installation required.
             
+            ### First Run (Windows)
+            - Windows SmartScreen may warn about an unrecognized app. Click **"More info"** → **"Run anyway"**.
+            - If it won't start, right-click → **"Run as administrator"** once. After the first run, it launches normally.
+            
             ### Requirements
             - Windows 10/11
             - WSJT-X or JTDX configured for UDP output
             
-            ### First Time Setup
+            ### Setup
             1. Extract the zip to a folder
             2. Run `QSO Predictor.exe`
             3. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = 127.0.0.1, Port = 2237

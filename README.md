@@ -2,11 +2,20 @@
 
 **Real-Time Tactical Assistant for FT8 & FT4** *Copyright (C) 2025 Peter Hirst (WU2C)*
 
-**Current Version:** v1.2.1 (The Target Perspective Update)
+**Current Version:** v1.2.0 (The Target Perspective Update)
 
 QSO Predictor is a "Moneyball" tool for digital amateur radio. It sits between **WSJT-X/JTDX** and the internet, analyzing live data to tell you **who you can work** and **where to transmit** to maximize your success rate.
 
 Unlike standard mapping tools, this is a **Tactical Dashboard**. It calculates probabilities based on signal paths, pileup intensity, and remote QRM — **from the perspective of the station you're trying to work.**
+
+-----
+
+## Quick Start (Windows)
+
+1. Download the latest `.zip` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases)
+2. Extract and run `QSO Predictor.exe`
+3. **First run:** Windows SmartScreen may warn about an unrecognized app. Click "More info" → "Run anyway". If it won't start, right-click → "Run as administrator" once. After the first run, it launches normally.
+4. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`
 
 -----
 
