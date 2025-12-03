@@ -2,7 +2,7 @@
 
 **Real-Time Tactical Assistant for FT8 & FT4** *Copyright (C) 2025 Peter Hirst (WU2C)*
 
-**Current Version:** v1.2.0 (The Target Perspective Update)
+**Current Version:** v1.2.1 (The Target Perspective Update)
 
 QSO Predictor is a "Moneyball" tool for digital amateur radio. It sits between **WSJT-X/JTDX** and the internet, analyzing live data to tell you **who you can work** and **where to transmit** to maximize your success rate.
 

@@ -2,14 +2,38 @@
 # Copyright (C) 2025 [Peter Hirst/WU2C]
 
 import ctypes
+import subprocess
 import sys
 import threading
+import webbrowser
+from pathlib import Path
 from collections import deque
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QTableView, QLabel, QHeaderView, QSplitter, 
                              QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, QSystemTrayIcon, QMenu)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
 from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon
+
+
+def get_version():
+    """Get version from git tag or VERSION file."""
+    # Try git first (works for developers running from repo)
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--always"],
+            capture_output=True, text=True, cwd=Path(__file__).parent
+        )
+        if result.returncode == 0:
+            return result.stdout.strip().lstrip('v')
+    except:
+        pass
+    
+    # Fall back to VERSION file (works for zip downloads)
+    try:
+        return (Path(__file__).parent / "VERSION").read_text().strip()
+    except:
+        return "dev"
+
 
 try:
     from config_manager import ConfigManager
@@ -314,7 +338,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config = ConfigManager()
-        self.setWindowTitle("QSO Predictor by WU2C")
+        self.setWindowTitle(f"QSO Predictor v{get_version()} by WU2C")
         self.resize(1100, 800)
         
         geo = self.config.get('WINDOW', 'geometry')
@@ -447,6 +471,17 @@ class MainWindow(QMainWindow):
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+        
+        # Help Menu
+        help_menu = menu.addMenu("Help")
+        wiki_action = QAction("Documentation (Wiki)", self)
+        wiki_action.setShortcut(QKeySequence("F1"))
+        wiki_action.triggered.connect(self.open_wiki)
+        help_menu.addAction(wiki_action)
+        
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
 
         # --- ICON SETUP ---
         app_icon = QIcon("icon.ico")
@@ -661,6 +696,21 @@ class MainWindow(QMainWindow):
             self.udp = UDPHandler(self.config)
             self.udp.start()
             self.setup_connections()
+
+    def open_wiki(self):
+        """Open the GitHub wiki in the default browser."""
+        webbrowser.open("https://github.com/wu2c-peter/qso-predictor/wiki")
+    
+    def show_about(self):
+        """Show about dialog."""
+        version = get_version()
+        QMessageBox.about(self, "About QSO Predictor",
+            f"<h2>QSO Predictor v{version}</h2>"
+            f"<p>Real-Time Tactical Assistant for FT8 & FT4</p>"
+            f"<p>Copyright © 2025 Peter Hirst (WU2C)</p>"
+            f"<p>Licensed under GNU GPL v3</p>"
+            f"<p><a href='https://github.com/wu2c-peter/qso-predictor'>GitHub Repository</a></p>"
+        )
 
     def fetch_solar_data(self):
         if not SOLAR_AVAILABLE: return
