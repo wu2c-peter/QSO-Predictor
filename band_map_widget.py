@@ -244,35 +244,45 @@ class BandMapWidget(QWidget):
         qp.setPen(QColor("#1A1A1A"))
         qp.drawLine(0, int(h/2), w, int(h/2))
 
-        # 2. DRAW PERSPECTIVE LAYERS (Top Half) - Back to Front
-        qp.setPen(Qt.PenStyle.NoPen)
-        
-        # Layer 4: Global (dimmest) - Dark Blue
-        for spot in self.perspective_data.get('global', []):
-            self._draw_perspective_bar(qp, spot, w, h, QColor(40, 60, 100), 0.3)
-        
-        # Layer 3: Same Field - Blue
-        for spot in self.perspective_data.get('tier3', []):
-            self._draw_perspective_bar(qp, spot, w, h, QColor(60, 100, 180), 0.5)
-        
-        # Layer 2: Same Grid Square - Bright Blue
-        for spot in self.perspective_data.get('tier2', []):
-            self._draw_perspective_bar(qp, spot, w, h, QColor(80, 140, 255), 0.8)
-        
-        # Layer 1: Direct from Target - Cyan (highest priority)
-        for spot in self.perspective_data.get('tier1', []):
-            self._draw_perspective_bar(qp, spot, w, h, QColor(0, 255, 255), 1.0)
+        # 2. PLACEHOLDER TEXT if no target selected
+        if not self.target_call:
+            qp.setPen(QColor("#555"))
+            qp.setFont(QFont("Segoe UI", 11))
+            qp.drawText(
+                QRectF(0, 0, w, h/2),
+                Qt.AlignmentFlag.AlignCenter,
+                "Select a target station to see their perspective\nClick a row above or double-click in WSJT-X"
+            )
+        else:
+            # 3. DRAW PERSPECTIVE LAYERS (Top Half) - Back to Front
+            qp.setPen(Qt.PenStyle.NoPen)
+            
+            # Layer 4: Global (dimmest) - Dark Blue
+            for spot in self.perspective_data.get('global', []):
+                self._draw_perspective_bar(qp, spot, w, h, QColor(40, 60, 100), 0.3)
+            
+            # Layer 3: Same Field - Blue
+            for spot in self.perspective_data.get('tier3', []):
+                self._draw_perspective_bar(qp, spot, w, h, QColor(60, 100, 180), 0.5)
+            
+            # Layer 2: Same Grid Square - Bright Blue
+            for spot in self.perspective_data.get('tier2', []):
+                self._draw_perspective_bar(qp, spot, w, h, QColor(80, 140, 255), 0.8)
+            
+            # Layer 1: Direct from Target - Cyan (highest priority)
+            for spot in self.perspective_data.get('tier1', []):
+                self._draw_perspective_bar(qp, spot, w, h, QColor(0, 255, 255), 1.0)
 
-        # 3. DRAW COLLISION/THREAT OVERLAY
-        # Any tier1/tier2 spot near target freq is a collision
-        if self.target_freq > 0:
-            for tier_name in ['tier1', 'tier2']:
-                for spot in self.perspective_data.get(tier_name, []):
-                    freq = spot.get('freq', 0)
-                    if 0 < freq < self.bandwidth and abs(freq - self.target_freq) < 35:
-                        self._draw_perspective_bar(qp, spot, w, h, QColor(255, 0, 0), 1.0)
+            # 4. DRAW COLLISION/THREAT OVERLAY
+            # Any tier1/tier2 spot near target freq is a collision
+            if self.target_freq > 0:
+                for tier_name in ['tier1', 'tier2']:
+                    for spot in self.perspective_data.get(tier_name, []):
+                        freq = spot.get('freq', 0)
+                        if 0 < freq < self.bandwidth and abs(freq - self.target_freq) < 35:
+                            self._draw_perspective_bar(qp, spot, w, h, QColor(255, 0, 0), 1.0)
 
-        # 4. DRAW LOCAL LAYERS (Bottom Half)
+        # 5. DRAW LOCAL LAYERS (Bottom Half) - always shown
         for s in self.active_signals:
             freq = s['freq']; snr = s['snr']; decay = s['decay']
             x = (freq / 3000) * w; width = (50 / 3000) * w 
@@ -287,7 +297,7 @@ class BandMapWidget(QWidget):
             qp.setBrush(QBrush(col))
             qp.drawRect(QRectF(x - (width/2), h - bar_h, width, bar_h))
 
-        # 5. OVERLAYS
+        # 6. OVERLAYS
         if self.target_freq > 0:
             x = (self.target_freq / 3000) * w
             qp.setPen(QPen(QColor("#FF00FF"), 2))
@@ -308,7 +318,7 @@ class BandMapWidget(QWidget):
             qp.drawLine(int(x), 0, int(x), h)
             qp.drawLine(int(x)-4, 0, int(x)+4, 0)
             
-        # 6. LEGEND
+        # 7. LEGEND
         self._draw_legend(qp)
 
     def _draw_perspective_bar(self, qp, spot, w, h, base_color, opacity_mult):
