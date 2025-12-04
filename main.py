@@ -945,13 +945,15 @@ class MainWindow(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
-    # --- ADD THIS BLOCK ---
-    myappid = 'wu2c.qsopredictor.v1.3' # Arbitrary unique ID
-    try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    except ImportError:
-        pass
-    # ----------------------
+    # Set Windows taskbar app ID (Windows only)
+    import sys
+    if sys.platform == 'win32':
+        try:
+            myappid = 'wu2c.qsopredictor.v1.3'
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception:
+            pass
+    
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = MainWindow()

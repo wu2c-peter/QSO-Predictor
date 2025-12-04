@@ -1050,13 +1050,14 @@ class MainWindow(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
-    # --- SET APP ID FOR WINDOWS TASKBAR ---
-    myappid = 'wu2c.qsopredictor.v2.0'  # Updated for v2.0
-    try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    except:
-        pass
-    # ----------------------
+    # Set Windows taskbar app ID (Windows only)
+    if sys.platform == 'win32':
+        try:
+            myappid = 'wu2c.qsopredictor.v2.0'
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception:
+            pass
+    
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = MainWindow()
