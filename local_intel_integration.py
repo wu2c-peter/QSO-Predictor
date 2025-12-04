@@ -11,7 +11,7 @@ import logging
 from typing import Optional, Callable
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal, Qt
 from PyQt6.QtWidgets import QDockWidget, QMenu, QMessageBox
 
 from local_intel import (
@@ -157,7 +157,6 @@ class LocalIntelligence(QObject):
             )
             
             # Add to main window (right side by default)
-            from PyQt6.QtCore import Qt
             main_window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.insights_dock)
             
             # Update model status display
@@ -243,6 +242,20 @@ class LocalIntelligence(QObject):
         
         if self.insights_panel:
             self.insights_panel.set_path_status(status)
+    
+    def set_tx_status(self, enabled: bool):
+        """
+        Update TX status from JTDX/WSJT-X.
+        
+        Call this when transmitting status changes.
+        
+        Args:
+            enabled: True if TX is enabled/transmitting
+        """
+        if not self._enabled:
+            return
+        
+        self.session_tracker.set_tx_status(enabled)
     
     def process_decode(self, decode_data: dict):
         """
@@ -495,9 +508,3 @@ class LocalIntelligence(QObject):
         self.models_stale.emit(stale_models)
         self._update_model_status()
 
-
-# Import Qt here to avoid issues if PyQt6 not installed
-try:
-    from PyQt6.QtCore import Qt
-except ImportError:
-    pass

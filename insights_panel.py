@@ -96,13 +96,22 @@ class PileupStatusWidget(QGroupBox):
         if your_status.get('in_pileup'):
             rank = your_status.get('rank', '?')
             total = your_status.get('total', size)
-            self.rank_label.setText(f"#{rank} of {total}")
             
-            if rank == 1:
+            if rank == '?':
+                # We're calling but can't see ourselves
+                if total == 0:
+                    self.rank_label.setText("Calling (clear)")
+                else:
+                    self.rank_label.setText(f"Calling (+{total})")
+                self.rank_label.setStyleSheet("color: #00ffff;")  # Cyan
+            elif rank == 1:
+                self.rank_label.setText(f"#1 of {total}")
                 self.rank_label.setStyleSheet("color: #00ff00;")
-            elif rank <= 3:
+            elif isinstance(rank, int) and rank <= 3:
+                self.rank_label.setText(f"#{rank} of {total}")
                 self.rank_label.setStyleSheet("color: #88ff88;")
             else:
+                self.rank_label.setText(f"#{rank} of {total}")
                 self.rank_label.setStyleSheet("color: #ffffff;")
         else:
             self.rank_label.setText("Not calling")
@@ -386,6 +395,34 @@ class InsightsPanel(QWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(8, 8, 8, 8)
         
+        # Dark background for the whole panel
+        self.setStyleSheet("""
+            InsightsPanel {
+                background-color: #1a1a1a;
+            }
+            QGroupBox {
+                background-color: #252525;
+                border: 1px solid #444;
+                border-radius: 4px;
+                margin-top: 16px;
+                padding: 8px;
+                padding-top: 12px;
+            }
+            QGroupBox::title {
+                color: #ffffff;
+                background-color: #252525;
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 8px;
+                top: 4px;
+                padding: 0 4px;
+                font-weight: bold;
+            }
+            QLabel {
+                color: #dddddd;
+            }
+        """)
+        
         # Title
         title = QLabel("Local Intelligence")
         title.setFont(QFont("Arial", 12, QFont.Weight.Bold))
@@ -499,7 +536,7 @@ class InsightsPanel(QWidget):
             )
             self.prediction_widget.update_display(prediction)
             
-            strategy = self.predictor.get_strategy(self._current_target)
+            strategy = self.predictor.get_strategy(self._current_target, self._path_status)
             self.strategy_widget.update_display(strategy)
         else:
             self.prediction_widget.clear()

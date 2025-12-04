@@ -12,11 +12,11 @@ class UDPHandler(QObject):
 
     def __init__(self, config):
         super().__init__()
-        self.ip = "0.0.0.0" 
+        self.ip = "0.0.0.0"
         self.port = int(config.get('NETWORK', 'udp_port'))
         self.forward_ports = config.get_forward_ports()
         self.running = False
-        
+
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -51,7 +51,7 @@ class UDPHandler(QObject):
 
     def _parse_packet(self, data):
         if len(data) < 12: return
-        
+
         # Check Magic Number
         magic = struct.unpack('>I', data[0:4])[0]
         if magic != 2914763738 and magic != 2914831322: return
@@ -59,7 +59,7 @@ class UDPHandler(QObject):
         try:
             # Message Type
             msg_type = struct.unpack('>I', data[8:12])[0]
-            
+
             if msg_type == 1: # Status
                 self._process_status(data)
             elif msg_type == 2: # Decode
@@ -72,71 +72,75 @@ class UDPHandler(QObject):
         if idx + 4 > len(data): return "", idx
         length = struct.unpack('>I', data[idx:idx+4])[0]
         idx += 4
-        
+
         if length == 0xFFFFFFFF: return None, idx # Null string
         if length == 0: return "", idx # Empty string
-        
+
         if idx + length > len(data): return "", idx
-        
+
         val = data[idx:idx+length].decode('utf-8', errors='replace')
         return val, idx + length
 
     def _process_status(self, data):
         # WSJT-X Status Packet Format (Type 1)
-        idx = 12 
+        idx = 12
         try:
             # 1. ID (String)
-            _, idx = self._read_utf8(data, idx) 
-            
+            _, idx = self._read_utf8(data, idx)
+
             # 2. Dial Freq (8 bytes - quint64)
             dial_freq = struct.unpack('>Q', data[idx:idx+8])[0]
             idx += 8
-            
+
             # 3. Mode (String)
             _, idx = self._read_utf8(data, idx)
-            
+
             # 4. DX Call (String)
             dx_call, idx = self._read_utf8(data, idx)
-            
+
             # 5. Report (String)
             _, idx = self._read_utf8(data, idx)
-            
+
             # 6. Tx Mode (String)
             _, idx = self._read_utf8(data, idx)
-            
+
             # 7. Tx Enabled (1 byte bool)
-            idx += 1 
-            
-            # 8. Transmitting (1 byte bool)
+            tx_enabled = bool(data[idx]) if idx < len(data) else False
             idx += 1
-            
+
+            # 8. Transmitting (1 byte bool)
+            transmitting = bool(data[idx]) if idx < len(data) else False
+            idx += 1
+
             # 9. Decoding (1 byte bool)
             idx += 1
-            
+
             # 10. Rx DF (4 bytes - quint32)
             idx += 4
-            
-            # 11. Tx DF (4 bytes - quint32) <--- THIS IS WHAT WE NEED
+
+            # 11. Tx DF (4 bytes - quint32)
             if idx + 4 <= len(data):
                 tx_df = struct.unpack('>I', data[idx:idx+4])[0]
-                
+
                 # Emit the update!
                 self.status_update.emit({
                     'dial_freq': dial_freq,
                     'dx_call': dx_call,
-                    'tx_df': tx_df
+                    'tx_df': tx_df,
+                    'tx_enabled': tx_enabled,
+                    'transmitting': transmitting,
                 })
         except Exception:
             # Silently fail on bad packet, but don't crash thread
             pass
 
     def _process_decode(self, data):
-        idx = 12 
+        idx = 12
         try:
             # 1. ID
             _, idx = self._read_utf8(data, idx)
             # 2. New
-            idx += 1 
+            idx += 1
             # 3. Time
             ms_midnight = struct.unpack('>I', data[idx:idx+4])[0]
             idx += 4
@@ -156,7 +160,7 @@ class UDPHandler(QObject):
             mode, idx = self._read_utf8(data, idx)
             # 8. Message
             message, idx = self._read_utf8(data, idx)
-            
+
             # --- Parsing Logic ---
             parts = message.strip().split()
             grid = ""
@@ -180,14 +184,14 @@ class UDPHandler(QObject):
                 elif is_suffix(last):
                     call = parts[-2]
                 else:
-                    call = last 
-                    
+                    call = last
+
             elif len(parts) == 2:
                 call = parts[1]
 
             call = call.strip('<>')
             # ---------------------
-            
+
             self.new_decode.emit({
                 'time': time_str, 'snr': snr, 'dt': round(dt, 1),
                 'freq': freq, 'mode': mode, 'message': message,

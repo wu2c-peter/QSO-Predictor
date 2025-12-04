@@ -45,6 +45,9 @@ class SessionTracker:
         self.my_callsign = my_callsign.upper()
         self.config = config or AnalysisConfig()
         
+        # TX status (from JTDX/WSJT-X status updates)
+        self._tx_enabled = False
+        
         # Current tracking state
         self.target_session: Optional[TargetSession] = None
         self.active_sessions: Dict[str, TargetSession] = {}  # All targets we're tracking
@@ -81,6 +84,15 @@ class SessionTracker:
             self.active_sessions[callsign] = self.target_session
         
         logger.info(f"Target set: {callsign}")
+    
+    def set_tx_status(self, enabled: bool):
+        """
+        Set TX status from JTDX/WSJT-X.
+        
+        Args:
+            enabled: True if TX is enabled/transmitting
+        """
+        self._tx_enabled = enabled
     
     def process_decode(self, decode: Decode):
         """
@@ -394,33 +406,22 @@ class SessionTracker:
         
         session = self.target_session
         
-        if self.my_callsign not in session.callers:
+        # Check if we're calling (TX enabled)
+        if self._tx_enabled:
+            # We're calling - estimate our rank based on pileup
+            # Since we can't see our own signal, rank is unknown
             return {
-                'in_pileup': False,
-                'rank': None,
+                'in_pileup': True,
+                'rank': '?',  # Unknown - we can't hear ourselves
                 'total': session.pileup_size,
+                'calls_made': 1,  # At least one
             }
         
-        my_info = session.callers[self.my_callsign]
-        
-        # Calculate rank
-        sorted_by_snr = sorted(
-            session.callers.values(),
-            key=lambda c: c.snr,
-            reverse=True
-        )
-        rank = next(
-            (i + 1 for i, c in enumerate(sorted_by_snr) if c.callsign == self.my_callsign),
-            None
-        )
-        
+        # Not transmitting
         return {
-            'in_pileup': True,
-            'rank': rank,
+            'in_pileup': False,
+            'rank': None,
             'total': session.pileup_size,
-            'your_snr': my_info.snr,
-            'your_frequency': my_info.frequency,
-            'calls_made': my_info.call_count,
         }
     
     def on_pileup_update(self, callback: Callable):

@@ -332,12 +332,13 @@ class BayesianPredictor:
         
         return " | ".join(parts)
     
-    def get_strategy(self, target_call: str) -> StrategyRecommendation:
+    def get_strategy(self, target_call: str, path_status: PathStatus = PathStatus.UNKNOWN) -> StrategyRecommendation:
         """
         Get recommended strategy for working a target.
         
         Args:
             target_call: Target station callsign
+            path_status: Current path status
             
         Returns:
             StrategyRecommendation with action and reasoning
@@ -350,36 +351,46 @@ class BayesianPredictor:
         recommended_action = "call_now"
         recommended_frequency = None
         
-        # Check pileup state
-        if pileup_info:
+        # Check path status first - most important factor
+        if path_status == PathStatus.NO_PATH:
+            recommended_action = "try_later"
+            reasons.append("No path to target")
+        elif path_status == PathStatus.CONNECTED:
+            reasons.append("Target hears you!")
+        elif path_status == PathStatus.PATH_OPEN:
+            reasons.append("Path is open")
+        
+        # Check pileup state (only if path is OK)
+        if pileup_info and recommended_action != "try_later":
             size = pileup_info.get('size', 0)
             
             if size == 0:
                 reasons.append("No visible competition")
-                recommended_action = "call_now"
             elif size > 10:
                 reasons.append(f"Heavy pileup ({size} stations)")
-                recommended_action = "wait"
+                if path_status != PathStatus.CONNECTED:
+                    recommended_action = "wait"
             
             # Your position
             if your_status.get('rank'):
                 rank = your_status['rank']
-                if rank == 1:
+                if rank == '?':
+                    reasons.append("You're calling")
+                elif rank == 1:
                     reasons.append("You're the loudest signal")
-                elif rank <= 3:
+                elif isinstance(rank, int) and rank <= 3:
                     reasons.append(f"You're #{rank} by signal strength")
-                else:
+                elif isinstance(rank, int):
                     reasons.append(f"You're #{rank}/{size} - consider waiting")
-                    if recommended_action == "call_now":
-                        recommended_action = "call_now"  # Still try, but note it
         
         # Check behavior pattern
-        if behavior_info and behavior_info.get('pattern'):
+        if behavior_info and behavior_info.get('pattern') and recommended_action != "try_later":
             pattern: PickingPattern = behavior_info['pattern']
             
             if pattern.style == PickingStyle.LOUDEST_FIRST:
                 reasons.append("Target picks loudest first")
-                if your_status.get('rank', 99) > 3:
+                rank = your_status.get('rank', 99)
+                if isinstance(rank, int) and rank > 3:
                     reasons.append("Consider QSYing when conditions improve")
                     
             elif pattern.style in [PickingStyle.METHODICAL_LOW_HIGH, 
@@ -399,7 +410,7 @@ class BayesianPredictor:
                 reasons.append("No clear pattern - persistence helps")
         
         # QSO rate insight
-        if behavior_info:
+        if behavior_info and recommended_action != "try_later":
             rate = behavior_info.get('qso_rate', 0)
             if rate > 0:
                 if rate >= 2.0:
@@ -450,20 +461,26 @@ class HeuristicPredictor:
         self.session_tracker = session_tracker
     
     def predict_success(self,
-                        target_snr: int,
-                        your_snr: int = None,
+                        target_call: str,
+                        features: Dict,
                         path_status: PathStatus = PathStatus.UNKNOWN) -> Prediction:
         """
         Predict success using heuristics only.
         
         Args:
-            target_snr: Target's signal strength at your QTH
-            your_snr: Your signal strength at target (if known)
+            target_call: Target station callsign
+            features: Dict with feature values including 'target_snr'
             path_status: Your path status
             
         Returns:
             Prediction based on heuristics
         """
+        # Extract SNR from features
+        try:
+            target_snr = int(features.get('target_snr', -15))
+        except (TypeError, ValueError):
+            target_snr = -15
+        
         # Base probability from SNR
         if target_snr >= 0:
             base = 0.40
@@ -517,4 +534,65 @@ class HeuristicPredictor:
             live_factors=factors,
             explanation=explanation,
             confidence="low"  # Heuristic = lower confidence
+        )
+    
+    def get_strategy(self, target_call: str, path_status: PathStatus = PathStatus.UNKNOWN) -> StrategyRecommendation:
+        """
+        Get strategy recommendation using heuristics.
+        
+        Args:
+            target_call: Target callsign
+            path_status: Current path status
+            
+        Returns:
+            Strategy recommendation
+        """
+        # Get pileup info
+        pileup_info = self.session_tracker.get_pileup_info()
+        your_status = self.session_tracker.get_your_status()
+        
+        reasons = []
+        action = 'call_now'  # Default
+        
+        # Check path status first - most important factor
+        if path_status == PathStatus.NO_PATH:
+            action = 'try_later'
+            reasons.append("No path to target")
+        elif path_status == PathStatus.CONNECTED:
+            action = 'call_now'
+            reasons.append("Target hears you!")
+        elif path_status == PathStatus.PATH_OPEN:
+            action = 'call_now'
+            reasons.append("Path is open")
+        
+        # Determine action based on pileup size (only if path is OK)
+        pileup_size = pileup_info.get('size', 0) if pileup_info else 0
+        
+        if action != 'try_later':  # Don't override no-path
+            if pileup_size == 0:
+                reasons.append("No competition")
+            elif pileup_size <= 3:
+                reasons.append(f"Light pileup ({pileup_size} callers)")
+            elif pileup_size <= 8:
+                reasons.append(f"Moderate pileup ({pileup_size} callers)")
+            else:
+                if action != 'call_now' or path_status == PathStatus.UNKNOWN:
+                    action = 'wait'
+                reasons.append(f"Heavy pileup ({pileup_size} callers)")
+        
+        # Check your rank
+        if your_status.get('in_pileup'):
+            rank = your_status.get('rank', 99)
+            if rank == '?':
+                reasons.append("You're calling")
+            elif rank == 1:
+                reasons.append("You're loudest - good position")
+            elif isinstance(rank, int) and rank <= 3:
+                reasons.append(f"Rank #{rank} - decent position")
+        
+        return StrategyRecommendation(
+            target_call=target_call,
+            recommended_action=action,
+            recommended_frequency=None,
+            reasons=reasons
         )
