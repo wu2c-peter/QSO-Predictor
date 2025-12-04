@@ -173,14 +173,14 @@ class TargetDashboard(QFrame):
         comp_hbox.setSpacing(4)
         lbl_comp_title = QLabel("Competition")
         lbl_comp_title.setObjectName("header")
-        lbl_comp_title.setFixedWidth(70)
+        lbl_comp_title.setFixedWidth(75)
         self.val_comp = QLabel("--")
         self.val_comp.setObjectName("data")
         comp_hbox.addWidget(lbl_comp_title)
         comp_hbox.addWidget(self.val_comp)
         path_comp_vbox.addWidget(comp_row)
         
-        path_comp_container.setFixedWidth(180)
+        path_comp_container.setFixedWidth(210)
         layout.addWidget(path_comp_container)
 
         layout.addSpacing(10)

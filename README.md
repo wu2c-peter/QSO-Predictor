@@ -63,9 +63,21 @@ The band map shows **what the target station's region experiences** — not just
 | **Dark Blue** | 4 | Global | All other band activity. Background context only. |
 | **Red** | — | Collision | A Tier 1 or Tier 2 signal overlapping the target's frequency. **Avoid transmitting here.** |
 
+**Cyan Bar Density Indicators:**
+
+Cyan bars now show a **count number** indicating how many signals the target is decoding at that frequency. Based on K1JT's decoder research, WSJT-X can decode 2-3 overlapping signals reliably via signal subtraction.
+
+| Count | Bar Color | Label Color | Score | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| **1-3** | Bright Cyan | Cyan | 90-100 | **Ideal** — proven decode slot, not saturated |
+| **4-5** | Cyan-Blue | Yellow | 60-70 | Warning — getting crowded |
+| **6+** | Dim Blue-Purple | Orange | 30-50 | Crowded — decode probability drops |
+
+**Why This Matters:** A proven frequency (where the target IS decoding) is often better than an empty gap (which might have local QRM you can't see). But a proven frequency with 6+ signals stacked on it is crowded — better to find one with 1-3 signals.
+
 **Important:** Cyan bars show what the target is hearing from *everyone* — not specifically where *your* signal gets through. Your signal path status is shown separately in the **Path** column.
 
-**Why This Matters:**
+**Why Geographic Tiering Matters:**
 
 Propagation is regional. A pileup visible from Europe may not exist from the target's location in Japan. By filtering spots geographically, you see the QRM environment that actually affects your target — not noise from the other side of the world.
 
@@ -89,9 +101,42 @@ The app connects directly to the **PSK Reporter Live Stream** via MQTT, with dat
 
 ### 4. Intelligent Frequency Recommendation
 
-* **The Green Line:** Shows a recommended clear frequency based on gaps in activity.
-* **Sticky Behavior:** The recommendation stays put unless your current spot gets busy or a significantly better gap opens up. No more bouncing around.
-* **Weighted Analysis:** Tier 1/2 signals (what the target actually hears) are weighted most heavily.
+The recommendation system has been redesigned based on research into how the WSJT-X decoder handles overlapping signals.
+
+**The Score Graph (Middle Section):**
+
+A new score visualization shows the algorithm's reasoning across all frequencies:
+
+| Score | Color | Line Style | Meaning |
+| :--- | :--- | :--- | :--- |
+| 85-100 | Green | Solid | Excellent — proven frequency with 1-3 signals |
+| 60-84 | Cyan | Solid | Good — proven or clear gap |
+| 40-59 | Yellow | Solid/Dotted | Moderate — unproven or light congestion |
+| 20-39 | Orange | Solid/Dotted | Poor — crowded area |
+| 0-19 | Red | Solid/Dotted | Avoid — blocked by local QRM or edge |
+
+**Line Style Meaning:**
+- **Solid line** = Tier 1 perspective data available (scores based on proven frequencies)
+- **Dotted line** = No tier 1 data, "(gap-based scoring)" — scores based on avoiding congestion
+
+**The Scoring Philosophy:**
+
+Based on K1JT's research, the decoder handles 2-3 overlapping signals well via signal subtraction. The new algorithm:
+
+1. **Prefers proven frequencies** where the target IS decoding (cyan bars with 1-3 signals)
+2. **Discounts crowded slots** where 4+ signals are stacked
+3. **Treats empty gaps as "unproven"** — they could be clear, or could have local QRM at the target you can't see
+4. **Falls back to gap-finding** when no tier 1 data is available
+
+**The Green Line:**
+
+- Shows the highest-scoring frequency
+- **Sticky behavior** — only moves when current spot gets busy or a significantly better option appears
+- Score displayed next to the line
+
+**Click-to-Set:**
+
+Click anywhere on the band map to manually set the recommended frequency. The green line jumps to your click position and dwells for 3 seconds (countdown shown), then resumes auto-calculation. Use this to read off a specific frequency for manual entry into JTDX.
 
 -----
 
@@ -112,16 +157,22 @@ The app connects directly to the **PSK Reporter Live Stream** via MQTT, with dat
 
 ### Tactical Decision Making
 
-**Scenario 1: Cyan bars visible**
-The target station is uploading to PSK Reporter. You have direct intelligence about what they're hearing. Transmit in gaps between cyan bars.
+**Scenario 1: Cyan bars with counts 1-3**
+The target station is uploading to PSK Reporter and these frequencies have light traffic. **Ideal spots.** The decoder handles 1-3 overlapping signals well. Transmit here for best decode probability.
 
-**Scenario 2: No cyan, but bright blue bars visible**
-The target isn't uploading, but nearby stations are. The bright blue bars show what stations in their grid square hear — a good proxy for similar propagation.
+**Scenario 2: Cyan bars with counts 4-5 (yellow labels)**
+Getting crowded. Still proven decode slots, but competition is building. Consider these if no 1-3 options exist.
 
-**Scenario 3: Only dark blue visible**
+**Scenario 3: Cyan bars with counts 6+ (orange labels)**
+Heavily saturated. Even though these are proven frequencies, decoder performance degrades with this many overlapping signals. Look for less crowded alternatives.
+
+**Scenario 4: No cyan, but bright blue bars visible**
+The target isn't uploading, but nearby stations are. The bright blue bars show what stations in their grid square hear — a good proxy for similar propagation. Score graph shows dotted line "(gap-based scoring)".
+
+**Scenario 5: Only dark blue visible**
 Limited geographic intelligence. The display shows global activity, which may not reflect the target's actual environment. Consider the target's location and likely propagation paths.
 
-**Scenario 4: Red bar on target frequency**
+**Scenario 6: Red bar on target frequency**
 A station the target can hear is transmitting on or near their frequency. **Wait.** The target is likely unable to decode you through the interference.
 
 ### Reading the Path Column
@@ -157,15 +208,21 @@ When you select a target station, the dashboard shows:
 
 ### Pro Tips
 
-1. **Don't chase the green line blindly.** It finds the widest gap, but a narrower gap closer to where the target is listening may be better.
+1. **Watch the count numbers.** Cyan bars with "1", "2", or "3" are your best bets. Those with "6" or higher are crowded despite being proven.
 
-2. **Cyan shows activity, not your path.** Seeing cyan bars means the target is uploading spots — you know what they hear. But that doesn't mean they've heard *you*. Check the Path column for that.
+2. **Use the score graph.** Green peaks show where the algorithm thinks you should transmit. If you see a peak but no cyan bar there, it's a gap — unproven but clear of visible activity.
 
-3. **Respect the red.** Collision detection is physics-based. If a strong station is on the target's frequency, no amount of power will help.
+3. **Solid vs dotted line matters.** Solid score line = algorithm has proven data. Dotted = gap-based guessing. Trust solid-line recommendations more.
 
-4. **Grid squares matter.** Stations in the same grid square share similar propagation. Heavy bright-blue activity means the target's area is busy even if they aren't personally uploading.
+4. **Click to explore.** Click anywhere on the band map to set a manual frequency. Read the Hz value from the Rec display, then enter it in JTDX.
 
-5. **CONNECTED is gold.** If Path shows CONNECTED, the target has already decoded you. Call them!
+5. **Cyan shows activity, not your path.** Seeing cyan bars means the target is uploading spots — you know what they hear. But that doesn't mean they've heard *you*. Check the Path column for that.
+
+6. **Respect the red.** Collision detection is physics-based. If a strong station is on the target's frequency, no amount of power will help.
+
+7. **Grid squares matter.** Stations in the same grid square share similar propagation. Heavy bright-blue activity means the target's area is busy even if they aren't personally uploading.
+
+8. **CONNECTED is gold.** If Path shows CONNECTED, the target has already decoded you. Call them!
 
 -----
 
@@ -174,6 +231,7 @@ When you select a target station, the dashboard shows:
 ### 1. Requirements
 * Python 3.10 or higher.
 * WSJT-X or JTDX.
+* Dependencies: PyQt6, paho-mqtt, numpy, requests (auto-installed by launcher)
 
 ### 2. Setup
 1. **Clone/Download** this repository.
@@ -181,7 +239,7 @@ When you select a target station, the dashboard shows:
    ```bash
    python launcher.py
    ```
-   *The launcher will automatically install necessary dependencies (`PyQt6`, `paho-mqtt`, `numpy`).*
+   *The launcher will automatically install necessary dependencies (`PyQt6`, `paho-mqtt`, `numpy`, `requests`).*
 
 ### 3. Configure WSJT-X / JTDX
 1. Open **Settings** -> **Reporting**.
@@ -193,7 +251,30 @@ When you select a target station, the dashboard shows:
 
 ## Project History & Changelog
 
-### v1.2.x - The Target Perspective Update
+### v1.3.0 - The Smart Frequency Update
+
+* **Intelligent Frequency Scoring**
+    * Algorithm now prefers "proven" frequencies (where target IS decoding) over empty gaps.
+    * Based on K1JT's decoder research: 1-3 overlapping signals decode well, 4+ degrades.
+    * Cyan bars show count numbers indicating signal density at each frequency.
+    * Color-coded counts: Cyan (1-3 ideal), Yellow (4-5 warning), Orange (6+ crowded).
+
+* **Score Graph Visualization**
+    * New middle section shows score across all frequencies.
+    * Green = excellent, Cyan = good, Yellow = moderate, Orange = poor, Red = avoid.
+    * Solid line = proven data, Dotted line = gap-based scoring (no tier1 data).
+
+* **Click-to-Set Frequency**
+    * Click anywhere on band map to manually set recommended frequency.
+    * 3-second dwell with countdown, then resumes auto-calculation.
+    * Read Hz value from Rec display for manual entry into JTDX.
+
+* **Update Notification System**
+    * Checks GitHub for new releases on startup.
+    * Gold info bar when update available, click to download.
+    * Help → Check for Updates for manual check.
+
+### v1.2.0 - The Target Perspective Update
 
 * **Major Feature: Geographic Perspective Engine**
     * Band map now shows what the *target's region* hears, not global activity.
