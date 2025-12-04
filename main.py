@@ -850,6 +850,12 @@ class MainWindow(QMainWindow):
         """Worker thread for update check."""
         try:
             import requests  # Lazy import - app works without it
+        except ImportError:
+            if manual:
+                self.update_check_signal.emit("NO_REQUESTS", manual)
+            return
+        
+        try:
             r = requests.get(
                 "https://api.github.com/repos/wu2c-peter/qso-predictor/releases/latest",
                 timeout=10
@@ -884,6 +890,14 @@ class MainWindow(QMainWindow):
                 self, 
                 "Update Check Failed",
                 "Couldn't reach GitHub to check for updates.\nPlease check your internet connection."
+            )
+        elif result == "NO_REQUESTS":
+            QMessageBox.warning(
+                self,
+                "Update Check Unavailable",
+                "The 'requests' module is not installed.\n\n"
+                "To enable update checking, run:\n"
+                "  pip install requests"
             )
         else:
             # It's a version number - update available
