@@ -6,13 +6,14 @@ import subprocess
 import sys
 import threading
 import webbrowser
+import requests
 from pathlib import Path
 from collections import deque
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QTableView, QLabel, QHeaderView, QSplitter, 
                              QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, QSystemTrayIcon, QMenu)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
-from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon
+from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon, QCursor
 
 
 def get_version():
@@ -42,6 +43,29 @@ def get_version():
         return (base_path / "VERSION").read_text().strip()
     except:
         return "dev"
+
+
+def compare_versions(current, latest):
+    """Compare version strings. Returns True if latest > current."""
+    try:
+        # Handle versions like "1.2.3" or "1.2.3-5-gabcdef"
+        def parse(v):
+            # Take only the numeric part before any dash
+            v = v.split('-')[0]
+            return [int(x) for x in v.split('.')]
+        
+        curr_parts = parse(current)
+        latest_parts = parse(latest)
+        
+        # Pad shorter list with zeros
+        max_len = max(len(curr_parts), len(latest_parts))
+        curr_parts += [0] * (max_len - len(curr_parts))
+        latest_parts += [0] * (max_len - len(latest_parts))
+        
+        return latest_parts > curr_parts
+    except:
+        # If parsing fails, do simple string comparison
+        return latest != current and latest > current
 
 
 try:
@@ -395,6 +419,21 @@ class DecodeTableModel(QAbstractTableModel):
         br = self.index(len(self._data)-1, len(self._headers)-1)
         self.dataChanged.emit(tl, br)
 
+
+# --- CLICKABLE LABEL FOR UPDATE NOTIFICATION ---
+class ClickableLabel(QLabel):
+    clicked = pyqtSignal()
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.update_url = None
+    
+    def mousePressEvent(self, event):
+        if self.update_url:
+            webbrowser.open(self.update_url)
+        self.clicked.emit()
+
+
 # --- MAIN APPLICATION WINDOW ---
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -414,6 +453,9 @@ class MainWindow(QMainWindow):
         self.current_target_call = ""
         self.current_target_grid = ""
         self.jtdx_last_dx_call = ""  # Track what JTDX last sent (separate from our selection)
+        
+        # --- UPDATE CHECK STATE ---
+        self.update_available = None  # Will hold version string if update available
         
         if SOLAR_AVAILABLE:
             self.solar = SolarClient()
@@ -436,8 +478,12 @@ class MainWindow(QMainWindow):
         
         if SOLAR_AVAILABLE:
             self.fetch_solar_data()
+        
+        # Check for updates on startup (non-blocking, silent)
+        self.check_for_updates(manual=False)
 
     solar_update_signal = pyqtSignal(dict)
+    update_check_signal = pyqtSignal(str, bool)  # (version_or_status, was_manual)
 
     def init_ui(self):
         main_widget = QWidget()
@@ -446,12 +492,15 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0,0,0,0)
         main_layout.setSpacing(0)
         
-        # 1. Info Bar
-        self.info_bar = QLabel("Waiting for WSJT-X...")
+        # 1. Info Bar (now clickable for updates)
+        self.info_bar = ClickableLabel("Waiting for WSJT-X...")
         self.info_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.info_bar.setFixedHeight(25) 
         self.info_bar.setStyleSheet("background-color: #2A2A2A; color: #AAA; padding: 4px;")
         main_layout.addWidget(self.info_bar)
+        
+        # Connect update check signal
+        self.update_check_signal.connect(self.on_update_check_result)
         
         # --- SPLITTER START ---
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -540,6 +589,10 @@ class MainWindow(QMainWindow):
         wiki_action.setShortcut(QKeySequence("F1"))
         wiki_action.triggered.connect(self.open_wiki)
         help_menu.addAction(wiki_action)
+        
+        check_update_action = QAction("Check for Updates", self)
+        check_update_action.triggered.connect(lambda: self.check_for_updates(manual=True))
+        help_menu.addAction(check_update_action)
         
         about_action = QAction("About", self)
         about_action.triggered.connect(self.show_about)
@@ -747,18 +800,109 @@ class MainWindow(QMainWindow):
         self.update_header()
 
     def update_header(self):
+        s_update = ""
+        if self.update_available:
+            s_update = f"⬆ v{self.update_available} available — click to download   |   "
+            self.info_bar.update_url = "https://github.com/wu2c-peter/qso-predictor/releases"
+            self.info_bar.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        else:
+            self.info_bar.update_url = None
+            self.info_bar.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+        
         s_solar = getattr(self, 'str_solar', "")
         s_status = getattr(self, 'str_status', "")
-        self.info_bar.setText(f"{s_solar}   |   {s_status}")
+        self.info_bar.setText(f"{s_update}{s_solar}   |   {s_status}")
+        
+        # Update styling based on state
+        if self.update_available:
+            # Gold/amber for update available
+            self.info_bar.setStyleSheet(
+                "background-color: #3D3D00; color: #FFD700; padding: 4px; font-weight: bold;"
+            )
+        elif hasattr(self, 'str_solar') and self.str_solar:
+            # Solar-based coloring
+            bg_color = "#2A2A2A"
+            # Check K index from stored data
+            if hasattr(self, '_solar_data'):
+                k = self._solar_data.get('k', 0)
+                sfi = self._solar_data.get('sfi', 0)
+                if k >= 5: bg_color = "#880000"
+                elif k >= 4: bg_color = "#884400"
+                elif sfi >= 100: bg_color = "#004400"
+            self.info_bar.setStyleSheet(
+                f"background-color: {bg_color}; color: #FFF; padding: 4px; font-weight: bold;"
+            )
+        else:
+            self.info_bar.setStyleSheet(
+                "background-color: #2A2A2A; color: #AAA; padding: 4px;"
+            )
 
     def update_solar_ui(self, data):
+        self._solar_data = data  # Store for header styling
         self.str_solar = f"Solar: SFI {data['sfi']} | K {data['k']} ({data['condx']})"
         self.update_header()
-        bg_color = "#2A2A2A"
-        if data['k'] >= 5: bg_color = "#880000"
-        elif data['k'] >= 4: bg_color = "#884400"
-        elif data['sfi'] >= 100: bg_color = "#004400"
-        self.info_bar.setStyleSheet(f"background-color: {bg_color}; color: #FFF; padding: 4px; font-weight: bold;")
+
+    def check_for_updates(self, manual=False):
+        """Check GitHub for newer release (runs in background thread)."""
+        t = threading.Thread(target=self._update_check_worker, args=(manual,), daemon=True)
+        t.start()
+    
+    def _update_check_worker(self, manual):
+        """Worker thread for update check."""
+        try:
+            r = requests.get(
+                "https://api.github.com/repos/wu2c-peter/qso-predictor/releases/latest",
+                timeout=10
+            )
+            if r.status_code == 200:
+                latest = r.json().get('tag_name', '').lstrip('v')
+                current = get_version()
+                if latest and compare_versions(current, latest):
+                    # Update available
+                    self.update_check_signal.emit(latest, manual)
+                elif manual:
+                    # No update, but user asked - tell them they're up to date
+                    self.update_check_signal.emit("UP_TO_DATE", manual)
+            elif manual:
+                # API error
+                self.update_check_signal.emit("ERROR", manual)
+        except Exception as e:
+            if manual:
+                self.update_check_signal.emit("ERROR", manual)
+            # Fail silently for automatic checks
+    
+    def on_update_check_result(self, result, was_manual):
+        """Handle update check result."""
+        if result == "UP_TO_DATE":
+            QMessageBox.information(
+                self, 
+                "Up to Date", 
+                f"You're running the latest version (v{get_version()})."
+            )
+        elif result == "ERROR":
+            QMessageBox.warning(
+                self, 
+                "Update Check Failed",
+                "Couldn't reach GitHub to check for updates.\nPlease check your internet connection."
+            )
+        else:
+            # It's a version number - update available
+            self.update_available = result
+            self.update_header()
+            
+            if was_manual:
+                # User manually checked - show dialog with option to download
+                reply = QMessageBox.information(
+                    self,
+                    "Update Available",
+                    f"A new version is available: v{result}\n\n"
+                    f"You're currently running v{get_version()}.\n\n"
+                    f"Would you like to open the download page?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    webbrowser.open("https://github.com/wu2c-peter/qso-predictor/releases")
 
     def open_settings(self):
         dlg = SettingsDialog(self.config, self)
