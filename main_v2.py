@@ -6,7 +6,6 @@ import subprocess
 import sys
 import threading
 import webbrowser
-import requests
 from pathlib import Path
 from collections import deque
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -946,6 +945,7 @@ class MainWindow(QMainWindow):
     def _update_check_worker(self, manual):
         """Worker thread for update check."""
         try:
+            import requests  # Lazy import - app works without it
             r = requests.get(
                 "https://api.github.com/repos/wu2c-peter/qso-predictor/releases/latest",
                 timeout=10
