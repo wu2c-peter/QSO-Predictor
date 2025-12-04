@@ -6,7 +6,6 @@ import subprocess
 import sys
 import threading
 import webbrowser
-import requests
 from pathlib import Path
 from collections import deque
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -850,6 +849,7 @@ class MainWindow(QMainWindow):
     def _update_check_worker(self, manual):
         """Worker thread for update check."""
         try:
+            import requests  # Lazy import - app works without it
             r = requests.get(
                 "https://api.github.com/repos/wu2c-peter/qso-predictor/releases/latest",
                 timeout=10
@@ -945,13 +945,15 @@ class MainWindow(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
-    # --- ADD THIS BLOCK ---
-    myappid = 'wu2c.qsopredictor.v1.3' # Arbitrary unique ID
-    try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    except ImportError:
-        pass
-    # ----------------------
+    # Set Windows taskbar app ID (Windows only)
+    import sys
+    if sys.platform == 'win32':
+        try:
+            myappid = 'wu2c.qsopredictor.v1.3'
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception:
+            pass
+    
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = MainWindow()
