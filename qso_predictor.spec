@@ -40,6 +40,11 @@ hiddenimports = [
     'PyQt6.QtGui',
     'PyQt6.QtWidgets',
     'numpy',
+    'requests',                 # For update checker
+    'urllib3',                  # requests dependency
+    'charset_normalizer',       # requests dependency
+    'certifi',                  # requests dependency
+    'idna',                     # requests dependency
 ]
 
 a = Analysis(
