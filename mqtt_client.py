@@ -42,7 +42,7 @@ class MQTTClient(QObject):
         except: pass
 
     def update_subscriptions(self, my_call, freq_hz):
-        self.my_call = my_call
+        self.my_call = my_call.upper()  # Normalize stored callsign
         self.current_band = self._freq_to_band(freq_hz)
         
         if self.client.is_connected():
@@ -76,12 +76,14 @@ class MQTTClient(QObject):
             # Payload Example: {"sc":"W1AW","rc":"K1ABC","f":14074123,"rp":-12,"t":1735000000,"rl":"FN42"}
             data = json.loads(msg.payload.decode())
             
+            # FIX: Normalize callsigns and grid to uppercase at ingestion
+            # This ensures all downstream comparisons work regardless of PSK Reporter's case
             spot = {
-                'sender': data.get('sc', 'Unknown'),
-                'receiver': data.get('rc', 'Unknown'),
+                'sender': data.get('sc', 'Unknown').upper(),
+                'receiver': data.get('rc', 'Unknown').upper(),
                 'freq': data.get('f', 0),
                 'snr': data.get('rp', -99),
-                'grid': data.get('rl', ''), 
+                'grid': data.get('rl', '').upper(),
                 'time': data.get('t', time.time())
             }
             self.spot_received.emit(spot)

@@ -167,7 +167,22 @@ class BandMapWidget(QWidget):
         busy_map[0:200] = True
         busy_map[2800:3000] = True
         
-        # Find gaps
+        # Check if current position is still clear
+        current_idx = max(0, min(self.bandwidth - 1, self.best_offset))
+        current_still_clear = not busy_map[current_idx]
+        
+        # Find current gap width (if we're in one)
+        current_gap_width = 0
+        if current_still_clear:
+            left = current_idx
+            while left > 0 and not busy_map[left - 1]:
+                left -= 1
+            right = current_idx
+            while right < self.bandwidth - 1 and not busy_map[right + 1]:
+                right += 1
+            current_gap_width = right - left
+        
+        # Find all gaps
         gaps = []
         current_gap_start = -1
         for i in range(len(busy_map)):
@@ -177,12 +192,35 @@ class BandMapWidget(QWidget):
                 if current_gap_start != -1:
                     gaps.append((current_gap_start, i))
                     current_gap_start = -1
-        if not gaps: return
+        # Handle gap at end
+        if current_gap_start != -1:
+            gaps.append((current_gap_start, self.bandwidth))
+        
+        if not gaps:
+            return
         
         gaps.sort(key=lambda x: x[1] - x[0], reverse=True)
         best_gap = gaps[0]
-        center = (best_gap[0] + best_gap[1]) // 2
-        self.best_offset = int((self.best_offset * 0.9) + (center * 0.1))
+        best_gap_width = best_gap[1] - best_gap[0]
+        best_center = (best_gap[0] + best_gap[1]) // 2
+        
+        # Decision: only move if current spot is bad OR new gap is significantly wider
+        should_move = False
+        
+        if not current_still_clear:
+            # Current spot got busy - must move
+            should_move = True
+        elif current_gap_width < 50:
+            # Current gap is too narrow - look for better
+            should_move = True
+        elif best_gap_width > current_gap_width * 1.5:
+            # New gap is 50%+ wider - worth moving
+            should_move = True
+        
+        if should_move:
+            # Smooth transition to new position
+            self.best_offset = int((self.best_offset * 0.7) + (best_center * 0.3))
+        # Otherwise: stay put - don't chase marginal improvements
 
     def _normalize_call(self, call):
         if not call: return ""

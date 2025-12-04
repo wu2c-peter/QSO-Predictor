@@ -580,12 +580,21 @@ class MainWindow(QMainWindow):
 
     def process_buffer(self):
         if not self.buffer: return
+        
+        # Check if we're at the bottom before adding rows
+        scrollbar = self.table_view.verticalScrollBar()
+        at_bottom = scrollbar.value() >= scrollbar.maximum() - 20
+        
         chunk = self.buffer[:50]
         del self.buffer[:50]
         for item in chunk:
             self.analyzer.analyze_decode(item)
         self.model.add_batch(chunk)
         self.band_map.update_signals(chunk)
+        
+        # Auto-scroll to bottom if user was already there
+        if at_bottom:
+            self.table_view.scrollToBottom()
 
     def refresh_paths(self):
         """Lightweight refresh - just update path status for all rows."""

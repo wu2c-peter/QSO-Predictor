@@ -4,9 +4,37 @@
 
 **Current Version:** See [Releases](https://github.com/wu2c-peter/qso-predictor/releases) for latest
 
-QSO Predictor is a "Moneyball" tool for digital amateur radio. It sits between **WSJT-X/JTDX** and the internet, analyzing live data to tell you **who you can work** and **where to transmit** to maximize your success rate.
+-----
 
-Unlike standard mapping tools, this is a **Tactical Dashboard**. It calculates probabilities based on signal paths, pileup intensity, and remote QRM — **from the perspective of the station you're trying to work.**
+## The Problem
+
+You're calling a DX station. No response. Is the band dead? Is your signal too weak? Or are you buried under a pileup you can't even hear?
+
+Today's tools show you the band from your shack — who you're decoding, who's spotting you. They don't show you conditions at the DX station's end.
+
+## The Solution
+
+QSO Predictor fills that gap. Using PSK Reporter data, it builds a picture of band conditions at the target's location — what signals are arriving there, from where, and how your path compares.
+
+The result: fewer wasted calls, smarter timing, better target choices.
+
+-----
+
+## What This Tool Does
+
+- Shows you **band conditions at the target's location**, not just global activity
+- Uses geographic tiering: direct reports from the target (best), same grid square, same field, global (fallback)
+- Tells you whether **your signal path is open** to a given station's region
+- Recommends **clear TX frequencies** based on what the target is experiencing
+- Integrates with **WSJT-X/JTDX** — double-click a station and the perspective updates immediately
+
+## What This Tool Doesn't Replace
+
+- **PSK Reporter** — QSOP uses PSK Reporter data; it's complementary, not a replacement
+- **RBN/Ham Spots** — Those confirm your signal is getting out; QSOP shows your competition at the far end
+- **GridTracker** — Great for mapping and alerts; QSOP adds the target perspective layer
+
+Think of it this way: other tools answer "Am I being heard?" QSOP answers "What does the DX station's receiver look like right now?"
 
 -----
 
@@ -21,23 +49,25 @@ Unlike standard mapping tools, this is a **Tactical Dashboard**. It calculates p
 
 ## Key Features
 
-### 1. The Target Perspective Band Map (New in v1.2)
+### 1. The Target Perspective Band Map
 
-The band map now shows **what the target station actually experiences** — not just global band activity. When you click on a station in the decode table, QSO Predictor builds a picture of their RF environment using geographic proximity as a proxy for propagation similarity.
+The band map shows **what the target station's region experiences** — not just global band activity. When you click on a station in the decode table, QSO Predictor builds a picture of their RF environment using geographic proximity as a proxy for propagation similarity.
 
 **The Tiered Intelligence System:**
 
-| Color | Tier | Source | Confidence | What It Means |
-| :--- | :--- | :--- | :--- | :--- |
-| **Cyan** | 1 | Target Station | **Highest** | Spots reported *by* the target. This is exactly what they hear. |
-| **Bright Blue** | 2 | Same Grid Square | High | Spots from stations in the same 4-character grid (e.g., FN42). Similar propagation. |
-| **Medium Blue** | 3 | Same Field | Medium | Spots from stations in the same 2-character field (e.g., FN). Regional proxy. |
-| **Dark Blue** | 4 | Global | Low | All other band activity. Background context only. |
-| **Red** | — | Collision | **Critical** | A Tier 1 or Tier 2 signal overlapping the target's frequency. **Do not transmit.** |
+| Color | Tier | Source | What It Means |
+| :--- | :--- | :--- | :--- |
+| **Cyan** | 1 | Target Station | Signals the target is actually decoding (if they upload to PSK Reporter) |
+| **Bright Blue** | 2 | Same Grid Square | Signals heard by stations in the same 4-character grid. Good proxy for similar propagation. |
+| **Medium Blue** | 3 | Same Field | Signals heard by stations in the same 2-character field. Regional approximation. |
+| **Dark Blue** | 4 | Global | All other band activity. Background context only. |
+| **Red** | — | Collision | A Tier 1 or Tier 2 signal overlapping the target's frequency. **Avoid transmitting here.** |
+
+**Important:** Cyan bars show what the target is hearing from *everyone* — not specifically where *your* signal gets through. Your signal path status is shown separately in the **Path** column.
 
 **Why This Matters:**
 
-Previous versions showed global band activity — what *everyone* hears. But propagation is regional. A pileup visible from Europe may not exist from the target's location in Japan. By filtering spots geographically, you see the QRM environment that actually affects your target.
+Propagation is regional. A pileup visible from Europe may not exist from the target's location in Japan. By filtering spots geographically, you see the QRM environment that actually affects your target — not noise from the other side of the world.
 
 ### 2. The Lower Display: What You Hear
 
@@ -59,8 +89,9 @@ The app connects directly to the **PSK Reporter Live Stream** via MQTT, with dat
 
 ### 4. Intelligent Frequency Recommendation
 
-* **The Green Line:** Automatically calculates the widest available gap in the spectrum.
-* **Weighted Analysis:** Tier 1 (target's actual receivers) signals are weighted most heavily when finding clear frequencies.
+* **The Green Line:** Shows a recommended clear frequency based on gaps in activity.
+* **Sticky Behavior:** The recommendation stays put unless your current spot gets busy or a significantly better gap opens up. No more bouncing around.
+* **Weighted Analysis:** Tier 1/2 signals (what the target actually hears) are weighted most heavily.
 
 -----
 
@@ -74,7 +105,7 @@ The app connects directly to the **PSK Reporter Live Stream** via MQTT, with dat
    - **Double-click in JTDX/WSJT-X** (decode window or receive window) — the target perspective updates immediately
    - **Click a row** in QSO Predictor's decode table
 4. **Read the band map:**
-   * **Top half:** What the target hears (tiered by geographic confidence)
+   * **Top half:** What the target's region hears (tiered by geographic confidence)
    * **Bottom half:** What you hear locally
 5. **Look for gaps** in the cyan/bright blue bars — these are clear frequencies at the target's location.
 6. **Set your TX frequency** to avoid red collision zones.
@@ -82,20 +113,20 @@ The app connects directly to the **PSK Reporter Live Stream** via MQTT, with dat
 ### Tactical Decision Making
 
 **Scenario 1: Cyan bars visible**
-The target station is uploading to PSK Reporter. You have direct intelligence. Trust the cyan display — transmit in gaps between cyan bars.
+The target station is uploading to PSK Reporter. You have direct intelligence about what they're hearing. Transmit in gaps between cyan bars.
 
 **Scenario 2: No cyan, but bright blue bars visible**
-The target isn't uploading, but nearby stations are. The bright blue bars show what stations in their grid square hear. This is a good proxy — use it.
+The target isn't uploading, but nearby stations are. The bright blue bars show what stations in their grid square hear — a good proxy for similar propagation.
 
 **Scenario 3: Only dark blue visible**
-Limited geographic intelligence. The display shows global activity, which may not reflect the target's actual environment. Proceed with caution; consider the target's location and likely propagation paths.
+Limited geographic intelligence. The display shows global activity, which may not reflect the target's actual environment. Consider the target's location and likely propagation paths.
 
 **Scenario 4: Red bar on target frequency**
-A station the target can hear is transmitting on or near their frequency. **Wait.** The target is likely unable to decode you through the interference. Watch for the red bar to clear.
+A station the target can hear is transmitting on or near their frequency. **Wait.** The target is likely unable to decode you through the interference.
 
 ### Reading the Path Column
 
-The **Path** column in the decode table shows whether you have a confirmed signal path to that station's region:
+The **Path** column shows whether you have a confirmed signal path to that station's region:
 
 | Status | Color | Meaning |
 | :--- | :--- | :--- |
@@ -104,24 +135,15 @@ The **Path** column in the decode table shows whether you have a confirmed signa
 | **No Path** | Orange | Reporters exist near target but haven't heard you — path may not be open |
 | **No Nearby Reporters** | Gray | No PSK Reporter data from that region — unknown |
 
-This tells you at a glance which stations are reachable. Prioritize **CONNECTED** (cyan) and **Path Open** (green) stations — you know propagation is working.
-
-**Note:** Path status requires you to have transmitted recently — PSK Reporter needs spots of your signal. The feature is most useful once you're actively operating.
+**Note:** Path status requires you to have transmitted recently. The feature is most useful once you're actively operating.
 
 ### Reading the Dashboard (Selected Target)
 
-When you select a target station (by clicking in the table or double-clicking in JTDX), the dashboard shows two key fields:
+When you select a target station, the dashboard shows:
 
-**Path** — Same as the table column, but for your selected target:
+**Path** — Your signal path status to this target (same as table column)
 
-| Status | Color | Meaning |
-| :--- | :--- | :--- |
-| **CONNECTED** | Cyan | Target has heard you — you're in! |
-| **Path Open** | Green | Station near target heard you — propagation confirmed |
-| **No Path** | Orange | Reporters exist but haven't heard you |
-| **No Nearby Reporters** | Gray | No data from that region |
-
-**Competition** — QRM at the target's location using the tiered perspective system:
+**Competition** — QRM at the target's location using the tiered perspective:
 
 | Status | Color | Meaning |
 | :--- | :--- | :--- |
@@ -133,28 +155,17 @@ When you select a target station (by clicking in the table or double-clicking in
 | **PILEUP (7+)** | Red | Heavy pileup — difficult conditions |
 | **Unknown** | Gray | No data from target's region |
 
-The count reflects stations the target (Tier 1) or nearby stations (Tier 2/3) actually hear near that frequency, not global traffic.
-
-### Reading the Probability Column
-
-The "Prob %" column in the decode table estimates your chance of completing a QSO:
-
-* **> 75%:** Excellent conditions. Call confidently.
-* **50-75%:** Good odds. May take a few cycles.
-* **30-50%:** Marginal. Consider waiting for better conditions or a clearer frequency.
-* **< 30%:** Difficult. Heavy QRM or weak path. Be patient or move on.
-
 ### Pro Tips
 
 1. **Don't chase the green line blindly.** It finds the widest gap, but a narrower gap closer to where the target is listening may be better.
 
-2. **Watch for cyan "Golden Paths."** If you see a cyan bar, that's a proven decode path into the target's radio. Transmitting near (but not on) that frequency leverages known-good propagation.
+2. **Cyan shows activity, not your path.** Seeing cyan bars means the target is uploading spots — you know what they hear. But that doesn't mean they've heard *you*. Check the Path column for that.
 
-3. **Respect the red.** Collision detection is physics-based. If a strong station is on the target's frequency, no amount of power will help you — the target's receiver is saturated.
+3. **Respect the red.** Collision detection is physics-based. If a strong station is on the target's frequency, no amount of power will help.
 
-4. **Use the refresh.** The perspective updates every 3 seconds. Band conditions change rapidly. What was blocked may clear; what was open may fill.
+4. **Grid squares matter.** Stations in the same grid square share similar propagation. Heavy bright-blue activity means the target's area is busy even if they aren't personally uploading.
 
-5. **Grid squares matter.** Stations in the same grid square share similar propagation. If you see heavy bright-blue activity, the target's area is busy even if they aren't personally uploading spots.
+5. **CONNECTED is gold.** If Path shows CONNECTED, the target has already decoded you. Call them!
 
 -----
 
@@ -185,64 +196,42 @@ The "Prob %" column in the decode table estimates your chance of completing a QS
 ### v1.2.x - The Target Perspective Update
 
 * **Major Feature: Geographic Perspective Engine**
-    * Band map now shows what the *target* hears, not global activity.
+    * Band map now shows what the *target's region* hears, not global activity.
     * Tiered system: Direct (Cyan) → Same Grid (Bright Blue) → Same Field (Blue) → Global (Dark Blue).
-    * New caches in `analyzer.py`: `receiver_cache` and `grid_cache` index spots by reporter location.
-    * New method: `get_target_perspective(call, grid)` returns tiered intelligence.
 
-* **New Path Column (replaces Competition in table)**
+* **New Path Column**
     * Shows signal path status: CONNECTED, Path Open, No Path, No Nearby Reporters.
-    * Lightweight updates every 2 seconds — no performance impact.
+    * Lightweight updates every 2 seconds.
     * Tells you at a glance which stations are reachable.
 
-* **Dashboard Competition (Target Perspective)**
-    * Full competition analysis shown in dashboard when you select a target.
-    * Uses tiered perspective to count QRM at the target's location.
-    * Expensive calculation only runs for selected station.
+* **Sticky Frequency Recommendation**
+    * Green line no longer bounces around chasing marginal improvements.
+    * Only moves when current spot gets busy or a significantly better gap appears.
 
 * **JTDX/WSJT-X Integration**
     * Double-clicking a station in JTDX/WSJT-X immediately updates the target perspective.
-    * No need to re-click in QSO Predictor — the band map responds to your logging software.
 
-* **Continuous Refresh**
-    * Target perspective auto-updates every 3 seconds.
-    * Path column updates every 2 seconds for all rows.
+* **Case Sensitivity Fix**
+    * Callsign matching now case-insensitive throughout.
+
+* **Auto-scroll Table**
+    * Decode table stays scrolled to bottom (like JTDX) unless you scroll up to review history.
 
 * **UI Improvements**
-    * Dashboard now shows both Path and Competition (stacked layout).
-    * Updated band map legend with local signal SNR colors.
-    * Collision detection now focuses on Tier 1/2 signals (the ones that matter).
-    * Info bar shows current band and dial frequency.
+    * Dashboard shows both Path and Competition.
     * CONNECTED rows highlighted with cyan text and teal background.
-    * "Who hears me" count now uses 3-minute window for tactical relevance.
-
-* **Technical Improvements**
-    * Config file now stored in platform-appropriate location (AppData on Windows, ~/.config on Linux).
-    * Version number auto-detected from git tags.
-    * Help menu with links to documentation and About dialog.
+    * Info bar shows current band and dial frequency.
 
 ### v1.1.0 - The Tactical Update
 
-* **New Band Map:** Completely rewritten rendering engine using Z-Order layering.
-* **Logic Engine:**
-    * Implemented **Density Analysis** to detect pileups without needing message text.
-    * Implemented **Collision Detection** for direct frequency overlaps.
-    * Added **Receiver Verification** for confirmed spots.
-* **Visuals:**
-    * Added "Safety Gap" between TX (Top) and RX (Bottom) displays.
-    * Capped signal height at 45% of view area.
+* Implemented density analysis for pileup detection.
+* Added collision detection for frequency overlaps.
+* Split-screen band map with safety gap.
 
 ### v1.0.1 - The Real-Time Overhaul
 
-* **Architecture Shift:** Replaced HTTP Polling with MQTT streaming.
-* **Band Map Physics:**
-    * Adjusted signal bar width to **50Hz** (FT8 Bandwidth).
-    * Increased signal persistence to **45 seconds** to handle Even/Odd cycles.
-
-### v0.9.x - Beta Era
-
-* Initial UDP/Table implementation.
-* Dashboard layout and crash fixes.
+* Switched from HTTP polling to MQTT streaming.
+* Signal persistence tuned for FT8 Even/Odd cycles.
 
 -----
 
