@@ -2,8 +2,8 @@
 # Copyright (C) 2025 [Peter Hirst/WU2C]
 
 import socket
-import threading
 import struct
+import threading
 from PyQt6.QtCore import QObject, pyqtSignal
 
 class UDPHandler(QObject):
@@ -12,18 +12,42 @@ class UDPHandler(QObject):
 
     def __init__(self, config):
         super().__init__()
-        self.ip = "0.0.0.0"
         self.port = int(config.get('NETWORK', 'udp_port'))
+        # Support multicast address configuration
+        self.ip = config.get('NETWORK', 'udp_ip', fallback='0.0.0.0')
         self.forward_ports = config.get_forward_ports()
         self.running = False
+        self.is_multicast = self._is_multicast_address(self.ip)
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        
         try:
-            self.sock.bind((self.ip, self.port))
-            print(f"UDP Bound to {self.port}")
+            if self.is_multicast:
+                # Multicast setup
+                # Bind to INADDR_ANY on the port
+                self.sock.bind(('', self.port))
+                # Join the multicast group
+                mreq = struct.pack("4sl", socket.inet_aton(self.ip), socket.INADDR_ANY)
+                self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+                print(f"UDP Multicast joined {self.ip}:{self.port}")
+            else:
+                # Standard unicast
+                self.sock.bind(('0.0.0.0', self.port))
+                print(f"UDP Bound to {self.port}")
         except Exception as e:
-            print(f"Bind Error: {e}")
+            print(f"UDP Bind Error: {e}")
+    
+    def _is_multicast_address(self, ip: str) -> bool:
+        """Check if IP is in multicast range (224.0.0.0 - 239.255.255.255)"""
+        try:
+            parts = ip.split('.')
+            if len(parts) != 4:
+                return False
+            first_octet = int(parts[0])
+            return 224 <= first_octet <= 239
+        except (ValueError, AttributeError):
+            return False
 
     def start(self):
         self.running = True
@@ -32,8 +56,17 @@ class UDPHandler(QObject):
 
     def stop(self):
         self.running = False
-        try: self.sock.close()
-        except: pass
+        try:
+            if self.is_multicast:
+                # Leave multicast group
+                mreq = struct.pack("4sl", socket.inet_aton(self.ip), socket.INADDR_ANY)
+                self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq)
+        except:
+            pass
+        try: 
+            self.sock.close()
+        except: 
+            pass
 
     def _listen_loop(self):
         while self.running:

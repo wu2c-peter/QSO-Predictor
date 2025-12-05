@@ -273,6 +273,11 @@ After starting QSO Predictor:
 - No internet dependency for predictions
 - Ideal for contests or portable operation
 
+**New: Multicast UDP Support**
+- Join multicast groups (224.x.x.x - 239.x.x.x)
+- Works alongside JTAlert, N3FJP, and other apps
+- Configure via `udp_ip` setting in config.ini
+
 **Improved: Bootstrap Performance**
 - Extended to 14 days, 500K decodes
 - Tracks both picking behavior and activity traits
@@ -329,7 +334,7 @@ scikit-learn>=1.0.0  # For ML models
 ### File Locations
 
 **Windows:**
-- Config: `%USERPROFILE%\.qso-predictor\`
+- Config: `%USERPROFILE%\.qso-predictor\config.ini`
 - Models: `%USERPROFILE%\.qso-predictor\models\`
 - Behavior history: `%USERPROFILE%\.qso-predictor\behavior_history.json`
 
@@ -337,6 +342,19 @@ scikit-learn>=1.0.0  # For ML models
 - WSJT-X: `%LOCALAPPDATA%\WSJT-X\` 
 - JTDX: `%LOCALAPPDATA%\JTDX\`
 - Both ALL.TXT and dated files (YYMMDD_ALL.TXT)
+
+### Multicast Support
+
+If you use UDP multicast with JTAlert, N3FJP, or other apps (common setup: `239.0.0.2:2237`), QSO Predictor can join the same multicast group.
+
+Edit `%USERPROFILE%\.qso-predictor\config.ini`:
+```ini
+[NETWORK]
+udp_ip = 239.0.0.2
+udp_port = 2237
+```
+
+QSO Predictor automatically detects multicast addresses (224.x.x.x - 239.x.x.x) and joins the group, allowing all your apps to share the same UDP stream from JTDX.
 
 ### Architecture
 
