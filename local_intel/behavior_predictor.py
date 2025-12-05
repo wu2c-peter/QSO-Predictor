@@ -35,6 +35,7 @@ class BehaviorPrior:
     confidence: float  # 0-1, how confident we are
     source: str  # 'historical', 'ml_model', 'default'
     observations: int = 0  # How many QSOs contributed to this
+    metadata: Optional[Dict] = None  # Extra info (e.g., prefix stats)
     
     @property
     def most_likely_style(self) -> str:
@@ -153,8 +154,126 @@ class BehaviorPredictor:
         # Accumulated observations for future training
         self._pending_observations: List[Dict] = []
         
+        # Prefix statistics cache (built from history)
+        self._prefix_stats: Dict[str, Dict] = {}
+        self._prefix_stats_dirty = True  # Rebuild when history changes
+        
         # Load historical data
         self._load_history()
+    
+    def _extract_prefix(self, callsign: str) -> str:
+        """
+        Extract country prefix from callsign for aggregation.
+        
+        Examples:
+            W1ABC -> W
+            JA1ABC -> JA
+            DL5ABC -> DL
+            VK2ABC -> VK
+            9A1ABC -> 9A
+            3DA0ABC -> 3DA
+        """
+        import re
+        callsign = callsign.upper().strip()
+        
+        # Match prefix pattern: optional digit, 1-2 letters (stop before trailing digit)
+        # This captures country prefix without call area: W, JA, DL, VK, 9A, 3DA, etc.
+        match = re.match(r'^(\d?[A-Z]{1,2})(?:[A-Z]|\d)', callsign)
+        if match:
+            return match.group(1)
+        
+        # Fallback: just letters (and leading digit if present)
+        match = re.match(r'^(\d?[A-Z]{1,2})', callsign)
+        if match:
+            return match.group(1)
+            
+        return callsign[:2]  # Last resort: first 2 chars
+    
+    def _build_prefix_stats(self):
+        """Build aggregate statistics by call prefix from history."""
+        if not self._prefix_stats_dirty:
+            return
+        
+        self._prefix_stats = {}
+        
+        for callsign, record in self._history.items():
+            if record.observations < 2:
+                continue
+                
+            prefix = self._extract_prefix(callsign)
+            
+            if prefix not in self._prefix_stats:
+                self._prefix_stats[prefix] = {
+                    'loudest_first': 0,
+                    'methodical': 0,
+                    'random': 0,
+                    'total_stations': 0,
+                    'total_observations': 0,
+                }
+            
+            stats = self._prefix_stats[prefix]
+            stats['total_stations'] += 1
+            stats['total_observations'] += record.observations
+            
+            # Add weighted by observations
+            stats['loudest_first'] += record.loudest_first_count
+            stats['methodical'] += record.methodical_count
+            stats['random'] += record.random_count
+        
+        self._prefix_stats_dirty = False
+        print(f"[prefix] Built prefix stats: {len(self._prefix_stats)} prefixes from {len(self._history)} stations")
+        logger.debug(f"Built prefix stats for {len(self._prefix_stats)} prefixes")
+    
+    def _get_prefix_prior(self, callsign: str) -> Optional[BehaviorPrior]:
+        """
+        Get prediction based on call prefix statistics.
+        
+        If we've seen other stations with same prefix, use their
+        aggregate behavior to predict this unknown station.
+        """
+        self._build_prefix_stats()
+        
+        prefix = self._extract_prefix(callsign)
+        
+        if prefix not in self._prefix_stats:
+            print(f"[prefix] {callsign} -> {prefix}: no stations with this prefix yet")
+            return None
+        
+        stats = self._prefix_stats[prefix]
+        
+        # Need meaningful sample (at least 2 stations with this prefix)
+        if stats['total_stations'] < 2:
+            print(f"[prefix] {callsign} -> {prefix}: only {stats['total_stations']} station(s), need 2+")
+            return None
+        
+        total = stats['loudest_first'] + stats['methodical'] + stats['random']
+        if total == 0:
+            return None
+        
+        # Calculate probabilities
+        probs = {
+            'loudest_first': stats['loudest_first'] / total,
+            'methodical': stats['methodical'] / total,
+            'random': stats['random'] / total,
+        }
+        
+        # Confidence based on sample size (cap at 0.7 for prefix-based)
+        confidence = min(0.7, stats['total_stations'] / 20)
+        
+        most_likely = max(probs, key=probs.get)
+        print(f"[prefix] {callsign} -> {prefix}: {most_likely} ({probs[most_likely]:.0%}) from {stats['total_stations']} stations")
+        
+        return BehaviorPrior(
+            style_probs=probs,
+            confidence=confidence,
+            source='ml_model',  # Use ml_model source for UI display
+            observations=0,
+            metadata={
+                'prefix': prefix,
+                'sample_stations': stats['total_stations'],
+                'sample_observations': stats['total_observations'],
+            }
+        )
     
     def needs_bootstrap(self) -> bool:
         """Check if bootstrap is needed (no history or stale)."""
@@ -189,12 +308,12 @@ class BehaviorPredictor:
         Checks in order:
         1. Current session belief (if we've been updating)
         2. Historical record (if we've seen this DX before)
-        3. ML model prediction (if model available and features provided)
+        3. Prefix-based prediction (aggregate stats for this call prefix)
         4. Default prior
         
         Args:
             callsign: Target callsign
-            features: Optional features for ML prediction
+            features: Optional features (reserved for future ML model)
             
         Returns:
             BehaviorPrior with probabilities and confidence
@@ -205,7 +324,7 @@ class BehaviorPredictor:
         if callsign in self._session_beliefs:
             return self._session_beliefs[callsign]
         
-        # Check historical record
+        # Check historical record for this exact station
         if callsign in self._history:
             record = self._history[callsign]
             if record.observations >= 3:  # Need some data
@@ -218,12 +337,11 @@ class BehaviorPredictor:
                 self._session_beliefs[callsign] = prior
                 return prior
         
-        # Try ML model
-        if self.model_manager and features:
-            ml_prior = self._get_ml_prior(features)
-            if ml_prior:
-                self._session_beliefs[callsign] = ml_prior
-                return ml_prior
+        # Try prefix-based prediction (aggregated from similar calls)
+        prefix_prior = self._get_prefix_prior(callsign)
+        if prefix_prior:
+            self._session_beliefs[callsign] = prefix_prior
+            return prefix_prior
         
         # Default prior
         prior = BehaviorPrior(
@@ -445,6 +563,9 @@ class BehaviorPredictor:
             
             with open(self.history_path, 'w') as f:
                 json.dump(data, f, indent=2)
+            
+            # Invalidate prefix cache so it gets rebuilt
+            self._prefix_stats_dirty = True
             
             logger.debug(f"Saved behavior history for {len(self._history)} stations")
             
@@ -931,7 +1052,7 @@ class BehaviorPredictor:
     def get_history_stats(self) -> Dict:
         """Get statistics about the behavior history."""
         if not self._history:
-            return {'stations': 0, 'total_observations': 0}
+            return {'stations': 0, 'total_observations': 0, 'prefixes': 0}
         
         total_obs = sum(r.observations for r in self._history.values())
         
@@ -944,10 +1065,14 @@ class BehaviorPredictor:
             style = max(r.style_distribution, key=r.style_distribution.get)
             style_counts[style] += 1
         
+        # Build prefix stats if needed
+        self._build_prefix_stats()
+        
         return {
             'stations': len(self._history),
             'total_observations': total_obs,
             'style_distribution': style_counts,
+            'prefixes': len(self._prefix_stats),
         }
     
     def reload_history(self):

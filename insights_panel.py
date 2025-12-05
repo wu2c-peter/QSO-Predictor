@@ -255,7 +255,14 @@ class BehaviorWidget(QGroupBox):
                 if source == 'historical':
                     self.advice_label.setText(f"From history ({qso_count} live QSOs)")
                 elif source == 'ml_model':
-                    self.advice_label.setText(f"ML prediction ({qso_count} live QSOs)")
+                    # Show prefix info if available
+                    metadata = behavior_info.get('bayesian_metadata', {})
+                    if metadata and 'prefix' in metadata:
+                        prefix = metadata['prefix']
+                        sample = metadata.get('sample_stations', 0)
+                        self.advice_label.setText(f"Based on {sample} {prefix} stations ({qso_count} live)")
+                    else:
+                        self.advice_label.setText(f"ML prediction ({qso_count} live QSOs)")
                 elif source == 'bayesian' and qso_count > 0:
                     self.advice_label.setText(f"Live estimate ({qso_count} QSOs observed)")
                 else:

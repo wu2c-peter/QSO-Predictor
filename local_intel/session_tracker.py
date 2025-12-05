@@ -428,6 +428,8 @@ class SessionTracker:
             'bayesian_confidence': bayesian.confidence,
             'bayesian_source': bayesian.source,
             'style_probs': bayesian.style_probs,
+            # Metadata (includes prefix info for ML predictions)
+            'bayesian_metadata': getattr(bayesian, 'metadata', None),
         }
     
     def get_your_status(self) -> Dict:
