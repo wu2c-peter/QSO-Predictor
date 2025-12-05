@@ -2,6 +2,8 @@
 
 This guide shows the minimal changes needed to integrate Local Intelligence into your existing main.py.
 
+**Note:** If you're using the standard QSO Predictor, this is already integrated in `main_v2.py`. This guide is for developers integrating Local Intelligence into custom applications.
+
 ## Quick Start
 
 Add these changes to your main.py:
@@ -176,24 +178,26 @@ def on_models_stale(self, stale_models):
 
 ```
 qso-predictor/
-├── main.py                    # Modified (6 small additions)
-├── local_intel_integration.py # NEW - main integration class
-├── training_manager.py        # NEW - training subprocess manager
-├── insights_panel.py          # NEW - UI panel
-├── training_dialog.py         # NEW - training dialog
-├── local_intel/               # NEW - core engine
+├── main_v2.py                 # Main entry point (use this)
+├── local_intel_integration.py # Main integration class
+├── training_manager.py        # Training subprocess manager
+├── insights_panel.py          # UI panel
+├── training_dialog.py         # Training dialog
+├── band_map_widget.py         # Band visualization
+├── local_intel/               # Core intelligence engine
 │   ├── __init__.py
-│   ├── models.py
-│   ├── log_discovery.py
-│   ├── log_parser.py
-│   ├── session_tracker.py
-│   ├── model_manager.py
-│   └── predictor.py
-├── training/                  # NEW - ML training
+│   ├── models.py              # Data models
+│   ├── log_discovery.py       # Find WSJT-X/JTDX logs
+│   ├── log_parser.py          # Parse ALL.TXT files
+│   ├── session_tracker.py     # Live session analysis
+│   ├── behavior_predictor.py  # Persona/behavior prediction (NEW in v2)
+│   ├── model_manager.py       # ML model management
+│   └── predictor.py           # Success prediction
+├── training/                  # ML training components
 │   ├── __init__.py
-│   ├── feature_builders.py
-│   └── trainer_process.py
-└── ... (existing files unchanged)
+│   ├── feature_builders.py    # Feature extraction
+│   └── trainer_process.py     # Training subprocess
+└── ... (existing files)
 ```
 
 ---
