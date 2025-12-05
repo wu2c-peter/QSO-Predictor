@@ -448,17 +448,17 @@ class BandMapWidget(QWidget):
             # 3. DRAW PERSPECTIVE LAYERS (Top Section) - Back to Front
             qp.setPen(Qt.PenStyle.NoPen)
             
-            # Layer 4: Global (dimmest) - Dark Blue
+            # Layer 4: Global (dimmest) - Gray-purple
             for spot in self.perspective_data.get('global', []):
-                self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(40, 60, 100), 0.3)
+                self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(90, 90, 120), 0.3)
             
-            # Layer 3: Same Field - Blue
+            # Layer 3: Same Field - Violet
             for spot in self.perspective_data.get('tier3', []):
-                self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(60, 100, 180), 0.5)
+                self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(130, 70, 200), 0.5)
             
-            # Layer 2: Same Grid Square - Bright Blue
+            # Layer 2: Same Grid Square - Purple
             for spot in self.perspective_data.get('tier2', []):
-                self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(80, 140, 255), 0.8)
+                self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(170, 100, 255), 0.8)
             
             # Layer 1: Direct from Target - Cyan (highest priority)
             # First, bucket them to count density
@@ -633,11 +633,11 @@ class BandMapWidget(QWidget):
                 y = int(section_top + section_h * (1.0 - avg_score / 100.0))
                 y = max(section_top + 2, min(section_top + section_h - 2, y))
                 
-                # Color based on score
+                # Color based on score - avoid cyan (used for tier1 bars)
                 if avg_score >= 85:
                     color = QColor(0, 255, 0)      # Green - excellent
                 elif avg_score >= 60:
-                    color = QColor(0, 200, 200)    # Cyan - good
+                    color = QColor(180, 255, 0)    # Yellow-green - good (was cyan)
                 elif avg_score >= 40:
                     color = QColor(255, 255, 0)    # Yellow - moderate
                 elif avg_score >= 20:
@@ -699,24 +699,21 @@ class BandMapWidget(QWidget):
         qp.setPen(QColor("#FF8800")); qp.drawText(107, 38, "6+")
 
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(80, 140, 255))
+        qp.setBrush(QColor(170, 100, 255))  # Purple for Grid (tier2)
         qp.drawRect(140, 30, 8, 8)
         qp.setPen(QColor("#DDD")); qp.drawText(152, 38, "Grid")
 
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(60, 100, 180))
+        qp.setBrush(QColor(130, 70, 200))   # Violet for Field (tier3)
         qp.drawRect(190, 30, 8, 8)
         qp.setPen(QColor("#DDD")); qp.drawText(202, 38, "Field")
 
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(40, 60, 100))
+        qp.setBrush(QColor(90, 90, 120))    # Gray-purple for Global (tier4)
         qp.drawRect(245, 30, 8, 8)
         qp.setPen(QColor("#DDD")); qp.drawText(257, 38, "Global")
         
-        qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(255, 0, 0))
-        qp.drawRect(305, 30, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(317, 38, "Collision")
+        # Collision removed - no longer used in v2.0
         
         # Row 3: Local Signals (Bottom Half - What You Hear)
         qp.setPen(QColor("#888")); qp.drawText(10, 52, "Local:")
