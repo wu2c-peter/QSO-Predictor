@@ -176,7 +176,9 @@ class TrainingDialog(QDialog):
             file_text = []
             total_lines = 0
             for f in files:
-                file_text.append(f"• {f['program']}: {f['path'].split('/')[-1].split(chr(92))[-1]}")
+                from pathlib import Path
+                filename = Path(f['path']).name
+                file_text.append(f"• {f['program']}: {filename}")
                 total_lines += f.get('line_count', 0)
             
             file_text.append(f"\nTotal: {len(files)} files, {total_lines:,} lines")

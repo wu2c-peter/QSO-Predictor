@@ -56,6 +56,7 @@ class LogFileDiscovery:
     WSJT_PATTERNS = ['ALL.TXT', 'all.txt']
     JTDX_PATTERNS = ['ALL.TXT', 'all.txt']
     JTDX_MONTHLY_PATTERN = 'all_jtdx_*.txt'
+    JTDX_DATED_PATTERN = '*_ALL.TXT'  # YYYYMM_ALL.TXT pattern
     
     def __init__(self, custom_paths: List[Path] = None):
         """
@@ -99,7 +100,7 @@ class LogFileDiscovery:
             return list(self._cache.values())
         
         sources = []
-        seen_paths = set()
+        seen_paths = set()  # Track resolved paths to detect symlink duplicates
         
         for search_path in self.get_platform_paths():
             logger.debug(f"Searching: {search_path}")
@@ -116,20 +117,36 @@ class LogFileDiscovery:
             # Check for standard ALL.TXT
             for pattern in self.WSJT_PATTERNS:
                 file_path = search_path / pattern
-                if file_path.exists() and file_path not in seen_paths:
-                    source = self._analyze_file(file_path, program)
-                    if source:
-                        sources.append(source)
-                        seen_paths.add(file_path)
+                if file_path.exists():
+                    # Resolve symlinks to detect duplicates
+                    resolved = file_path.resolve()
+                    if resolved not in seen_paths:
+                        source = self._analyze_file(file_path, program)
+                        if source:
+                            sources.append(source)
+                            seen_paths.add(resolved)
             
-            # Check for JTDX monthly files
+            # Check for JTDX monthly files (all_jtdx_YYYYMM.txt)
             if program == 'JTDX' or 'jtdx' in path_str:
                 for file_path in search_path.glob(self.JTDX_MONTHLY_PATTERN):
-                    if file_path not in seen_paths:
+                    resolved = file_path.resolve()
+                    if resolved not in seen_paths:
                         source = self._analyze_file(file_path, 'JTDX')
                         if source:
                             sources.append(source)
-                            seen_paths.add(file_path)
+                            seen_paths.add(resolved)
+            
+            # Check for JTDX dated files (YYYYMM_ALL.TXT)
+            for file_path in search_path.glob(self.JTDX_DATED_PATTERN):
+                # Verify it matches YYYYMM_ALL.TXT format
+                name = file_path.name.upper()
+                if len(name) >= 12 and name[:6].isdigit() and name.endswith('_ALL.TXT'):
+                    resolved = file_path.resolve()
+                    if resolved not in seen_paths:
+                        source = self._analyze_file(file_path, program)
+                        if source:
+                            sources.append(source)
+                            seen_paths.add(resolved)
         
         # Sort by modification time (newest first)
         sources.sort(key=lambda s: s.modified, reverse=True)
