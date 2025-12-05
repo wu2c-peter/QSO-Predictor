@@ -55,11 +55,24 @@ class BehaviorPrior:
 class HistoricalRecord:
     """Historical behavior record for a specific callsign."""
     callsign: str
+    
+    # Picking style observations
     observations: int = 0
     loudest_first_count: int = 0
     methodical_count: int = 0
     random_count: int = 0
     last_seen: Optional[str] = None  # ISO datetime
+    
+    # Activity traits for persona matching
+    sessions_seen: int = 0          # Number of distinct operating sessions
+    total_qsos: int = 0             # Total QSOs observed (started)
+    completed_qsos: int = 0         # QSOs that ended with 73/RR73
+    abandoned_qsos: int = 0         # QSOs started but not completed
+    total_cqs: int = 0              # Total CQ calls observed
+    total_session_seconds: float = 0  # Total time across all sessions
+    
+    # Picking detail (who they pick when abandoning)
+    rare_prefix_picks: int = 0      # Times they picked a rarer prefix mid-QSO
     
     @property
     def style_distribution(self) -> Dict[str, float]:
@@ -73,12 +86,182 @@ class HistoricalRecord:
             'random': self.random_count / total,
         }
     
+    @property
+    def qso_rate(self) -> float:
+        """QSOs per minute (0 if no session data)."""
+        if self.total_session_seconds <= 0:
+            return 0.0
+        return (self.total_qsos / self.total_session_seconds) * 60
+    
+    @property
+    def completion_rate(self) -> float:
+        """Fraction of QSOs completed (0-1)."""
+        if self.total_qsos <= 0:
+            return 0.0
+        return self.completed_qsos / self.total_qsos
+    
+    @property
+    def cq_to_qso_ratio(self) -> float:
+        """How many CQs per QSO (higher = less efficient/more patient)."""
+        if self.total_qsos <= 0:
+            return 0.0
+        return self.total_cqs / self.total_qsos
+    
+    @property
+    def avg_session_minutes(self) -> float:
+        """Average session duration in minutes."""
+        if self.sessions_seen <= 0:
+            return 0.0
+        return (self.total_session_seconds / self.sessions_seen) / 60
+    
     def to_dict(self) -> Dict:
         return asdict(self)
     
     @classmethod
     def from_dict(cls, d: Dict) -> 'HistoricalRecord':
-        return cls(**d)
+        # Handle legacy records without new fields
+        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered = {k: v for k, v in d.items() if k in valid_fields}
+        return cls(**filtered)
+
+
+# =============================================================================
+# Persona Definitions
+# =============================================================================
+
+@dataclass
+class Persona:
+    """
+    Behavioral persona representing a cluster of similar operating styles.
+    
+    Used to predict picking behavior for unknown stations based on
+    observable activity traits.
+    """
+    name: str
+    description: str
+    
+    # Trait thresholds for matching (None = don't care)
+    min_qso_rate: Optional[float] = None      # QSOs/minute
+    max_qso_rate: Optional[float] = None
+    min_completion_rate: Optional[float] = None  # 0-1
+    max_completion_rate: Optional[float] = None
+    min_cq_ratio: Optional[float] = None      # CQs per QSO
+    max_cq_ratio: Optional[float] = None
+    
+    # Expected picking behavior for this persona
+    picking_probs: Dict[str, float] = field(default_factory=dict)
+    
+    def matches(self, record: HistoricalRecord) -> Tuple[bool, float]:
+        """
+        Check if a station's behavior matches this persona.
+        
+        Returns:
+            (matches: bool, score: float) - score is 0-1 quality of match
+        """
+        if record.sessions_seen == 0 or record.total_qsos < 3:
+            return False, 0.0
+        
+        score = 0.0
+        checks = 0
+        
+        # Check QSO rate
+        if self.min_qso_rate is not None or self.max_qso_rate is not None:
+            checks += 1
+            rate = record.qso_rate
+            if self.min_qso_rate and rate < self.min_qso_rate:
+                return False, 0.0
+            if self.max_qso_rate and rate > self.max_qso_rate:
+                return False, 0.0
+            score += 1.0
+        
+        # Check completion rate
+        if self.min_completion_rate is not None or self.max_completion_rate is not None:
+            checks += 1
+            comp = record.completion_rate
+            if self.min_completion_rate and comp < self.min_completion_rate:
+                return False, 0.0
+            if self.max_completion_rate and comp > self.max_completion_rate:
+                return False, 0.0
+            score += 1.0
+        
+        # Check CQ ratio
+        if self.min_cq_ratio is not None or self.max_cq_ratio is not None:
+            checks += 1
+            ratio = record.cq_to_qso_ratio
+            if self.min_cq_ratio and ratio < self.min_cq_ratio:
+                return False, 0.0
+            if self.max_cq_ratio and ratio > self.max_cq_ratio:
+                return False, 0.0
+            score += 1.0
+        
+        if checks == 0:
+            return True, 0.5  # No constraints = weak match
+        
+        return True, score / checks
+
+
+# Pre-defined personas based on common operating styles
+PERSONAS = [
+    Persona(
+        name="contest_op",
+        description="High-rate contester, picks loudest for efficiency",
+        min_qso_rate=2.0,
+        min_completion_rate=0.70,
+        picking_probs={'loudest_first': 0.75, 'methodical': 0.15, 'random': 0.10},
+    ),
+    Persona(
+        name="auto_seq_runner",
+        description="Steady runner using auto-sequence, fair/first-decoded",
+        min_qso_rate=1.0,
+        max_qso_rate=2.5,
+        min_completion_rate=0.80,
+        picking_probs={'loudest_first': 0.30, 'methodical': 0.40, 'random': 0.30},
+    ),
+    Persona(
+        name="dx_hunter",
+        description="Chases rare DX, abandons QSOs for better catches",
+        max_completion_rate=0.50,
+        picking_probs={'loudest_first': 0.40, 'methodical': 0.20, 'random': 0.40},
+    ),
+    Persona(
+        name="casual_op",
+        description="Relaxed pace, finishes QSOs, fair/methodical picking",
+        max_qso_rate=1.0,
+        min_completion_rate=0.75,
+        picking_probs={'loudest_first': 0.25, 'methodical': 0.50, 'random': 0.25},
+    ),
+    Persona(
+        name="big_gun",
+        description="High power/antenna, big pileups, tends toward loudest",
+        min_qso_rate=1.5,
+        min_cq_ratio=1.5,  # Lots of CQs = big pileup each time
+        picking_probs={'loudest_first': 0.65, 'methodical': 0.25, 'random': 0.10},
+    ),
+]
+
+
+def find_best_persona(record: HistoricalRecord) -> Optional[Tuple[Persona, float]]:
+    """
+    Find the best matching persona for a station's behavior.
+    
+    Args:
+        record: Historical record with activity traits
+        
+    Returns:
+        (persona, score) tuple or None if no match
+    """
+    best_match = None
+    best_score = 0.0
+    
+    for persona in PERSONAS:
+        matches, score = persona.matches(record)
+        if matches and score > best_score:
+            best_match = persona
+            best_score = score
+    
+    if best_match:
+        return best_match, best_score
+    return None
 
 
 # =============================================================================
@@ -275,6 +458,51 @@ class BehaviorPredictor:
             }
         )
     
+    def _get_persona_prior(self, callsign: str) -> Optional[BehaviorPrior]:
+        """
+        Get prediction based on persona matching.
+        
+        If we have enough activity data on this station (sessions, QSOs),
+        match them to a behavioral persona and use that persona's
+        typical picking behavior as our prior.
+        """
+        if callsign not in self._history:
+            return None
+        
+        record = self._history[callsign]
+        
+        # Need activity data (not just picking observations)
+        if record.sessions_seen == 0 or record.total_qsos < 3:
+            return None
+        
+        result = find_best_persona(record)
+        if not result:
+            return None
+        
+        persona, score = result
+        
+        # Confidence based on match quality and sample size
+        base_confidence = 0.5 + (score * 0.3)  # 0.5-0.8 based on match
+        sample_factor = min(1.0, record.total_qsos / 20)  # Scale by sample
+        confidence = base_confidence * sample_factor
+        
+        print(f"[persona] {callsign}: {persona.name} (score={score:.2f}, conf={confidence:.0%})")
+        print(f"         rate={record.qso_rate:.1f}/min, completion={record.completion_rate:.0%}")
+        
+        return BehaviorPrior(
+            style_probs=persona.picking_probs.copy(),
+            confidence=confidence,
+            source='ml_model',  # Use ml_model source for UI
+            observations=0,
+            metadata={
+                'persona': persona.name,
+                'persona_description': persona.description,
+                'match_score': score,
+                'qso_rate': record.qso_rate,
+                'completion_rate': record.completion_rate,
+            }
+        )
+    
     def needs_bootstrap(self) -> bool:
         """Check if bootstrap is needed (no history or stale)."""
         # No history at all
@@ -307,9 +535,10 @@ class BehaviorPredictor:
         
         Checks in order:
         1. Current session belief (if we've been updating)
-        2. Historical record (if we've seen this DX before)
-        3. Prefix-based prediction (aggregate stats for this call prefix)
-        4. Default prior
+        2. Historical record - picking observations (if we've seen this DX picking)
+        3. Persona match - activity traits (if we've seen this DX operating)
+        4. Prefix-based prediction (aggregate stats for similar calls)
+        5. Default prior ("Observing...")
         
         Args:
             callsign: Target callsign
@@ -324,10 +553,10 @@ class BehaviorPredictor:
         if callsign in self._session_beliefs:
             return self._session_beliefs[callsign]
         
-        # Check historical record for this exact station
+        # Check historical record for this exact station (picking observations)
         if callsign in self._history:
             record = self._history[callsign]
-            if record.observations >= 3:  # Need some data
+            if record.observations >= 3:  # Need picking data
                 prior = BehaviorPrior(
                     style_probs=record.style_distribution,
                     confidence=min(0.9, record.observations / 20),  # Cap at 0.9
@@ -336,6 +565,12 @@ class BehaviorPredictor:
                 )
                 self._session_beliefs[callsign] = prior
                 return prior
+        
+        # Try persona match (activity traits without picking data)
+        persona_prior = self._get_persona_prior(callsign)
+        if persona_prior:
+            self._session_beliefs[callsign] = persona_prior
+            return persona_prior
         
         # Try prefix-based prediction (aggregated from similar calls)
         prefix_prior = self._get_prefix_prior(callsign)
@@ -659,11 +894,16 @@ class BehaviorPredictor:
         
         callsign = callsign.upper()
         
-        # Already have history?
-        if callsign in self._history and self._history[callsign].observations >= 2:
-            print(f"[lookup] {callsign}: CACHE HIT - already have {self._history[callsign].observations} observations")
-            logger.info(f"[lookup] {callsign}: already have {self._history[callsign].observations} observations")
-            return True
+        # Already have sufficient history?
+        if callsign in self._history:
+            record = self._history[callsign]
+            has_picking = record.observations >= 2
+            has_activity = record.sessions_seen >= 1 and record.total_qsos >= 3
+            
+            if has_picking or has_activity:
+                print(f"[lookup] {callsign}: CACHE HIT - {record.observations} picking obs, {record.total_qsos} QSOs, {record.sessions_seen} sessions")
+                logger.info(f"[lookup] {callsign}: cache hit")
+                return True
         
         start_time = time.time()
         timeout_sec = timeout_ms / 1000.0
@@ -717,9 +957,18 @@ class BehaviorPredictor:
         
         parser = LogParser()
         
-        # Track this DX's activity
-        callers = {}  # caller -> snr
-        answers = []  # list of was_loudest
+        SESSION_GAP_SECONDS = 300  # 5 minutes = new session
+        
+        # Track this DX's activity (both picking AND activity traits)
+        callers = {}  # caller -> snr (current pileup)
+        answers = []  # list of was_loudest (picking behavior)
+        
+        # Activity tracking for persona
+        messages = []  # (timestamp, is_cq, partner)
+        qsos = []  # (partner, completed)
+        cq_count = 0
+        current_qso_partner = None
+        
         decodes_scanned = 0
         matches_found = 0
         
@@ -746,18 +995,40 @@ class BehaviorPredictor:
                     # Is this our target DX?
                     if d.callsign and d.callsign.upper() == callsign:
                         matches_found += 1
+                        
                         if d.is_cq:
-                            # DX calling CQ - reset caller tracking
-                            pass
+                            # DX calling CQ
+                            cq_count += 1
+                            messages.append((d.timestamp, True, None))
+                            callers.clear()  # New CQ = reset pileup
+                            current_qso_partner = None
+                            
                         elif d.replying_to:
-                            # DX answering someone
+                            # DX answering/working someone
                             answered = d.replying_to.upper()
-                            if callers:
-                                answered_snr = callers.get(answered, -20)
-                                max_snr = max(callers.values())
-                                was_loudest = answered_snr >= max_snr - 1
-                                answers.append(was_loudest)
-                            callers.clear()
+                            messages.append((d.timestamp, False, answered))
+                            
+                            msg_upper = (d.message or '').upper()
+                            is_73 = '73' in msg_upper or 'RR73' in msg_upper
+                            
+                            # Track QSO
+                            if current_qso_partner == answered:
+                                # Continuing same QSO - check for completion
+                                if is_73 and qsos:
+                                    # Mark last QSO as completed
+                                    qsos[-1] = (answered, True)
+                            else:
+                                # New QSO starting
+                                qsos.append((answered, is_73))
+                                current_qso_partner = answered
+                                
+                                # Track picking behavior
+                                if callers:
+                                    answered_snr = callers.get(answered, -20)
+                                    max_snr = max(callers.values())
+                                    was_loudest = answered_snr >= max_snr - 1
+                                    answers.append(was_loudest)
+                                callers.clear()
                     
                     # Someone calling our target?
                     elif d.replying_to and d.replying_to.upper() == callsign:
@@ -769,35 +1040,82 @@ class BehaviorPredictor:
                 print(f"[lookup] {callsign}: {source.path.name} -> {file_decodes} decodes, {matches_found} matches")
                 
                 # If we have enough observations, stop early
-                if len(answers) >= 10:
-                    print(f"[lookup] {callsign}: have {len(answers)} observations, stopping early")
+                if len(answers) >= 10 and len(qsos) >= 5:
+                    print(f"[lookup] {callsign}: have {len(answers)} picking obs, {len(qsos)} QSOs, stopping early")
                     break
                     
             except Exception as e:
                 print(f"[lookup] {callsign}: ERROR parsing {source.path.name}: {e}")
         
-        print(f"[lookup] {callsign}: total {decodes_scanned} decodes, {matches_found} matches, {len(answers)} answers")
+        # Calculate session info from timestamps
+        sessions = []
+        current_session_start = None
+        current_session_end = None
         
-        # Build history from what we found
-        if len(answers) >= 2:
-            loudest_ratio = sum(answers) / len(answers)
-            
+        for ts, is_cq, partner in messages:
+            if ts is None:
+                continue
+            if current_session_start is None:
+                current_session_start = ts
+                current_session_end = ts
+            else:
+                gap = (ts - current_session_end).total_seconds()
+                if gap > SESSION_GAP_SECONDS:
+                    # Save previous session
+                    duration = (current_session_end - current_session_start).total_seconds()
+                    sessions.append(duration)
+                    current_session_start = ts
+                current_session_end = ts
+        
+        # Don't forget last session
+        if current_session_start and current_session_end:
+            duration = (current_session_end - current_session_start).total_seconds()
+            sessions.append(duration)
+        
+        # Calculate stats
+        total_qsos = len(qsos)
+        completed_qsos = sum(1 for _, completed in qsos if completed)
+        total_session_seconds = sum(sessions)
+        sessions_seen = len(sessions)
+        
+        print(f"[lookup] {callsign}: total {decodes_scanned} decodes, {matches_found} matches, {len(answers)} picking obs")
+        print(f"[lookup] {callsign}: activity: {cq_count} CQs, {total_qsos} QSOs ({completed_qsos} completed), {sessions_seen} sessions")
+        
+        # Build history from what we found (need EITHER picking data OR activity data)
+        has_picking_data = len(answers) >= 2
+        has_activity_data = total_qsos >= 3 and sessions_seen >= 1
+        
+        if has_picking_data or has_activity_data:
             if callsign not in self._history:
                 self._history[callsign] = HistoricalRecord(callsign=callsign)
             
             record = self._history[callsign]
-            record.observations = len(answers)
             record.last_seen = datetime.now().isoformat()
             
-            if loudest_ratio > 0.7:
-                record.loudest_first_count = len(answers)
-                style = "loudest_first"
-            elif loudest_ratio < 0.3:
-                record.random_count = len(answers)
-                style = "random"
+            # Activity traits (for persona matching)
+            record.sessions_seen = sessions_seen
+            record.total_qsos = total_qsos
+            record.completed_qsos = completed_qsos
+            record.abandoned_qsos = total_qsos - completed_qsos
+            record.total_cqs = cq_count
+            record.total_session_seconds = total_session_seconds
+            
+            # Picking behavior
+            if has_picking_data:
+                loudest_ratio = sum(answers) / len(answers)
+                record.observations = len(answers)
+                
+                if loudest_ratio > 0.7:
+                    record.loudest_first_count = len(answers)
+                    style = "loudest_first"
+                elif loudest_ratio < 0.3:
+                    record.random_count = len(answers)
+                    style = "random"
+                else:
+                    record.methodical_count = len(answers)
+                    style = "methodical"
             else:
-                record.methodical_count = len(answers)
-                style = "methodical"
+                style = "no picking data"
             
             # Clear session cache to pick up new data
             if callsign in self._session_beliefs:
@@ -805,23 +1123,35 @@ class BehaviorPredictor:
             
             self._save_history()
             
-            print(f"[lookup] {callsign}: SUCCESS! {len(answers)} obs, {loudest_ratio:.0%} loudest -> {style}")
-            logger.info(f"[lookup] {callsign}: SUCCESS - {len(answers)} observations "
-                       f"({loudest_ratio:.0%} loudest)")
+            # Check persona match
+            persona_result = find_best_persona(record)
+            persona_info = ""
+            if persona_result:
+                persona, score = persona_result
+                persona_info = f", persona={persona.name} ({score:.0%})"
+            
+            print(f"[lookup] {callsign}: SUCCESS! picking={style}, rate={record.qso_rate:.1f}/min, completion={record.completion_rate:.0%}{persona_info}")
+            logger.info(f"[lookup] {callsign}: SUCCESS - {len(answers)} picking obs, {total_qsos} QSOs")
             return True
         
-        print(f"[lookup] {callsign}: not enough data ({len(answers)} answers)")
-        logger.info(f"[lookup] {callsign}: not enough data ({len(answers)} answers)")
+        print(f"[lookup] {callsign}: not enough data (picking={len(answers)}, qsos={total_qsos})")
+        logger.info(f"[lookup] {callsign}: not enough data")
         return False
 
     def fast_bootstrap(self, 
-                       max_days: int = 7,
-                       max_decodes: int = 200000,
-                       timeout_seconds: float = 15.0) -> int:
+                       max_days: int = 14,
+                       max_decodes: int = 500000,
+                       timeout_seconds: float = 30.0) -> int:
         """
         Fast bootstrap for startup - process recent data only.
         
-        Designed to complete within ~15 seconds (one FT8 cycle).
+        Tracks both picking behavior AND activity traits for persona matching:
+        - Sessions (5+ min gap = new session)
+        - QSO completion rate (look for 73/RR73)
+        - QSO rate (QSOs per minute)
+        - CQ frequency
+        
+        Designed to complete within ~30 seconds.
         
         Args:
             max_days: Only look at last N days of data
@@ -836,10 +1166,13 @@ class BehaviorPredictor:
         from local_intel.log_discovery import LogFileDiscovery
         from local_intel.log_parser import LogParser
         
+        SESSION_GAP_SECONDS = 300  # 5 minutes = new session
+        
         start_time = time.time()
         cutoff_date = datetime.now() - timedelta(days=max_days)
         
         logger.info(f"Fast bootstrap: last {max_days} days, max {max_decodes} decodes")
+        print(f"[bootstrap] Starting: last {max_days} days, max {max_decodes} decodes")
         
         # Discover log files
         discovery = LogFileDiscovery()
@@ -871,89 +1204,189 @@ class BehaviorPredictor:
             return 0
         
         logger.info(f"Parsed {len(all_decodes)} decodes in {time.time() - start_time:.1f}s")
+        print(f"[bootstrap] Parsed {len(all_decodes)} decodes in {time.time() - start_time:.1f}s")
         
-        # Quick stats
-        cq_count = sum(1 for d in all_decodes if d.is_cq)
-        if cq_count == 0:
-            logger.info("No CQ messages found")
-            return 0
+        # Sort by timestamp for session detection
+        all_decodes.sort(key=lambda d: d.timestamp or datetime.min)
         
-        # Fast session reconstruction (simplified, inline)
-        # Group by DX station, find their answers
-        dx_answers = {}  # dx_call -> list of (snr_rank, was_loudest)
-        
-        # First pass: find DX stations and build caller index
+        # First pass: find DX stations (anyone who CQ'd)
         dx_stations = set()
-        dx_callers = {}  # dx_call -> {caller: snr}
-        
         for d in all_decodes:
             if d.is_cq and d.callsign:
                 dx_stations.add(d.callsign.upper())
         
-        # Second pass: track callers and answers
+        if not dx_stations:
+            logger.info("No DX stations found")
+            return 0
+        
+        print(f"[bootstrap] Found {len(dx_stations)} DX stations")
+        
+        # Track activity per DX station
+        # dx_data[call] = {
+        #   'messages': [(timestamp, message, replying_to)],
+        #   'callers': {caller: snr},  # Current callers in pileup
+        #   'answers': [was_loudest],  # Picking observations
+        #   'qsos': [(partner, completed)],  # QSOs tracked
+        #   'cqs': int,
+        # }
+        dx_data = {call: {
+            'messages': [],
+            'callers': {},
+            'answers': [],
+            'qsos': [],
+            'cqs': 0,
+        } for call in dx_stations}
+        
+        # Second pass: collect all activity
         for d in all_decodes:
-            if time.time() - start_time > timeout_seconds * 0.8:  # Stop at 80% of time
+            if time.time() - start_time > timeout_seconds * 0.7:  # Stop at 70% of time
                 break
             
-            if d.replying_to:
+            # Track CQs
+            if d.is_cq and d.callsign:
+                call = d.callsign.upper()
+                if call in dx_data:
+                    dx_data[call]['cqs'] += 1
+                    dx_data[call]['messages'].append((d.timestamp, d.message, None))
+                    dx_data[call]['callers'].clear()  # New CQ = reset pileup
+            
+            # Track callers to DX
+            elif d.replying_to:
                 dx_call = d.replying_to.upper()
                 caller = d.callsign.upper() if d.callsign else None
                 
-                if dx_call in dx_stations and caller:
-                    # Someone calling a DX
-                    if dx_call not in dx_callers:
-                        dx_callers[dx_call] = {}
-                    dx_callers[dx_call][caller] = d.snr
+                if dx_call in dx_data and caller:
+                    dx_data[dx_call]['callers'][caller] = d.snr
                 
-                # Check if sender is DX (DX answering)
+                # Check if sender is DX answering someone
                 if d.callsign:
                     sender = d.callsign.upper()
-                    if sender in dx_stations:
+                    if sender in dx_data:
                         answered = d.replying_to.upper()
-                        callers = dx_callers.get(sender, {})
+                        data = dx_data[sender]
                         
-                        if callers:
-                            # Determine if answered was loudest
-                            answered_snr = callers.get(answered, -20)
-                            max_snr = max(callers.values()) if callers else answered_snr
-                            was_loudest = answered_snr >= max_snr - 1  # Within 1dB of loudest
+                        # Record message
+                        data['messages'].append((d.timestamp, d.message, answered))
+                        
+                        # Check if this is a new QSO or continuation
+                        msg_upper = (d.message or '').upper()
+                        is_73 = '73' in msg_upper or 'RR73' in msg_upper
+                        
+                        # Find if we have an ongoing QSO with this partner
+                        ongoing_qso = None
+                        for i, (partner, completed) in enumerate(data['qsos']):
+                            if partner == answered and not completed:
+                                ongoing_qso = i
+                                break
+                        
+                        if ongoing_qso is not None:
+                            # Continuation - check for completion
+                            if is_73:
+                                data['qsos'][ongoing_qso] = (answered, True)
+                        else:
+                            # New QSO starting
+                            data['qsos'].append((answered, is_73))
                             
-                            if sender not in dx_answers:
-                                dx_answers[sender] = []
-                            dx_answers[sender].append(was_loudest)
+                            # Track picking behavior
+                            callers = data['callers']
+                            if callers:
+                                answered_snr = callers.get(answered, -20)
+                                max_snr = max(callers.values()) if callers else answered_snr
+                                was_loudest = answered_snr >= max_snr - 1
+                                data['answers'].append(was_loudest)
         
-        # Build behavior history from observations
+        print(f"[bootstrap] Activity tracking done in {time.time() - start_time:.1f}s")
+        
+        # Third pass: calculate sessions and build history
         stations_processed = 0
         
-        for dx_call, answers in dx_answers.items():
-            if len(answers) < 2:  # Need at least 2 observations
+        for dx_call, data in dx_data.items():
+            if time.time() - start_time > timeout_seconds * 0.95:
+                break
+            
+            messages = data['messages']
+            if len(messages) < 3:  # Need some activity
                 continue
             
-            # Simple classification based on loudest picks
-            loudest_ratio = sum(answers) / len(answers)
+            # Detect sessions based on time gaps
+            sessions = []
+            current_session_start = None
+            current_session_end = None
             
-            # Update history directly (skip full Bayesian for speed)
+            for ts, msg, partner in messages:
+                if ts is None:
+                    continue
+                    
+                if current_session_start is None:
+                    current_session_start = ts
+                    current_session_end = ts
+                else:
+                    gap = (ts - current_session_end).total_seconds()
+                    if gap > SESSION_GAP_SECONDS:
+                        # Save previous session
+                        duration = (current_session_end - current_session_start).total_seconds()
+                        sessions.append(duration)
+                        # Start new session
+                        current_session_start = ts
+                    current_session_end = ts
+            
+            # Don't forget last session
+            if current_session_start and current_session_end:
+                duration = (current_session_end - current_session_start).total_seconds()
+                sessions.append(duration)
+            
+            # Calculate stats
+            total_qsos = len(data['qsos'])
+            completed_qsos = sum(1 for _, completed in data['qsos'] if completed)
+            total_session_seconds = sum(sessions)
+            sessions_seen = len(sessions)
+            cqs = data['cqs']
+            answers = data['answers']
+            
+            if total_qsos < 2:  # Need minimum activity
+                continue
+            
+            # Update or create history record
             if dx_call not in self._history:
                 self._history[dx_call] = HistoricalRecord(callsign=dx_call)
             
             record = self._history[dx_call]
-            record.observations += len(answers)
             record.last_seen = datetime.now().isoformat()
             
-            if loudest_ratio > 0.7:
-                record.loudest_first_count += 1
-            elif loudest_ratio < 0.3:
-                record.random_count += 1
-            else:
-                record.methodical_count += 1
+            # Activity traits
+            record.sessions_seen += sessions_seen
+            record.total_qsos += total_qsos
+            record.completed_qsos += completed_qsos
+            record.abandoned_qsos += (total_qsos - completed_qsos)
+            record.total_cqs += cqs
+            record.total_session_seconds += total_session_seconds
+            
+            # Picking behavior
+            if answers:
+                record.observations += len(answers)
+                loudest_ratio = sum(answers) / len(answers)
+                
+                if loudest_ratio > 0.7:
+                    record.loudest_first_count += len(answers)
+                elif loudest_ratio < 0.3:
+                    record.random_count += len(answers)
+                else:
+                    record.methodical_count += len(answers)
             
             stations_processed += 1
         
         # Save
         self._save_history()
+        self._prefix_stats_dirty = True  # Rebuild prefix stats
         
         elapsed = time.time() - start_time
         logger.info(f"Fast bootstrap complete: {stations_processed} stations in {elapsed:.1f}s")
+        print(f"[bootstrap] Complete: {stations_processed} stations in {elapsed:.1f}s")
+        
+        # Print some stats
+        total_with_persona = sum(1 for r in self._history.values() 
+                                  if r.sessions_seen > 0 and r.total_qsos >= 3)
+        print(f"[bootstrap] {total_with_persona} stations have persona traits")
         
         return stations_processed
 
@@ -1052,7 +1485,7 @@ class BehaviorPredictor:
     def get_history_stats(self) -> Dict:
         """Get statistics about the behavior history."""
         if not self._history:
-            return {'stations': 0, 'total_observations': 0, 'prefixes': 0}
+            return {'stations': 0, 'total_observations': 0, 'prefixes': 0, 'with_persona': 0}
         
         total_obs = sum(r.observations for r in self._history.values())
         
@@ -1061,9 +1494,22 @@ class BehaviorPredictor:
             'methodical': 0,
             'random': 0,
         }
+        
+        # Count stations with persona data
+        with_persona = 0
+        persona_counts = {}
+        
         for r in self._history.values():
             style = max(r.style_distribution, key=r.style_distribution.get)
             style_counts[style] += 1
+            
+            # Check for persona data
+            if r.sessions_seen > 0 and r.total_qsos >= 3:
+                with_persona += 1
+                result = find_best_persona(r)
+                if result:
+                    persona, _ = result
+                    persona_counts[persona.name] = persona_counts.get(persona.name, 0) + 1
         
         # Build prefix stats if needed
         self._build_prefix_stats()
@@ -1073,6 +1519,8 @@ class BehaviorPredictor:
             'total_observations': total_obs,
             'style_distribution': style_counts,
             'prefixes': len(self._prefix_stats),
+            'with_persona': with_persona,
+            'persona_distribution': persona_counts,
         }
     
     def reload_history(self):

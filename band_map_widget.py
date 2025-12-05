@@ -500,14 +500,6 @@ class BandMapWidget(QWidget):
                     qp.setPen(QColor("#FF8800"))  # Orange text - crowded
                 qp.drawText(x - 4, top_h - 3, str(count))
 
-            # 4. DRAW COLLISION/THREAT OVERLAY
-            if self.target_freq > 0:
-                for tier_name in ['tier1', 'tier2']:
-                    for spot in self.perspective_data.get(tier_name, []):
-                        freq = spot.get('freq', 0)
-                        if 0 < freq < self.bandwidth and abs(freq - self.target_freq) < 35:
-                            self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(255, 0, 0), 1.0)
-
         # 5. DRAW SCORE GRAPH (Middle Section)
         self._draw_score_graph(qp, w, score_h, score_top)
 

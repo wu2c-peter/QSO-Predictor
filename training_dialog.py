@@ -399,17 +399,17 @@ class TrainingDialog(QDialog):
         try:
             start_time = time.time()
             
-            # Use fast bootstrap (30 days, 30 second limit)
+            # Use fast bootstrap (14 days, 30 second limit)
             predictor = BehaviorPredictor(self.training_manager.model_manager)
             
-            self.results_text.append("Fast bootstrap: last 7 days, max 200K decodes, 15s limit")
+            self.results_text.append("Fast bootstrap: last 14 days, max 500K decodes, 30s limit")
             self.progress_bar.setValue(20)
             QApplication.processEvents()
             
             stations_count = predictor.fast_bootstrap(
-                max_days=7,
-                max_decodes=200000,
-                timeout_seconds=15.0
+                max_days=14,
+                max_decodes=500000,
+                timeout_seconds=30.0
             )
             
             elapsed = time.time() - start_time
@@ -421,11 +421,19 @@ class TrainingDialog(QDialog):
             self.results_text.append(f"\n✓ Bootstrap Complete in {elapsed:.1f}s!")
             self.results_text.append(f"  Stations analyzed: {stats['stations']:,}")
             self.results_text.append(f"  Total observations: {stats['total_observations']:,}")
+            self.results_text.append(f"  With persona data: {stats.get('with_persona', 0):,}")
             
             if stats.get('style_distribution'):
-                self.results_text.append(f"\n  Style distribution:")
+                self.results_text.append(f"\n  Picking style distribution:")
                 for style, count in stats['style_distribution'].items():
                     self.results_text.append(f"    {style}: {count}")
+            
+            if stats.get('persona_distribution'):
+                self.results_text.append(f"\n  Persona distribution:")
+                for persona, count in sorted(stats['persona_distribution'].items(), 
+                                             key=lambda x: -x[1]):
+                    persona_display = persona.replace('_', ' ').title()
+                    self.results_text.append(f"    {persona_display}: {count}")
             
             self.results_text.append(f"\nNote: Additional stations are looked up on-demand")
             self.results_text.append(f"when you click them in the table.")

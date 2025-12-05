@@ -79,8 +79,8 @@ class ModelManager:
     # Expected model files
     MODEL_NAMES = [
         'success_model',      # Predict P(QSO success)
-        'target_behavior',    # Classify target picking patterns
         'frequency_model',    # Recommend TX frequency
+        # Note: target_behavior replaced by persona-based prediction in BehaviorPredictor
     ]
     
     def __init__(self, model_dir: Path = None):
