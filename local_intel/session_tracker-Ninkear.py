@@ -77,7 +77,6 @@ class SessionTracker:
             frequency: Target's TX frequency offset
         """
         callsign = callsign.upper()
-        print(f"[SessionTracker] set_target called: {callsign}")
         
         if callsign in self.active_sessions:
             self.target_session = self.active_sessions[callsign]
@@ -89,10 +88,6 @@ class SessionTracker:
                 frequency=frequency or 0
             )
             self.active_sessions[callsign] = self.target_session
-        
-        # On-demand lookup: if we don't have behavior history, quick search logs
-        print(f"[SessionTracker] calling lookup_station for {callsign}")
-        self._behavior_predictor.lookup_station(callsign)  # Uses 3s default timeout
         
         logger.info(f"Target set: {callsign}")
     

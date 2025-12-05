@@ -782,6 +782,7 @@ class MainWindow(QMainWindow):
 
  
     def on_row_click(self, index):
+        print(f"[main_v2] on_row_click: row {index.row()}")
         row = index.row()
         if row < len(self.model._data):
             data = self.model._data[row]

@@ -455,6 +455,210 @@ class BehaviorFeatureBuilder:
         return self.FEATURE_NAMES
 
 
+class HistoricalSessionReconstructor:
+    """
+    Reconstruct DX station sessions from historical ALL.TXT data.
+    
+    A "session" is a period where a DX station was calling CQ and working callers.
+    We analyze who they picked to infer their picking behavior.
+    """
+    
+    def __init__(self, min_qsos_per_session: int = 5, session_gap_minutes: int = 10):
+        """
+        Args:
+            min_qsos_per_session: Minimum QSOs to consider a valid session
+            session_gap_minutes: Gap that indicates a new session
+        """
+        self.min_qsos = min_qsos_per_session
+        self.session_gap = timedelta(minutes=session_gap_minutes)
+    
+    def reconstruct_sessions(self, decodes: List[Decode]) -> List[TargetSession]:
+        """
+        Reconstruct DX sessions from historical decode data.
+        
+        Uses single-pass indexing for efficiency with large datasets.
+        
+        Args:
+            decodes: All decodes, sorted by time
+            
+        Returns:
+            List of TargetSession objects with answered_calls populated
+        """
+        # SINGLE PASS: Build index of decodes by DX station
+        # This is O(n) instead of O(n*m) where m = number of DX stations
+        
+        dx_index = defaultdict(list)  # dx_call -> list of (decode, role)
+        dx_stations = set()
+        
+        # First pass: identify all DX stations (anyone who called CQ)
+        for d in decodes:
+            if d.is_cq and d.callsign:
+                dx_stations.add(d.callsign.upper())
+        
+        logger.info(f"Found {len(dx_stations)} DX stations (CQ callers)")
+        
+        # Second pass: index all relevant decodes
+        for d in decodes:
+            if d.is_cq and d.callsign:
+                # DX calling CQ - add to their index
+                call = d.callsign.upper()
+                dx_index[call].append(d)
+            
+            elif d.replying_to:
+                # Someone replying to a station
+                dx_call = d.replying_to.upper()
+                
+                # If they're replying to a known DX, index it
+                if dx_call in dx_stations:
+                    dx_index[dx_call].append(d)
+                
+                # Also check if the SENDER is a known DX (DX answering a caller)
+                if d.callsign:
+                    sender = d.callsign.upper()
+                    if sender in dx_stations:
+                        dx_index[sender].append(d)
+        
+        logger.info(f"Indexed decodes for {len(dx_index)} stations")
+        
+        # Now process each DX station from the index (no re-scanning!)
+        all_sessions = []
+        for dx_call in dx_stations:
+            dx_decodes = dx_index.get(dx_call, [])
+            if len(dx_decodes) < self.min_qsos:
+                continue
+            
+            # Sort this DX's decodes by time (should already be sorted, but ensure)
+            dx_decodes = sorted(dx_decodes, key=lambda d: d.timestamp)
+            
+            sessions = self._process_dx_decodes(dx_call, dx_decodes)
+            all_sessions.extend(sessions)
+        
+        logger.info(f"Reconstructed {len(all_sessions)} DX sessions")
+        return all_sessions
+    
+    def _process_dx_decodes(self, dx_call: str, dx_decodes: List[Decode]) -> List[TargetSession]:
+        """Process pre-filtered decodes for a single DX station."""
+        sessions = []
+        current_session = None
+        last_time = None
+        
+        for d in dx_decodes:
+            # Check if this starts a new session
+            if last_time and (d.timestamp - last_time) > self.session_gap:
+                if current_session and len(current_session['answers']) >= self.min_qsos:
+                    session = self._build_session(dx_call, current_session)
+                    if session:
+                        sessions.append(session)
+                current_session = None
+            
+            # Start new session if needed
+            if current_session is None:
+                current_session = {
+                    'started': d.timestamp,
+                    'cqs': [],
+                    'callers': {},  # callsign -> {freq, snr, last_seen}
+                    'answers': [],  # [(timestamp, answered_call, caller_snr, caller_freq, pileup)]
+                    'frequency': d.frequency if d.is_cq else 0,
+                    'grid': d.grid,
+                }
+            
+            # Process this decode
+            self._process_decode_for_session(d, dx_call, current_session)
+            last_time = d.timestamp
+        
+        # Don't forget the last session
+        if current_session and len(current_session['answers']) >= self.min_qsos:
+            session = self._build_session(dx_call, current_session)
+            if session:
+                sessions.append(session)
+        
+        return sessions
+    
+    def _involves_dx(self, decode: Decode, dx_call: str) -> bool:
+        """Check if decode involves the DX station."""
+        if decode.callsign and decode.callsign.upper() == dx_call:
+            return True  # DX transmitting
+        if decode.replying_to and decode.replying_to.upper() == dx_call:
+            return True  # Someone calling DX
+        return False
+    
+    def _process_decode_for_session(self, decode: Decode, dx_call: str, session: dict):
+        """Process a single decode for session reconstruction."""
+        
+        if decode.is_cq and decode.callsign.upper() == dx_call:
+            # DX calling CQ
+            session['cqs'].append(decode.timestamp)
+            if decode.grid and not session['grid']:
+                session['grid'] = decode.grid
+            if decode.frequency:
+                session['frequency'] = decode.frequency
+        
+        elif decode.replying_to and decode.replying_to.upper() == dx_call:
+            # Someone calling the DX
+            caller = decode.callsign.upper() if decode.callsign else None
+            if caller:
+                session['callers'][caller] = {
+                    'freq': decode.frequency,
+                    'snr': decode.snr,
+                    'last_seen': decode.timestamp,
+                }
+        
+        elif decode.callsign and decode.callsign.upper() == dx_call and decode.replying_to:
+            # DX answering someone (e.g., "K1ABC JA1XYZ -12")
+            answered = decode.replying_to.upper()
+            
+            # Get current pileup snapshot
+            active_callers = {
+                call: info for call, info in session['callers'].items()
+                if (decode.timestamp - info['last_seen']).total_seconds() < 120  # Active in last 2 min
+            }
+            
+            if active_callers:
+                # Determine caller's rank by SNR
+                caller_info = active_callers.get(answered, {'snr': -20, 'freq': 1500})
+                snr_sorted = sorted(active_callers.items(), key=lambda x: x[1]['snr'], reverse=True)
+                snr_rank = next((i+1 for i, (c, _) in enumerate(snr_sorted) if c == answered), len(snr_sorted))
+                
+                session['answers'].append({
+                    'timestamp': decode.timestamp,
+                    'callsign': answered,
+                    'snr': caller_info['snr'],
+                    'freq': caller_info['freq'],
+                    'snr_rank': snr_rank,
+                    'pileup_size': len(active_callers),
+                })
+    
+    def _build_session(self, dx_call: str, session_data: dict) -> Optional[TargetSession]:
+        """Build a TargetSession from collected data."""
+        if len(session_data['answers']) < self.min_qsos:
+            return None
+        
+        session = TargetSession(
+            callsign=dx_call,
+            grid=session_data['grid'],
+            started=session_data['started'],
+            frequency=session_data['frequency'],
+            cq_count=len(session_data['cqs']),
+            qso_count=len(session_data['answers']),
+        )
+        
+        # Convert answers to AnsweredCall objects
+        for i, ans in enumerate(session_data['answers']):
+            answered_call = AnsweredCall(
+                callsign=ans['callsign'],
+                frequency=ans['freq'],
+                snr=ans['snr'],
+                answered_at=ans['timestamp'],
+                cycle_number=i,
+                calls_before_answer=0,  # Could calculate but not critical
+                snr_rank=ans['snr_rank'],
+                pileup_size=ans['pileup_size'],
+            )
+            session.answered_calls.append(answered_call)
+        
+        return session
+
+
 class FrequencyFeatureBuilder:
     """
     Build features for frequency recommendation model.

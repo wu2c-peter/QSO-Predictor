@@ -27,10 +27,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from local_intel.log_discovery import LogFileDiscovery
 from local_intel.log_parser import LogParser, QSOExtractor
 from local_intel.models import ModelMetadata
+from local_intel.model_manager import ScaledClassifier, ScaledRegressor
 from training.feature_builders import (
     SuccessFeatureBuilder, 
     BehaviorFeatureBuilder,
     FrequencyFeatureBuilder,
+    HistoricalSessionReconstructor,
     StatsCalculator
 )
 
@@ -145,22 +147,8 @@ def train_success_model(X: np.ndarray,
         'feature_importance': importance,
     }
     
-    # Wrap model with scaler for inference
-    class ScaledModel:
-        def __init__(self, model, scaler):
-            self._model = model
-            self._scaler = scaler
-            self.classes_ = model.classes_
-        
-        def predict(self, X):
-            X_scaled = self._scaler.transform(X)
-            return self._model.predict(X_scaled)
-        
-        def predict_proba(self, X):
-            X_scaled = self._scaler.transform(X)
-            return self._model.predict_proba(X_scaled)
-    
-    wrapped_model = ScaledModel(model, scaler)
+    # Wrap model with scaler for inference (using module-level class for pickling)
+    wrapped_model = ScaledClassifier(model, scaler)
     
     return wrapped_model, metrics
 
@@ -273,16 +261,7 @@ def train_frequency_model(X: np.ndarray,
         'feature_importance': importance,
     }
     
-    # Wrap model with scaler
-    class ScaledRegressor:
-        def __init__(self, model, scaler):
-            self._model = model
-            self._scaler = scaler
-        
-        def predict(self, X):
-            X_scaled = self._scaler.transform(X)
-            return self._model.predict(X_scaled)
-    
+    # Wrap model with scaler (using module-level class for pickling)
     wrapped_model = ScaledRegressor(model, scaler)
     
     return wrapped_model, metrics
@@ -390,7 +369,8 @@ class ModelTrainer:
             pct = 10 + int((i / len(sources)) * 60)
             emit_progress('load', pct, f'Parsing {source.path.name}...')
             
-            decodes = list(parser.parse_file(source))
+            # Include TX lines - we need to see our own transmissions to track QSO attempts
+            decodes = list(parser.parse_file(source, rx_only=False))
             all_decodes.extend(decodes)
             logger.info(f"Parsed {len(decodes)} decodes from {source.path.name}")
         
@@ -460,19 +440,47 @@ class ModelTrainer:
         emit_model_complete('success_model', metrics)
     
     def _train_behavior_model(self):
-        """Train the target behavior model."""
-        # For behavior model, we need session data which is primarily
-        # built from real-time observations. For historical training,
-        # we'll use a simplified approach.
+        """Train the target behavior model from historical data."""
+        emit_progress('train', 60, 'Reconstructing DX sessions...')
         
-        # This is a placeholder - full implementation would reconstruct
-        # sessions from historical decodes
-        logger.warning("Behavior model training from historical data not yet implemented")
+        # Reconstruct DX sessions from historical decodes
+        reconstructor = HistoricalSessionReconstructor(
+            min_qsos_per_session=5,
+            session_gap_minutes=10
+        )
+        sessions = reconstructor.reconstruct_sessions(self.decodes)
         
-        metrics = {
-            'status': 'skipped',
-            'reason': 'Requires real-time session data'
-        }
+        if len(sessions) < 30:
+            logger.warning(f"Not enough DX sessions: {len(sessions)} (need 30+)")
+            metrics = {
+                'status': 'skipped',
+                'reason': f'Not enough DX sessions ({len(sessions)}, need 30+)'
+            }
+            emit_model_complete('target_behavior', metrics)
+            return
+        
+        emit_progress('train', 70, f'Building features from {len(sessions)} sessions...')
+        
+        # Build features
+        builder = BehaviorFeatureBuilder()
+        X, y = builder.build_from_sessions(sessions)
+        
+        if len(X) < 30:
+            logger.warning(f"Not enough valid sessions: {len(X)} (need 30+)")
+            metrics = {
+                'status': 'skipped',
+                'reason': f'Not enough valid sessions ({len(X)}, need 30+)'
+            }
+            emit_model_complete('target_behavior', metrics)
+            return
+        
+        emit_progress('train', 80, 'Training behavior classifier...')
+        
+        # Train the model
+        model, metrics = train_behavior_model(X, y, builder.feature_names)
+        
+        # Save model
+        self._save_model('target_behavior', model, metrics, len(X))
         
         emit_model_complete('target_behavior', metrics)
     

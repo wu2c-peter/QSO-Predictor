@@ -159,6 +159,14 @@ class TrainingDialog(QDialog):
         self.train_button.clicked.connect(self._start_training)
         button_layout.addWidget(self.train_button)
         
+        self.bootstrap_button = QPushButton("Bootstrap Behavior")
+        self.bootstrap_button.clicked.connect(self._bootstrap_behavior)
+        self.bootstrap_button.setToolTip(
+            "Build behavior history from ALL.TXT without full ML training.\n"
+            "Quick way to get personalized behavior predictions."
+        )
+        button_layout.addWidget(self.bootstrap_button)
+        
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self._cancel_training)
         self.cancel_button.setEnabled(False)
@@ -191,8 +199,15 @@ class TrainingDialog(QDialog):
         else:
             self.files_label.setText("No log files found.\n\nCheck that WSJT-X or JTDX is installed.")
             self.train_button.setEnabled(False)
+            self.bootstrap_button.setEnabled(False)
         
-        # Check model status
+        # Update model checkboxes
+        self._update_model_checkboxes()
+    
+    def _update_model_checkboxes(self):
+        """Update checkbox labels with current model status."""
+        # Force reload models from disk to pick up newly trained models
+        self.training_manager.model_manager.reload_models()
         model_status = self.training_manager.get_model_status()
         
         for status in model_status:
@@ -207,7 +222,10 @@ class TrainingDialog(QDialog):
             
             elif status['name'] == 'target_behavior':
                 if status['exists']:
-                    self.behavior_check.setText("Target Behavior (trained)")
+                    age = status['age_days']
+                    self.behavior_check.setText(
+                        f"Target Behavior (trained {age} days ago)"
+                    )
                 else:
                     self.behavior_check.setText("Target Behavior (not trained)")
             
@@ -237,6 +255,7 @@ class TrainingDialog(QDialog):
         
         # Update UI
         self.train_button.setEnabled(False)
+        self.bootstrap_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.success_check.setEnabled(False)
         self.behavior_check.setEnabled(False)
@@ -260,6 +279,7 @@ class TrainingDialog(QDialog):
     def _reset_ui(self):
         """Reset UI to initial state."""
         self.train_button.setEnabled(True)
+        self.bootstrap_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
         self.success_check.setEnabled(True)
         self.behavior_check.setEnabled(True)
@@ -351,10 +371,78 @@ class TrainingDialog(QDialog):
             self.progress_bar.setValue(100)
             self.status_label.setText(message)
             self.status_label.setStyleSheet("color: #88ff88;")
+            # Refresh model status to show updated training dates
+            self._update_model_checkboxes()
         else:
             self.stage_label.setText("Training Failed")
             self.status_label.setText(message)
             self.status_label.setStyleSheet("color: #ff6666;")
+    
+    def _bootstrap_behavior(self):
+        """Bootstrap behavior history - fast version with time limits."""
+        from PyQt6.QtWidgets import QApplication
+        from local_intel.behavior_predictor import BehaviorPredictor
+        import time
+        
+        # Disable buttons during bootstrap
+        self.train_button.setEnabled(False)
+        self.bootstrap_button.setEnabled(False)
+        self.cancel_button.setEnabled(False)
+        
+        self.stage_label.setText("Bootstrapping Behavior History")
+        self.status_label.setText("Processing recent logs...")
+        self.status_label.setStyleSheet("color: #88ff88;")
+        self.progress_bar.setValue(0)
+        self.results_text.clear()
+        QApplication.processEvents()
+        
+        try:
+            start_time = time.time()
+            
+            # Use fast bootstrap (30 days, 30 second limit)
+            predictor = BehaviorPredictor(self.training_manager.model_manager)
+            
+            self.results_text.append("Fast bootstrap: last 7 days, max 200K decodes, 15s limit")
+            self.progress_bar.setValue(20)
+            QApplication.processEvents()
+            
+            stations_count = predictor.fast_bootstrap(
+                max_days=7,
+                max_decodes=200000,
+                timeout_seconds=15.0
+            )
+            
+            elapsed = time.time() - start_time
+            self.progress_bar.setValue(100)
+            
+            # Show results
+            stats = predictor.get_history_stats()
+            
+            self.results_text.append(f"\n✓ Bootstrap Complete in {elapsed:.1f}s!")
+            self.results_text.append(f"  Stations analyzed: {stats['stations']:,}")
+            self.results_text.append(f"  Total observations: {stats['total_observations']:,}")
+            
+            if stats.get('style_distribution'):
+                self.results_text.append(f"\n  Style distribution:")
+                for style, count in stats['style_distribution'].items():
+                    self.results_text.append(f"    {style}: {count}")
+            
+            self.results_text.append(f"\nNote: Additional stations are looked up on-demand")
+            self.results_text.append(f"when you click them in the table.")
+            
+            self.stage_label.setText("Bootstrap Complete")
+            self.status_label.setText(f"Analyzed {stations_count} stations in {elapsed:.1f}s")
+            self.status_label.setStyleSheet("color: #88ff88;")
+            
+        except Exception as e:
+            import traceback
+            self.results_text.append(f"\n⚠ Error: {e}")
+            self.results_text.append(traceback.format_exc())
+            self.status_label.setText(f"Bootstrap failed: {e}")
+            self.status_label.setStyleSheet("color: #ff6666;")
+        
+        finally:
+            self._reset_ui()
 
 
 class ModelStatusWidget(QWidget):
@@ -388,6 +476,8 @@ class ModelStatusWidget(QWidget):
     
     def update_status(self):
         """Update display with current model status."""
+        # Force reload to pick up any newly trained models
+        self.training_manager.model_manager.reload_models()
         status = self.training_manager.get_model_status()
         
         ready_count = sum(1 for s in status if s['exists'] and not s['is_stale'])

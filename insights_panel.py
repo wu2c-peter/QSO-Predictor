@@ -134,6 +134,7 @@ class BehaviorWidget(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("Target Behavior", parent)
+        self._current_call = None
         self._setup_ui()
     
     def _setup_ui(self):
@@ -167,22 +168,36 @@ class BehaviorWidget(QGroupBox):
         self.advice_label.setStyleSheet("color: #aaaaaa; font-style: italic;")
         layout.addWidget(self.advice_label)
     
+    def set_loading(self, callsign: str):
+        """Show immediate loading feedback when target changes."""
+        self._current_call = callsign
+        self.setTitle(f"Target Behavior: {callsign}")
+        self.pattern_label.setText("Looking up...")
+        self.pattern_label.setStyleSheet("color: #888888;")
+        self.confidence_bar.setValue(0)
+        self.advice_label.setText("Searching history...")
+    
     def update_display(self, behavior_info: Optional[Dict]):
-        """Update with behavior analysis."""
+        """Update with behavior analysis including Bayesian estimate."""
         if not behavior_info:
             self.clear()
             return
         
+        # Keep title showing callsign if we have one
+        if self._current_call:
+            self.setTitle(f"Target Behavior: {self._current_call}")
+        
         pattern: Optional[PickingPattern] = behavior_info.get('pattern')
         
-        if not pattern:
-            self.pattern_label.setText("Analyzing...")
-            self.confidence_bar.setValue(0)
-            self.advice_label.setText(f"Need more data ({behavior_info.get('qso_count', 0)} QSOs observed)")
-            return
-        
-        # Pattern name
-        style_names = {
+        # Style display names
+        style_display = {
+            'loudest_first': "Loudest First",
+            'methodical': "Methodical",
+            'methodical_low_high': "Low → High",
+            'methodical_high_low': "High → Low", 
+            'geographic': "Geographic",
+            'random': "Random/Fair",
+            'unknown': "Unknown",
             PickingStyle.LOUDEST_FIRST: "Loudest First",
             PickingStyle.METHODICAL_LOW_HIGH: "Low → High",
             PickingStyle.METHODICAL_HIGH_LOW: "High → Low",
@@ -190,25 +205,73 @@ class BehaviorWidget(QGroupBox):
             PickingStyle.RANDOM: "Random/Fair",
             PickingStyle.UNKNOWN: "Unknown",
         }
-        self.pattern_label.setText(style_names.get(pattern.style, "Unknown"))
         
-        # Color by pattern type
-        if pattern.style == PickingStyle.LOUDEST_FIRST:
-            self.pattern_label.setStyleSheet("color: #ff8800;")  # Orange - signal matters
-        elif pattern.style in [PickingStyle.METHODICAL_LOW_HIGH, PickingStyle.METHODICAL_HIGH_LOW]:
-            self.pattern_label.setStyleSheet("color: #00aaff;")  # Blue - frequency matters
+        # Check if we have live pattern analysis (5+ QSOs)
+        if pattern:
+            # Show live pattern (takes precedence)
+            self.pattern_label.setText(style_display.get(pattern.style, "Unknown"))
+            
+            # Color by pattern type
+            if pattern.style == PickingStyle.LOUDEST_FIRST:
+                self.pattern_label.setStyleSheet("color: #ff8800;")  # Orange - signal matters
+            elif pattern.style in [PickingStyle.METHODICAL_LOW_HIGH, PickingStyle.METHODICAL_HIGH_LOW]:
+                self.pattern_label.setStyleSheet("color: #00aaff;")  # Blue - frequency matters
+            else:
+                self.pattern_label.setStyleSheet("color: #88ff88;")  # Green - fair
+            
+            # Confidence from live analysis
+            conf_pct = int(pattern.confidence * 100)
+            self.confidence_bar.setValue(conf_pct)
+            self.advice_label.setText(pattern.advice or "—")
+            
+        elif behavior_info.get('bayesian_style'):
+            # Show Bayesian estimate (ML/historical/default)
+            style = behavior_info['bayesian_style']
+            confidence = behavior_info.get('bayesian_confidence', 0.3)
+            source = behavior_info.get('bayesian_source', 'default')
+            qso_count = behavior_info.get('qso_count', 0)
+            
+            # If no real data, show "observing" instead of fake prediction
+            if source == 'default' and qso_count == 0:
+                self.pattern_label.setText("Observing...")
+                self.pattern_label.setStyleSheet("color: #888888;")  # Gray
+                self.confidence_bar.setValue(0)
+                self.advice_label.setText("No history - watching for patterns")
+            else:
+                self.pattern_label.setText(style_display.get(style, style.title()))
+                
+                # Color by style
+                if style == 'loudest_first':
+                    self.pattern_label.setStyleSheet("color: #ff8800;")
+                elif style == 'methodical':
+                    self.pattern_label.setStyleSheet("color: #00aaff;")
+                else:
+                    self.pattern_label.setStyleSheet("color: #88ff88;")
+                
+                conf_pct = int(confidence * 100)
+                self.confidence_bar.setValue(conf_pct)
+                
+                # Show source of estimate
+                if source == 'historical':
+                    self.advice_label.setText(f"From history ({qso_count} live QSOs)")
+                elif source == 'ml_model':
+                    self.advice_label.setText(f"ML prediction ({qso_count} live QSOs)")
+                elif source == 'bayesian' and qso_count > 0:
+                    self.advice_label.setText(f"Live estimate ({qso_count} QSOs observed)")
+                else:
+                    self.advice_label.setText(f"Watching ({qso_count} QSOs observed)")
+            
         else:
-            self.pattern_label.setStyleSheet("color: #88ff88;")  # Green - fair
-        
-        # Confidence
-        conf_pct = int(pattern.confidence * 100)
-        self.confidence_bar.setValue(conf_pct)
-        
-        # Advice
-        self.advice_label.setText(pattern.advice or "—")
+            # No data at all
+            self.pattern_label.setText("Analyzing...")
+            self.pattern_label.setStyleSheet("")
+            self.confidence_bar.setValue(0)
+            self.advice_label.setText(f"Watching target ({behavior_info.get('qso_count', 0)} QSOs observed)")
     
     def clear(self):
         """Clear the display."""
+        self._current_call = None
+        self.setTitle("Target Behavior")
         self.pattern_label.setText("—")
         self.pattern_label.setStyleSheet("")
         self.confidence_bar.setValue(0)
@@ -483,11 +546,15 @@ class InsightsPanel(QWidget):
             grid: Target grid (if known)
         """
         self._current_target = callsign.upper() if callsign else None
-        
-        if self.session_tracker and callsign:
-            self.session_tracker.set_target(callsign, grid)
-        
+        # Note: Don't call session_tracker.set_target here - 
+        # LocalIntelIntegration already calls it before calling us
         self.refresh()
+    
+    def show_loading(self, callsign: str):
+        """Show immediate loading feedback when target changes."""
+        from PyQt6.QtWidgets import QApplication
+        self.behavior_widget.set_loading(callsign)
+        QApplication.processEvents()  # Force UI update before slow lookup
     
     def set_path_status(self, status: PathStatus):
         """Update path status (from main app's perspective)."""

@@ -27,6 +27,41 @@ except ImportError:
     logger.warning("joblib not installed - ML model loading disabled")
 
 
+# =============================================================================
+# Model Wrapper Classes (must be at module level for pickling)
+# =============================================================================
+
+class ScaledClassifier:
+    """Wrapper that applies scaling before classification."""
+    def __init__(self, model, scaler):
+        self._model = model
+        self._scaler = scaler
+        self.classes_ = model.classes_
+    
+    def predict(self, X):
+        X_scaled = self._scaler.transform(X)
+        return self._model.predict(X_scaled)
+    
+    def predict_proba(self, X):
+        X_scaled = self._scaler.transform(X)
+        return self._model.predict_proba(X_scaled)
+
+
+class ScaledRegressor:
+    """Wrapper that applies scaling before regression."""
+    def __init__(self, model, scaler):
+        self._model = model
+        self._scaler = scaler
+    
+    def predict(self, X):
+        X_scaled = self._scaler.transform(X)
+        return self._model.predict(X_scaled)
+
+
+# =============================================================================
+# Model Manager
+# =============================================================================
+
 class ModelManager:
     """
     Manage local ML models for prediction.
@@ -124,6 +159,10 @@ class ModelManager:
         self._loaded = True
         logger.info(f"Loaded {loaded_count} models")
         return loaded_count > 0
+    
+    def reload_models(self) -> bool:
+        """Force reload all models from disk."""
+        return self.load_models(force=True)
     
     def has_model(self, name: str) -> bool:
         """Check if a model is available."""

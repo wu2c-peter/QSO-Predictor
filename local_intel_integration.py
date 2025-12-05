@@ -76,9 +76,13 @@ class LocalIntelligence(QObject):
         self.my_callsign = my_callsign.upper()
         self.config = config or AnalysisConfig()
         
-        # Core components
-        self.session_tracker = SessionTracker(self.my_callsign, self.config)
+        # Core components (model_manager first, needed by session_tracker)
         self.model_manager = ModelManager()
+        self.session_tracker = SessionTracker(
+            self.my_callsign, 
+            self.config,
+            model_manager=self.model_manager
+        )
         self.log_discovery = LogFileDiscovery()
         
         # Predictors
@@ -96,6 +100,7 @@ class LocalIntelligence(QObject):
         # UI components (created in setup())
         self.insights_panel: Optional[InsightsPanel] = None
         self.insights_dock: Optional[QDockWidget] = None
+        self._toggle_action = None  # Menu action for show/hide
         
         # State
         self._enabled = True
@@ -153,7 +158,16 @@ class LocalIntelligence(QObject):
             self.insights_dock.setWidget(self.insights_panel)
             self.insights_dock.setAllowedAreas(
                 Qt.DockWidgetArea.LeftDockWidgetArea | 
-                Qt.DockWidgetArea.RightDockWidgetArea
+                Qt.DockWidgetArea.RightDockWidgetArea |
+                Qt.DockWidgetArea.TopDockWidgetArea |
+                Qt.DockWidgetArea.BottomDockWidgetArea
+            )
+            
+            # Enable floating/undocking
+            self.insights_dock.setFeatures(
+                QDockWidget.DockWidgetFeature.DockWidgetMovable |
+                QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+                QDockWidget.DockWidgetFeature.DockWidgetClosable
             )
             
             # Add to main window (right side by default)
@@ -195,6 +209,13 @@ class LocalIntelligence(QObject):
         toggle_action.setCheckable(True)
         toggle_action.setChecked(True)
         toggle_action.triggered.connect(self._toggle_panel)
+        self._toggle_action = toggle_action  # Store reference
+        
+        # Sync menu when dock closed via X button
+        if self.insights_dock:
+            self.insights_dock.visibilityChanged.connect(
+                lambda visible: toggle_action.setChecked(visible)
+            )
         
         # Training dialog
         train_action = menu.addAction("Train ML Models...")
@@ -217,12 +238,22 @@ class LocalIntelligence(QObject):
             callsign: Target callsign
             grid: Target grid square (if known)
         """
+        print(f"[LocalIntel] set_target called: {callsign}")
+        
         if not self._enabled:
+            print(f"[LocalIntel] DISABLED - skipping")
             return
         
         self._current_target = callsign.upper() if callsign else None
+        
+        # Show loading state immediately (before slow lookup)
+        if self.insights_panel and callsign:
+            self.insights_panel.show_loading(callsign)
+        
+        # This does the slow lookup
         self.session_tracker.set_target(callsign, grid)
         
+        # Now update with results
         if self.insights_panel:
             self.insights_panel.set_target(callsign, grid)
         
@@ -389,6 +420,9 @@ class LocalIntelligence(QObject):
         
         # Refresh model status after dialog closes
         self._update_model_status()
+        
+        # Reload behavior history in case bootstrap was run
+        self.session_tracker.reload_behavior_history()
     
     def clear_session(self):
         """Clear current session data."""
@@ -450,6 +484,8 @@ class LocalIntelligence(QObject):
         if not self.insights_panel:
             return
         
+        # Force reload to pick up newly trained models
+        self.model_manager.reload_models()
         status = self.model_manager.get_model_status()
         
         ready = sum(1 for s in status if s['exists'] and not s['is_stale'])

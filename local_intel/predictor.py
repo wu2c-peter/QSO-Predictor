@@ -178,9 +178,12 @@ class BayesianPredictor:
         # Factor 2: Your SNR rank in pileup
         if your_status.get('in_pileup') and your_status.get('rank'):
             rank = your_status['rank']
-            total = your_status['total']
+            total = your_status.get('total', 10)
             
-            if rank == 1:
+            # Handle unknown rank (when TX but can't hear ourselves)
+            if rank == '?' or not isinstance(rank, (int, float)):
+                factors['snr_rank'] = 1.0  # Neutral - unknown
+            elif rank == 1:
                 factors['snr_rank'] = 1.4  # Loudest!
             elif rank <= 3:
                 factors['snr_rank'] = 1.2  # Top 3
@@ -195,7 +198,10 @@ class BayesianPredictor:
             
             if pattern.style == PickingStyle.LOUDEST_FIRST:
                 rank = your_status.get('rank', 99)
-                if rank == 1:
+                # Handle unknown rank
+                if rank == '?' or not isinstance(rank, (int, float)):
+                    factors['behavior_match'] = 1.0  # Neutral
+                elif rank == 1:
                     factors['behavior_match'] = 1.5
                 elif rank <= 3:
                     factors['behavior_match'] = 1.1

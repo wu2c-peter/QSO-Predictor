@@ -35,20 +35,23 @@ GRID_PATTERN = re.compile(r'^[A-R]{2}[0-9]{2}(?:[A-X]{2})?$', re.IGNORECASE)
 # Signal report pattern
 REPORT_PATTERN = re.compile(r'^[+-]?\d{2}$')
 
+# Callsign pattern - includes optional <> for hashed calls
+CALL_PATTERN = r'<?[A-Z0-9/]+>?'
+
 # Common FT8/FT4 message formats
 MESSAGE_PATTERNS = {
     # CQ messages
-    'cq_basic': re.compile(r'^CQ\s+([A-Z0-9/]+)\s+([A-R]{2}\d{2})$', re.IGNORECASE),
-    'cq_dx': re.compile(r'^CQ\s+DX\s+([A-Z0-9/]+)\s+([A-R]{2}\d{2})$', re.IGNORECASE),
-    'cq_region': re.compile(r'^CQ\s+([A-Z]{2,4})\s+([A-Z0-9/]+)\s+([A-R]{2}\d{2})$', re.IGNORECASE),
+    'cq_basic': re.compile(rf'^CQ\s+({CALL_PATTERN})\s+([A-R]{{2}}\d{{2}})', re.IGNORECASE),
+    'cq_dx': re.compile(rf'^CQ\s+DX\s+({CALL_PATTERN})\s+([A-R]{{2}}\d{{2}})', re.IGNORECASE),
+    'cq_region': re.compile(rf'^CQ\s+([A-Z]{{2,4}})\s+({CALL_PATTERN})\s+([A-R]{{2}}\d{{2}})', re.IGNORECASE),
     
     # Standard exchange
-    'grid_reply': re.compile(r'^([A-Z0-9/]+)\s+([A-Z0-9/]+)\s+([A-R]{2}\d{2})$', re.IGNORECASE),
-    'report_reply': re.compile(r'^([A-Z0-9/]+)\s+([A-Z0-9/]+)\s+([+-]?\d{2})$', re.IGNORECASE),
-    'r_report': re.compile(r'^([A-Z0-9/]+)\s+([A-Z0-9/]+)\s+R([+-]?\d{2})$', re.IGNORECASE),
-    'rr73': re.compile(r'^([A-Z0-9/]+)\s+([A-Z0-9/]+)\s+RR73$', re.IGNORECASE),
-    'rr': re.compile(r'^([A-Z0-9/]+)\s+([A-Z0-9/]+)\s+RRR$', re.IGNORECASE),
-    '73': re.compile(r'^([A-Z0-9/]+)\s+([A-Z0-9/]+)\s+73$', re.IGNORECASE),
+    'grid_reply': re.compile(rf'^({CALL_PATTERN})\s+({CALL_PATTERN})\s+([A-R]{{2}}\d{{2}})', re.IGNORECASE),
+    'report_reply': re.compile(rf'^({CALL_PATTERN})\s+({CALL_PATTERN})\s+([+-]?\d{{2}})\s*$', re.IGNORECASE),
+    'r_report': re.compile(rf'^({CALL_PATTERN})\s+({CALL_PATTERN})\s+R([+-]?\d{{2}})', re.IGNORECASE),
+    'rr73': re.compile(rf'^({CALL_PATTERN})\s+({CALL_PATTERN})\s+RR73', re.IGNORECASE),
+    'rr': re.compile(rf'^({CALL_PATTERN})\s+({CALL_PATTERN})\s+RRR', re.IGNORECASE),
+    '73': re.compile(rf'^({CALL_PATTERN})\s+({CALL_PATTERN})\s+73', re.IGNORECASE),
 }
 
 
@@ -76,6 +79,13 @@ class ParsedMessage:
 # Message Parser
 # =============================================================================
 
+def clean_callsign(call: str) -> str:
+    """Remove <> brackets from hashed callsigns."""
+    if call:
+        return call.strip('<>').upper()
+    return call
+
+
 class MessageParser:
     """Parse FT8/FT4 message content."""
     
@@ -101,61 +111,32 @@ class MessageParser:
                 result.message_type = "cq"
                 result.is_cq = True
                 if pattern_name == 'cq_basic':
-                    result.caller = groups[0]
+                    result.caller = clean_callsign(groups[0])
                     result.grid = groups[1]
                 elif pattern_name == 'cq_dx':
-                    result.caller = groups[0]
+                    result.caller = clean_callsign(groups[0])
                     result.grid = groups[1]
                 elif pattern_name == 'cq_region':
-                    result.caller = groups[1]
+                    result.caller = clean_callsign(groups[1])
                     result.grid = groups[2]
                 return result
         
-        # Check grid reply (first contact)
-        match = MESSAGE_PATTERNS['grid_reply'].match(message)
-        if match:
-            result.message_type = "grid"
-            result.is_reply = True
-            result.callee = match.group(1)
-            result.caller = match.group(2)
-            result.grid = match.group(3)
-            return result
-        
-        # Check report patterns
-        match = MESSAGE_PATTERNS['report_reply'].match(message)
-        if match:
-            result.message_type = "report"
-            result.is_reply = True
-            result.callee = match.group(1)
-            result.caller = match.group(2)
-            result.report = int(match.group(3))
-            return result
-        
-        match = MESSAGE_PATTERNS['r_report'].match(message)
-        if match:
-            result.message_type = "r_report"
-            result.is_reply = True
-            result.callee = match.group(1)
-            result.caller = match.group(2)
-            result.report = int(match.group(3))
-            return result
-        
-        # Check final messages
+        # Check final messages FIRST (before grid, since RR73 matches grid pattern)
         match = MESSAGE_PATTERNS['rr73'].match(message)
         if match:
             result.message_type = "rr73"
             result.is_reply = True
             result.is_final = True
-            result.callee = match.group(1)
-            result.caller = match.group(2)
+            result.callee = clean_callsign(match.group(1))
+            result.caller = clean_callsign(match.group(2))
             return result
         
         match = MESSAGE_PATTERNS['rr'].match(message)
         if match:
             result.message_type = "rrr"
             result.is_reply = True
-            result.callee = match.group(1)
-            result.caller = match.group(2)
+            result.callee = clean_callsign(match.group(1))
+            result.caller = clean_callsign(match.group(2))
             return result
         
         match = MESSAGE_PATTERNS['73'].match(message)
@@ -163,13 +144,43 @@ class MessageParser:
             result.message_type = "73"
             result.is_reply = True
             result.is_final = True
-            result.callee = match.group(1)
-            result.caller = match.group(2)
+            result.callee = clean_callsign(match.group(1))
+            result.caller = clean_callsign(match.group(2))
+            return result
+        
+        # Check R+report before plain report
+        match = MESSAGE_PATTERNS['r_report'].match(message)
+        if match:
+            result.message_type = "r_report"
+            result.is_reply = True
+            result.callee = clean_callsign(match.group(1))
+            result.caller = clean_callsign(match.group(2))
+            result.report = int(match.group(3))
+            return result
+        
+        # Check report patterns
+        match = MESSAGE_PATTERNS['report_reply'].match(message)
+        if match:
+            result.message_type = "report"
+            result.is_reply = True
+            result.callee = clean_callsign(match.group(1))
+            result.caller = clean_callsign(match.group(2))
+            result.report = int(match.group(3))
+            return result
+        
+        # Check grid reply (after finals and reports)
+        match = MESSAGE_PATTERNS['grid_reply'].match(message)
+        if match:
+            result.message_type = "grid"
+            result.is_reply = True
+            result.callee = clean_callsign(match.group(1))
+            result.caller = clean_callsign(match.group(2))
+            result.grid = match.group(3)
             return result
         
         # Fallback: try to extract any callsigns from message
         parts = message.split()
-        callsigns = [p for p in parts if CALLSIGN_PATTERN.match(p)]
+        callsigns = [clean_callsign(p) for p in parts if CALLSIGN_PATTERN.match(p.strip('<>'))]
         if callsigns:
             result.caller = callsigns[-1]  # Usually last callsign is sender
             if len(callsigns) > 1:
@@ -205,7 +216,7 @@ class LogParser:
         r'(.+)$'                     # Message
     )
     
-    # Line parsing pattern for JTDX format
+    # Line parsing pattern for JTDX standard format
     JTDX_LINE = re.compile(
         r'^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+'  # Timestamp
         r'(\d+\.\d+)\s+'             # Frequency
@@ -215,6 +226,17 @@ class LogParser:
         r'([+-]?\d+\.\d+)\s+'        # DT
         r'(\d+)\s+'                  # Audio freq
         r'(.+)$'                     # Message
+    )
+    
+    # Line parsing pattern for JTDX dated files (YYYYMM_ALL.TXT)
+    # Format: 20251122_212145  -6  0.2 2521 ~ CQ WY0V EN12              *
+    JTDX_DATED_LINE = re.compile(
+        r'^(\d{8}_\d{6})\s+'        # Timestamp: YYYYMMDD_HHMMSS
+        r'([+-]?\d+)\s+'             # SNR
+        r'([+-]?\d+\.\d+)\s+'        # DT
+        r'(\d+)\s+'                  # Audio freq
+        r'~\s*'                      # Tilde separator
+        r'(.+?)\s*[*d]?\s*$'         # Message (strip trailing * or d)
     )
     
     def __init__(self, my_callsign: str = None):
@@ -286,15 +308,24 @@ class LogParser:
         if not line:
             return None
         
+        # Skip header/info lines
+        if 'MHz' in line or 'partial loss' in line or 'JTDX v' in line:
+            return None
+        
         # Try WSJT-X format
         match = self.WSJTX_LINE.match(line)
         if match:
             return self._build_decode(match, 'wsjtx')
         
-        # Try JTDX format
+        # Try JTDX standard format
         match = self.JTDX_LINE.match(line)
         if match:
             return self._build_decode(match, 'jtdx')
+        
+        # Try JTDX dated file format (YYYYMM_ALL.TXT)
+        match = self.JTDX_DATED_LINE.match(line)
+        if match:
+            return self._build_decode(match, 'jtdx_dated')
         
         return None
     
@@ -302,20 +333,33 @@ class LogParser:
         """Build a Decode object from regex match."""
         groups = match.groups()
         
-        # Parse timestamp
-        if format_type == 'wsjtx':
-            timestamp = datetime.strptime(groups[0], '%y%m%d_%H%M%S')
-        else:  # jtdx
-            timestamp = datetime.strptime(groups[0], '%Y-%m-%d %H:%M:%S')
-        
-        # Parse other fields
-        dial_freq = float(groups[1])
-        direction = groups[2].lower()
-        mode = groups[3]
-        snr = int(groups[4])
-        dt = float(groups[5])
-        audio_freq = int(groups[6])
-        message = groups[7].strip()
+        if format_type == 'jtdx_dated':
+            # JTDX dated format: YYYYMMDD_HHMMSS SNR DT FREQ ~ MESSAGE
+            # Groups: timestamp, snr, dt, audio_freq, message
+            timestamp = datetime.strptime(groups[0], '%Y%m%d_%H%M%S')
+            snr = int(groups[1])
+            dt = float(groups[2])
+            audio_freq = int(groups[3])
+            message = groups[4].strip()
+            direction = 'rx'  # Dated files are RX only
+            mode = 'FT8'  # Default, could be FT4 but no way to know
+            dial_freq = 14.074  # Default, no dial freq in this format
+        else:
+            # Standard formats (wsjtx, jtdx)
+            # Parse timestamp
+            if format_type == 'wsjtx':
+                timestamp = datetime.strptime(groups[0], '%y%m%d_%H%M%S')
+            else:  # jtdx standard
+                timestamp = datetime.strptime(groups[0], '%Y-%m-%d %H:%M:%S')
+            
+            # Parse other fields
+            dial_freq = float(groups[1])
+            direction = groups[2].lower()
+            mode = groups[3]
+            snr = int(groups[4])
+            dt = float(groups[5])
+            audio_freq = int(groups[6])
+            message = groups[7].strip()
         
         # Parse message content
         parsed = self.message_parser.parse(message)
