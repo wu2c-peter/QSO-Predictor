@@ -88,6 +88,11 @@ class TrainingDialog(QDialog):
         self.behavior_check.setToolTip("Classify target picking patterns")
         models_layout.addWidget(self.behavior_check)
         
+        self.frequency_check = QCheckBox("Frequency Recommender")
+        self.frequency_check.setChecked(True)
+        self.frequency_check.setToolTip("Learn optimal TX frequency based on your history")
+        models_layout.addWidget(self.frequency_check)
+        
         layout.addWidget(models_group)
         
         # Progress section
@@ -205,6 +210,15 @@ class TrainingDialog(QDialog):
                     self.behavior_check.setText("Target Behavior (trained)")
                 else:
                     self.behavior_check.setText("Target Behavior (not trained)")
+            
+            elif status['name'] == 'frequency_model':
+                if status['exists']:
+                    age = status['age_days']
+                    self.frequency_check.setText(
+                        f"Frequency Recommender (trained {age} days ago)"
+                    )
+                else:
+                    self.frequency_check.setText("Frequency Recommender (not trained)")
     
     def _start_training(self):
         """Start the training process."""
@@ -214,6 +228,8 @@ class TrainingDialog(QDialog):
             models.append('success_model')
         if self.behavior_check.isChecked():
             models.append('target_behavior')
+        if self.frequency_check.isChecked():
+            models.append('frequency_model')
         
         if not models:
             self.status_label.setText("Select at least one model to train")
@@ -224,6 +240,7 @@ class TrainingDialog(QDialog):
         self.cancel_button.setEnabled(True)
         self.success_check.setEnabled(False)
         self.behavior_check.setEnabled(False)
+        self.frequency_check.setEnabled(False)
         
         self.results_text.clear()
         self.stage_label.setText("Starting...")
@@ -246,6 +263,7 @@ class TrainingDialog(QDialog):
         self.cancel_button.setEnabled(False)
         self.success_check.setEnabled(True)
         self.behavior_check.setEnabled(True)
+        self.frequency_check.setEnabled(True)
     
     @pyqtSlot(str, int, str)
     def _on_progress(self, stage: str, percent: int, message: str):

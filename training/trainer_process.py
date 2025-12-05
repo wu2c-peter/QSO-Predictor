@@ -30,6 +30,7 @@ from local_intel.models import ModelMetadata
 from training.feature_builders import (
     SuccessFeatureBuilder, 
     BehaviorFeatureBuilder,
+    FrequencyFeatureBuilder,
     StatsCalculator
 )
 
@@ -213,6 +214,80 @@ def train_behavior_model(X: np.ndarray,
     return model, metrics
 
 
+def train_frequency_model(X: np.ndarray,
+                          y: np.ndarray,
+                          feature_names: List[str]) -> Tuple[Any, Dict]:
+    """
+    Train the frequency recommendation model.
+    
+    This is a regression model that predicts the TX frequency offset
+    most likely to result in a successful QSO.
+    
+    Args:
+        X: Feature matrix
+        y: Target frequencies that worked (continuous values)
+        feature_names: Names of features
+        
+    Returns:
+        (model, metrics)
+    """
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.model_selection import cross_val_score
+    from sklearn.preprocessing import StandardScaler
+    
+    logger.info(f"Training frequency model with {len(X)} samples")
+    
+    if len(X) < 30:
+        raise ValueError(f"Not enough samples: {len(X)} (need 30+)")
+    
+    # Scale features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    model = RandomForestRegressor(
+        n_estimators=100,
+        max_depth=10,
+        min_samples_leaf=5,
+        n_jobs=-1,
+        random_state=42
+    )
+    
+    cv_folds = min(5, max(2, len(X) // 20))
+    cv_scores = cross_val_score(model, X_scaled, y, cv=cv_folds, scoring='r2')
+    
+    model.fit(X_scaled, y)
+    
+    # Feature importance
+    importance = dict(zip(feature_names, model.feature_importances_.tolist()))
+    
+    # Calculate prediction stats
+    y_pred = model.predict(X_scaled)
+    mae = float(np.mean(np.abs(y - y_pred)))
+    
+    metrics = {
+        'cv_r2_mean': float(np.mean(cv_scores)),
+        'cv_r2_std': float(np.std(cv_scores)),
+        'mae': mae,  # Mean absolute error in Hz
+        'n_samples': len(X),
+        'freq_range': [int(np.min(y)), int(np.max(y))],
+        'feature_importance': importance,
+    }
+    
+    # Wrap model with scaler
+    class ScaledRegressor:
+        def __init__(self, model, scaler):
+            self._model = model
+            self._scaler = scaler
+        
+        def predict(self, X):
+            X_scaled = self._scaler.transform(X)
+            return self._model.predict(X_scaled)
+    
+    wrapped_model = ScaledRegressor(model, scaler)
+    
+    return wrapped_model, metrics
+
+
 # =============================================================================
 # Main Trainer Class
 # =============================================================================
@@ -364,6 +439,8 @@ class ModelTrainer:
             self._train_success_model()
         elif model_name == 'target_behavior':
             self._train_behavior_model()
+        elif model_name == 'frequency_model':
+            self._train_frequency_model()
         else:
             logger.warning(f"Unknown model: {model_name}")
     
@@ -398,6 +475,27 @@ class ModelTrainer:
         }
         
         emit_model_complete('target_behavior', metrics)
+    
+    def _train_frequency_model(self):
+        """Train the frequency recommendation model."""
+        builder = FrequencyFeatureBuilder(self.my_callsign)
+        X, y = builder.build_from_history(self.qsos, self._attempts)
+        
+        if len(X) < 30:
+            logger.warning(f"Not enough frequency data: {len(X)} samples (need 30+)")
+            metrics = {
+                'status': 'skipped',
+                'reason': f'Not enough data ({len(X)} samples, need 30+)'
+            }
+            emit_model_complete('frequency_model', metrics)
+            return
+        
+        model, metrics = train_frequency_model(X, y, builder.feature_names)
+        
+        # Save model
+        self._save_model('frequency_model', model, metrics, len(X))
+        
+        emit_model_complete('frequency_model', metrics)
     
     def _save_model(self, name: str, model: Any, metrics: Dict, n_samples: int):
         """Save a trained model to disk."""
