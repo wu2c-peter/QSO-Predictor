@@ -466,6 +466,10 @@ class MainWindow(QMainWindow):
         # --- UPDATE CHECK STATE ---
         self.update_available = None  # Will hold version string if update available
         
+        # --- UDP STATUS TRACKING ---
+        self._decode_count = 0
+        self._decode_start_time = None
+        
         if SOLAR_AVAILABLE:
             self.solar = SolarClient()
             self.solar_update_signal.connect(self.update_solar_ui)
@@ -693,6 +697,11 @@ class MainWindow(QMainWindow):
 
     def handle_decode(self, data):
         self.buffer.append(data)
+        # Track decode rate
+        if self._decode_start_time is None:
+            from datetime import datetime
+            self._decode_start_time = datetime.now()
+        self._decode_count += 1
 
     def process_buffer(self):
         if not self.buffer: return
@@ -1043,12 +1052,35 @@ class MainWindow(QMainWindow):
                     webbrowser.open("https://github.com/wu2c-peter/qso-predictor/releases")
 
     def open_settings(self):
-        dlg = SettingsDialog(self.config, self)
+        # Calculate UDP status for settings dialog
+        udp_status = self._get_udp_status()
+        dlg = SettingsDialog(self.config, self, udp_status=udp_status)
         if dlg.exec():
             self.udp.stop()
             self.udp = UDPHandler(self.config)
             self.udp.start()
             self.setup_connections()
+            # Reset decode tracking after settings change
+            self._decode_count = 0
+            self._decode_start_time = None
+    
+    def _get_udp_status(self):
+        """Get current UDP connection status."""
+        from datetime import datetime
+        
+        if self._decode_start_time is None or self._decode_count == 0:
+            return {'receiving': False, 'rate': 0}
+        
+        elapsed = (datetime.now() - self._decode_start_time).total_seconds()
+        if elapsed < 1:
+            elapsed = 1  # Avoid division by zero
+        
+        rate = (self._decode_count / elapsed) * 60  # decodes per minute
+        
+        return {
+            'receiving': self._decode_count > 0,
+            'rate': rate
+        }
 
     def open_wiki(self):
         """Open the GitHub wiki in the default browser."""
