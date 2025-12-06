@@ -253,6 +253,12 @@ After starting QSO Predictor:
 
 ## Changelog
 
+### v2.0.2
+- Fixed: Target selection stability (removed processEvents causing re-entrant crashes)
+- Fixed: Exe mode hides ML training UI (shows Bootstrap only)
+- Fixed: "Models not trained" warning hidden in exe mode
+- Added: Multicast UDP support for JTAlert/N3FJP setups
+
 ### v2.0.0 - The Local Intelligence Update
 
 **New: Local Intelligence System**

@@ -495,6 +495,23 @@ class MainWindow(QMainWindow):
         
         # Check for updates on startup (non-blocking, silent)
         self.check_for_updates(manual=False)
+        
+        # Check for unconfigured callsign/grid on startup
+        QTimer.singleShot(500, self._check_first_run_config)
+    
+    def _check_first_run_config(self):
+        """Warn user if callsign/grid haven't been configured."""
+        my_call = self.config.get('ANALYSIS', 'my_callsign', fallback='N0CALL')
+        my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='FN00aa')
+        
+        if my_call == 'N0CALL' or my_grid == 'FN00aa':
+            QMessageBox.information(
+                self,
+                "Welcome to QSO Predictor!",
+                "Please configure your callsign and grid square "
+                "for accurate predictions.\n\n"
+                "Go to Edit → Settings to set them up."
+            )
 
     def _init_local_intelligence(self):
         """Initialize Local Intelligence v2.0 features."""
