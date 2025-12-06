@@ -133,7 +133,7 @@ class BehaviorWidget(QGroupBox):
     """Display target's picking behavior."""
     
     def __init__(self, parent=None):
-        super().__init__("Target Behavior", parent)
+        super().__init__("Behavior", parent)
         self._current_call = None
         self._setup_ui()
     
@@ -171,7 +171,6 @@ class BehaviorWidget(QGroupBox):
     def set_loading(self, callsign: str):
         """Show immediate loading feedback when target changes."""
         self._current_call = callsign
-        self.setTitle(f"Target Behavior: {callsign}")
         self.pattern_label.setText("Looking up...")
         self.pattern_label.setStyleSheet("color: #888888;")
         self.confidence_bar.setValue(0)
@@ -182,10 +181,6 @@ class BehaviorWidget(QGroupBox):
         if not behavior_info:
             self.clear()
             return
-        
-        # Keep title showing callsign if we have one
-        if self._current_call:
-            self.setTitle(f"Target Behavior: {self._current_call}")
         
         pattern: Optional[PickingPattern] = behavior_info.get('pattern')
         
@@ -282,11 +277,11 @@ class BehaviorWidget(QGroupBox):
     def clear(self):
         """Clear the display."""
         self._current_call = None
-        self.setTitle("Target Behavior")
+        self.setTitle("Behavior")
         self.pattern_label.setText("—")
         self.pattern_label.setStyleSheet("")
         self.confidence_bar.setValue(0)
-        self.advice_label.setText("No target selected")
+        self.advice_label.setText("Select a target")
 
 
 class PredictionWidget(QGroupBox):
@@ -497,11 +492,12 @@ class InsightsPanel(QWidget):
             }
         """)
         
-        # Title
-        title = QLabel("Local Intelligence")
-        title.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        # Target header (white for visibility on any background)
+        self.target_label = QLabel("Target: —")
+        self.target_label.setFont(QFont("Consolas", 12, QFont.Weight.Bold))
+        self.target_label.setStyleSheet("color: #ffffff; background-color: #333333; padding: 4px; border-radius: 3px;")
+        self.target_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.target_label)
         
         # Separator
         line = QFrame()
@@ -557,12 +553,22 @@ class InsightsPanel(QWidget):
             grid: Target grid (if known)
         """
         self._current_target = callsign.upper() if callsign else None
+        
+        # Update target header
+        if self._current_target:
+            self.target_label.setText(f"Target: {self._current_target}")
+        else:
+            self.target_label.setText("Target: —")
+        
         # Note: Don't call session_tracker.set_target here - 
         # LocalIntelIntegration already calls it before calling us
         self.refresh()
     
     def show_loading(self, callsign: str):
         """Show immediate loading feedback when target changes."""
+        # Update header immediately
+        if callsign:
+            self.target_label.setText(f"Target: {callsign.upper()}")
         self.behavior_widget.set_loading(callsign)
         # Note: Removed QApplication.processEvents() - it can cause re-entrant 
         # calls to set_target if UDP events are queued, leading to oscillation/crashes
@@ -623,6 +629,7 @@ class InsightsPanel(QWidget):
     def clear(self):
         """Clear all displays."""
         self._current_target = None
+        self.target_label.setText("Target: —")
         self.pileup_widget.clear()
         self.behavior_widget.clear()
         self.prediction_widget.clear()

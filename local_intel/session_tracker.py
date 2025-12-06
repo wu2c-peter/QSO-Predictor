@@ -50,6 +50,12 @@ class SessionTracker:
         
         # TX status (from JTDX/WSJT-X status updates)
         self._tx_enabled = False
+        self._was_transmitting = False  # For edge detection
+        self._calling_target = ""  # Who we're actually calling (empty = CQ)
+        
+        # TX tracking per target
+        self._tx_count = 0  # TX cycles since target selected
+        self._tx_first_time: Optional[datetime] = None  # When first TX started
         
         # Current tracking state
         self.target_session: Optional[TargetSession] = None
@@ -79,6 +85,11 @@ class SessionTracker:
         callsign = callsign.upper()
         print(f"[SessionTracker] set_target called: {callsign}")
         
+        # Reset TX tracking when target changes
+        if not self.target_session or self.target_session.callsign != callsign:
+            self._tx_count = 0
+            self._tx_first_time = None
+        
         if callsign in self.active_sessions:
             self.target_session = self.active_sessions[callsign]
         else:
@@ -96,14 +107,56 @@ class SessionTracker:
         
         logger.info(f"Target set: {callsign}")
     
-    def set_tx_status(self, enabled: bool):
+    def set_tx_status(self, enabled: bool, calling: str = ""):
         """
         Set TX status from JTDX/WSJT-X.
         
         Args:
             enabled: True if TX is enabled/transmitting
+            calling: Callsign we're calling (empty string or 'None' if CQing)
         """
+        # JTDX sends literal 'None' string when CQing
+        new_calling = calling.upper() if calling and calling != 'None' else ""
+        
+        # Only log on change
+        if new_calling != self._calling_target or enabled != self._tx_enabled:
+            if enabled and new_calling:
+                print(f"[TX] Calling {new_calling}")
+            elif enabled:
+                print(f"[TX] CQing (not calling target)")
+            # else: TX off, no log needed
+        
+        self._calling_target = new_calling
+        
+        # Detect rising edge (start of new TX cycle)
+        if enabled and not self._was_transmitting:
+            self._tx_count += 1
+            if self._tx_first_time is None:
+                self._tx_first_time = datetime.now()
+            logger.debug(f"TX cycle {self._tx_count} started")
+        
+        self._was_transmitting = enabled
         self._tx_enabled = enabled
+    
+    def get_tx_activity(self) -> dict:
+        """
+        Get TX activity statistics for current target.
+        
+        Returns:
+            dict with:
+                - count: Number of TX cycles
+                - first_tx: When first TX started (datetime or None)
+                - duration_sec: Seconds since first TX (or 0)
+        """
+        duration = 0
+        if self._tx_first_time:
+            duration = (datetime.now() - self._tx_first_time).total_seconds()
+        
+        return {
+            'count': self._tx_count,
+            'first_tx': self._tx_first_time,
+            'duration_sec': duration
+        }
     
     def process_decode(self, decode: Decode):
         """
@@ -448,9 +501,16 @@ class SessionTracker:
         
         session = self.target_session
         
-        # Check if we're calling (TX enabled)
-        if self._tx_enabled:
-            # We're calling - estimate our rank based on pileup
+        # Check if we're calling THIS target (not CQing or calling someone else)
+        # Note: JTDX sends 'None' string when CQing, which we convert to empty string
+        calling_this_target = (
+            self._tx_enabled and 
+            self._calling_target and 
+            self._calling_target == session.callsign
+        )
+        
+        if calling_this_target:
+            # We're calling this station - estimate our rank based on pileup
             # Since we can't see our own signal, rank is unknown
             return {
                 'in_pileup': True,
@@ -459,7 +519,7 @@ class SessionTracker:
                 'calls_made': 1,  # At least one
             }
         
-        # Not transmitting
+        # Not transmitting, or CQing, or calling someone else
         return {
             'in_pileup': False,
             'rank': None,

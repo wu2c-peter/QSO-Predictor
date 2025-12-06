@@ -287,7 +287,7 @@ class LocalIntelligence(QObject):
         if self.insights_panel:
             self.insights_panel.set_path_status(status)
     
-    def set_tx_status(self, enabled: bool):
+    def set_tx_status(self, enabled: bool, calling: str = ""):
         """
         Update TX status from JTDX/WSJT-X.
         
@@ -295,11 +295,12 @@ class LocalIntelligence(QObject):
         
         Args:
             enabled: True if TX is enabled/transmitting
+            calling: Callsign we're calling (empty if CQing)
         """
         if not self._enabled:
             return
         
-        self.session_tracker.set_tx_status(enabled)
+        self.session_tracker.set_tx_status(enabled, calling=calling)
     
     def process_decode(self, decode_data: dict):
         """

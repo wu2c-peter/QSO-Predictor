@@ -752,7 +752,9 @@ class MainWindow(QMainWindow):
         if self.local_intel:
             # Check for TX enabled (transmitting or tx_enabled field)
             tx_enabled = status.get('transmitting', False) or status.get('tx_enabled', False)
-            self.local_intel.set_tx_status(tx_enabled)
+            dx_call = status.get('dx_call', '')
+            # Pass who we're calling so pileup status knows if we're calling THIS target
+            self.local_intel.set_tx_status(tx_enabled, calling=dx_call)
         
         # Update Dashboard Text Immediately
         rec = self.band_map.best_offset

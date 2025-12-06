@@ -360,7 +360,7 @@ class BayesianPredictor:
         # Check path status first - most important factor
         if path_status == PathStatus.NO_PATH:
             recommended_action = "try_later"
-            reasons.append("No path to target")
+            reasons.append("No path or no TX")
         elif path_status == PathStatus.CONNECTED:
             reasons.append("Target hears you!")
         elif path_status == PathStatus.PATH_OPEN:

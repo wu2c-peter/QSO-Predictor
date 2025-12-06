@@ -314,10 +314,15 @@ class QSOAnalyzer(QObject):
                         geo_bonus = 15
                         path_str = "Path Open"
         
-        # If no path found, distinguish between "no reporters" vs "not heard"
+        # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
+            have_any_spots = len(my_reception_snapshot) > 0
+            
             if has_nearby_reporters:
-                path_str = "No Path"
+                if have_any_spots:
+                    path_str = "No Path"  # We're TXing (spotted elsewhere), just not reaching target
+                else:
+                    path_str = "No Path or No TX"  # Could be not TXing OR no path
             else:
                 path_str = "No Nearby Reporters"
         
@@ -420,7 +425,8 @@ class QSOAnalyzer(QObject):
         Path values:
             CONNECTED - target heard me
             Path Open - station in same grid/field heard me
-            No Path - reporters exist near target but haven't heard me
+            No Path - reporters near target exist, I'm spotted elsewhere, but not there
+            No Path or No TX - reporters near target exist, but I have no spots anywhere
             No Nearby Reporters - no reporters in target's region
         """
         target_call = decode_data.get('call', '')
@@ -470,10 +476,15 @@ class QSOAnalyzer(QObject):
                     elif r_grid[:2] == target_major:
                         path_str = "Path Open"
         
-        # If no path found, distinguish between "no reporters" vs "not heard"
+        # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
+            have_any_spots = len(my_reception_snapshot) > 0
+            
             if has_nearby_reporters:
-                path_str = "No Path"
+                if have_any_spots:
+                    path_str = "No Path"  # We're TXing (spotted elsewhere), just not reaching target
+                else:
+                    path_str = "No Path or No TX"  # Could be not TXing OR no path
             else:
                 path_str = "No Nearby Reporters"
         
