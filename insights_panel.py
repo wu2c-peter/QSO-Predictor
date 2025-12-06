@@ -8,6 +8,10 @@ UI widget displaying local intelligence:
 - Strategy recommendations
 
 Copyright (C) 2025 Peter Hirst (WU2C)
+
+v2.0.3 Changes:
+- Fixed: Wrapped prediction calls in try/except to prevent console spam
+- Fixed: Better error handling when ML models fail to load
 """
 
 import logging
@@ -449,6 +453,10 @@ class InsightsPanel(QWidget):
         self.session_tracker = session_tracker
         self.predictor = predictor
         
+        # v2.0.3: Track if predictor is working (for error suppression)
+        self._predictor_failed = False
+        self._predictor_error_logged = False
+        
         self._setup_ui()
         
         # Update timer
@@ -543,6 +551,9 @@ class InsightsPanel(QWidget):
     def set_predictor(self, predictor: BayesianPredictor):
         """Set the predictor."""
         self.predictor = predictor
+        # v2.0.3: Reset failure tracking when predictor changes
+        self._predictor_failed = False
+        self._predictor_error_logged = False
     
     def set_target(self, callsign: str, grid: str = None):
         """
@@ -600,28 +611,41 @@ class InsightsPanel(QWidget):
         self.pileup_widget.update_display(pileup_info, your_status)
         self.behavior_widget.update_display(behavior_info)
         
-        # Get prediction
-        if self.predictor and self._current_target:
-            # Build basic features
-            features = {
-                'target_snr': -10,  # Would come from actual data
-                'your_snr': -10,
-                'band_encoded': 5,
-                'hour_utc': 12,
-                'competition': pileup_info.get('size', 0) if pileup_info else 0,
-                'region_encoded': 0,
-                'calls_made': your_status.get('calls_made', 0),
-            }
-            
-            prediction = self.predictor.predict_success(
-                self._current_target, 
-                features,
-                self._path_status
-            )
-            self.prediction_widget.update_display(prediction)
-            
-            strategy = self.predictor.get_strategy(self._current_target, self._path_status)
-            self.strategy_widget.update_display(strategy)
+        # v2.0.3: Wrapped prediction calls in try/except to prevent spam
+        # when ML models fail to load (e.g., sklearn version mismatch)
+        if self.predictor and self._current_target and not self._predictor_failed:
+            try:
+                # Build basic features
+                features = {
+                    'target_snr': -10,  # Would come from actual data
+                    'your_snr': -10,
+                    'band_encoded': 5,
+                    'hour_utc': 12,
+                    'competition': pileup_info.get('size', 0) if pileup_info else 0,
+                    'region_encoded': 0,
+                    'calls_made': your_status.get('calls_made', 0),
+                }
+                
+                prediction = self.predictor.predict_success(
+                    self._current_target, 
+                    features,
+                    self._path_status
+                )
+                self.prediction_widget.update_display(prediction)
+                
+                strategy = self.predictor.get_strategy(self._current_target, self._path_status)
+                self.strategy_widget.update_display(strategy)
+                
+            except Exception as e:
+                # Log error once, then suppress further attempts
+                if not self._predictor_error_logged:
+                    logger.warning(f"Predictor failed (likely sklearn version mismatch): {e}")
+                    logger.info("Falling back to heuristic predictions. "
+                               "To fix: delete .pkl files in ~/.qso-predictor/models/")
+                    self._predictor_error_logged = True
+                self._predictor_failed = True
+                self.prediction_widget.clear()
+                self.strategy_widget.clear()
         else:
             self.prediction_widget.clear()
             self.strategy_widget.clear()

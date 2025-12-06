@@ -1,5 +1,12 @@
-# QSO Predictor v2.0
+# QSO Predictor v2.0.3
 # Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.0.3 Changes:
+# - Added: Column width persistence (suggested by KC0GU)
+# - Added: Clear Target button and Ctrl+R shortcut (suggested by KC0GU)
+# - Added: QSO Logged message handling for auto-clear (suggested by KC0GU)
+# - Added: Auto-clear on QSO logged setting
+# - Fixed: Ctrl+R shortcut (was documented but not implemented)
 
 import ctypes
 import subprocess
@@ -10,7 +17,8 @@ from pathlib import Path
 from collections import deque
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QTableView, QLabel, QHeaderView, QSplitter, 
-                             QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, QSystemTrayIcon, QMenu)
+                             QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, 
+                             QSystemTrayIcon, QMenu, QToolBar, QPushButton, QCheckBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
 from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon, QCursor
 
@@ -451,6 +459,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"QSO Predictor v{get_version()} by WU2C")
         self.resize(1100, 800)
         
+        # --- v2.0.3: Restore window geometry ---
         geo = self.config.get('WINDOW', 'geometry')
         if geo:
             self.restoreGeometry(QByteArray.fromHex(geo.encode()))
@@ -551,6 +560,64 @@ class MainWindow(QMainWindow):
         # Connect update check signal
         self.update_check_signal.connect(self.on_update_check_result)
         
+        # --- v2.0.3: TOOLBAR WITH CLEAR TARGET ---
+        toolbar = QToolBar("Main Toolbar")
+        toolbar.setMovable(False)
+        toolbar.setStyleSheet("""
+            QToolBar { 
+                background-color: #2A2A2A; 
+                border: none; 
+                padding: 2px;
+                spacing: 5px;
+            }
+            QPushButton {
+                background-color: #444;
+                color: #DDD;
+                border: 1px solid #555;
+                border-radius: 3px;
+                padding: 4px 12px;
+                font-size: 10pt;
+            }
+            QPushButton:hover {
+                background-color: #555;
+            }
+            QPushButton:pressed {
+                background-color: #333;
+            }
+            QCheckBox {
+                color: #AAA;
+                font-size: 9pt;
+                padding-left: 10px;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+            }
+        """)
+        
+        # Clear Target button
+        self.btn_clear_target = QPushButton("Clear Target")
+        self.btn_clear_target.setToolTip("Clear current target selection (Ctrl+R)")
+        self.btn_clear_target.clicked.connect(self.clear_target)
+        toolbar.addWidget(self.btn_clear_target)
+        
+        # Auto-clear checkbox
+        self.chk_auto_clear = QCheckBox("Auto-clear on QSO")
+        self.chk_auto_clear.setToolTip("Automatically clear target after logging a QSO")
+        auto_clear_enabled = self.config.get('BEHAVIOR', 'auto_clear_on_log', fallback='false') == 'true'
+        self.chk_auto_clear.setChecked(auto_clear_enabled)
+        self.chk_auto_clear.stateChanged.connect(self._on_auto_clear_changed)
+        toolbar.addWidget(self.chk_auto_clear)
+        
+        toolbar.addSeparator()
+        
+        # Spacer to push items to the left
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
+        
+        self.addToolBar(toolbar)
+        
         # --- SPLITTER START ---
         splitter = QSplitter(Qt.Orientation.Vertical)
         
@@ -595,6 +662,9 @@ class MainWindow(QMainWindow):
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.clicked.connect(self.on_row_click)
         
+        # --- v2.0.3: Restore column widths ---
+        self._restore_column_widths()
+        
         splitter.addWidget(self.table_view)
         
         # 2. BOTTOM: Container for Dashboard + Map
@@ -620,6 +690,8 @@ class MainWindow(QMainWindow):
         
         # Menu
         menu = self.menuBar()
+        
+        # --- FILE MENU ---
         file_menu = menu.addMenu("File")
         refresh_action = QAction("Force Refresh Spots", self)
         refresh_action.setShortcut(QKeySequence("F5"))
@@ -632,7 +704,16 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
-        # --- TOOLS MENU (NEW for v2.0) ---
+        # --- EDIT MENU (NEW for v2.0.3) ---
+        edit_menu = menu.addMenu("Edit")
+        
+        # v2.0.3: Clear Target action with Ctrl+R shortcut
+        clear_target_action = QAction("Clear Target", self)
+        clear_target_action.setShortcut(QKeySequence("Ctrl+R"))
+        clear_target_action.triggered.connect(self.clear_target)
+        edit_menu.addAction(clear_target_action)
+        
+        # --- TOOLS MENU ---
         tools_menu = menu.addMenu("Tools")
         
         # Add Local Intelligence menu items if available
@@ -685,15 +766,97 @@ class MainWindow(QMainWindow):
                 self.local_intel.setup(self)
             except Exception as e:
                 print(f"Failed to setup Local Intelligence panel: {e}")
+    
+    # --- v2.0.3: Column width persistence ---
+    def _restore_column_widths(self):
+        """Restore saved column widths from config."""
+        widths_str = self.config.get('WINDOW', 'column_widths', fallback='')
+        if widths_str:
+            try:
+                widths = [int(w) for w in widths_str.split(',')]
+                for i, width in enumerate(widths):
+                    if i < self.model.columnCount() and width > 0:
+                        self.table_view.setColumnWidth(i, width)
+            except (ValueError, IndexError) as e:
+                print(f"Could not restore column widths: {e}")
+    
+    def _save_column_widths(self):
+        """Save current column widths to config."""
+        widths = []
+        for i in range(self.model.columnCount()):
+            widths.append(str(self.table_view.columnWidth(i)))
+        self.config.save_setting('WINDOW', 'column_widths', ','.join(widths))
+    
+    # --- v2.0.3: Auto-clear setting handler ---
+    def _on_auto_clear_changed(self, state):
+        """Handle auto-clear checkbox state change."""
+        enabled = 'true' if state == Qt.CheckState.Checked.value else 'false'
+        self.config.save_setting('BEHAVIOR', 'auto_clear_on_log', enabled)
 
     def setup_connections(self):
         self.udp.new_decode.connect(self.handle_decode)
         self.udp.status_update.connect(self.handle_status_update)
+        # v2.0.3: Connect QSO Logged signal
+        self.udp.qso_logged.connect(self.on_qso_logged)
         # Note: Removed cache_updated -> refresh_analysis connection
         # With target perspective, re-analyzing all 500 rows every 2 seconds is too expensive.
         # Reconnect cache_updated to lightweight path refresh (not full analysis)
         self.analyzer.cache_updated.connect(self.refresh_paths)
         self.analyzer.status_message.connect(self.update_status_msg)
+    
+    # --- v2.0.3: Clear Target functionality (suggested by KC0GU) ---
+    def clear_target(self):
+        """Clear the current target selection.
+        
+        Clears all target-related state and resets the UI to "NO TARGET" mode.
+        Can be triggered via Ctrl+R shortcut or Clear Target button.
+        
+        Feature suggested by: Warren KC0GU (Dec 2025)
+        """
+        # Clear internal state
+        self.current_target_call = ""
+        self.current_target_grid = ""
+        
+        # Clear table highlight
+        self.model.set_target_call(None)
+        
+        # Clear dashboard
+        self.dashboard.update_data(None)
+        
+        # Clear band map target indicators
+        self.band_map.set_target_call("")
+        self.band_map.set_target_grid("")
+        self.band_map.set_target_freq(0)
+        self.band_map.update_perspective({
+            'tier1': [], 'tier2': [], 'tier3': [], 'global': []
+        })
+        
+        # Clear Local Intelligence target (use empty string, not None)
+        if self.local_intel:
+            try:
+                self.local_intel.set_target("", "")
+            except Exception as e:
+                print(f"Error clearing local intel target: {e}")
+    
+    # --- v2.0.3: QSO Logged handler (suggested by KC0GU) ---
+    def on_qso_logged(self, data):
+        """Handle QSO Logged notification from WSJT-X/JTDX.
+        
+        When a QSO is logged, optionally clear the target if:
+        1. Auto-clear is enabled
+        2. The logged callsign matches our current target
+        
+        Feature suggested by: Warren KC0GU (Dec 2025)
+        """
+        logged_call = data.get('dx_call', '').upper()
+        
+        # Check if auto-clear is enabled
+        if self.chk_auto_clear.isChecked():
+            # Only clear if we logged the station we were targeting
+            current_upper = self.current_target_call.upper() if self.current_target_call else ''
+            if logged_call and logged_call == current_upper:
+                print(f"[Auto-clear] Target cleared after logging {logged_call}")
+                self.clear_target()
 
     def handle_decode(self, data):
         self.buffer.append(data)
@@ -1121,8 +1284,14 @@ class MainWindow(QMainWindow):
         
         self.analyzer.stop()
         self.udp.stop()
+        
+        # --- v2.0.3: Save window geometry ---
         geo = self.saveGeometry().toHex().data().decode()
         self.config.save_setting('WINDOW', 'geometry', geo)
+        
+        # --- v2.0.3: Save column widths ---
+        self._save_column_widths()
+        
         event.accept()
 
 if __name__ == "__main__":

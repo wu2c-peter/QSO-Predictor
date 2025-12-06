@@ -5,6 +5,10 @@ Provides a clean interface to integrate local intelligence
 features into the existing main application.
 
 Copyright (C) 2025 Peter Hirst (WU2C)
+
+v2.0.3 Changes:
+- Fixed: set_target now handles None/empty callsign gracefully
+- Added: Defensive checks throughout to prevent NoneType errors
 """
 
 import logging
@@ -239,30 +243,45 @@ class LocalIntelligence(QObject):
         Call this when user selects a new DX target.
         
         Args:
-            callsign: Target callsign
+            callsign: Target callsign (empty string or None to clear)
             grid: Target grid square (if known)
         """
         # Guard against re-entrant calls (can happen with processEvents)
         if hasattr(self, '_setting_target') and self._setting_target:
-            print(f"[LocalIntel] RE-ENTRANT CALL blocked: {callsign}")
             return
         
         self._setting_target = True
         try:
-            print(f"[LocalIntel] set_target called: {callsign}")
-            
-            if not self._enabled:
-                print(f"[LocalIntel] DISABLED - skipping")
+            # v2.0.3: Handle None/empty string to clear target
+            if not callsign:
+                self._current_target = None
+                
+                # v2.0.3: Clear session tracker state WITHOUT triggering slow lookup
+                if hasattr(self.session_tracker, 'clear_target'):
+                    self.session_tracker.clear_target()
+                else:
+                    # Fallback: clear internal state directly
+                    self.session_tracker._current_target = None
+                    if hasattr(self.session_tracker, '_target_session'):
+                        self.session_tracker._target_session = None
+                
+                # Clear insights panel
+                if self.insights_panel:
+                    self.insights_panel.clear()
+                
                 return
             
-            self._current_target = callsign.upper() if callsign else None
+            if not self._enabled:
+                return
+            
+            self._current_target = callsign.upper()
             
             # Show loading state immediately (before slow lookup)
-            if self.insights_panel and callsign:
+            if self.insights_panel:
                 self.insights_panel.show_loading(callsign)
             
             # This does the slow lookup
-            self.session_tracker.set_target(callsign, grid)
+            self.session_tracker.set_target(callsign, grid or "")
             
             # Now update with results
             if self.insights_panel:
@@ -374,31 +393,35 @@ class LocalIntelligence(QObject):
         if not predictor:
             return None
         
-        # Build features from current state
-        pileup = self.session_tracker.get_pileup_info()
-        your_status = self.session_tracker.get_your_status()
-        
-        features = {
-            'target_snr': -10,  # Would come from actual decode
-            'your_snr': -10,
-            'band_encoded': 5,
-            'hour_utc': 12,
-            'competition': pileup.get('size', 0) if pileup else 0,
-            'region_encoded': 0,
-            'calls_made': your_status.get('calls_made', 0),
-        }
-        
-        prediction = predictor.predict_success(
-            self._current_target,
-            features,
-            PathStatus.UNKNOWN
-        )
-        
-        return {
-            'probability': prediction.probability,
-            'confidence': prediction.confidence,
-            'explanation': prediction.explanation,
-        }
+        try:
+            # Build features from current state
+            pileup = self.session_tracker.get_pileup_info()
+            your_status = self.session_tracker.get_your_status()
+            
+            features = {
+                'target_snr': -10,  # Would come from actual decode
+                'your_snr': -10,
+                'band_encoded': 5,
+                'hour_utc': 12,
+                'competition': pileup.get('size', 0) if pileup else 0,
+                'region_encoded': 0,
+                'calls_made': your_status.get('calls_made', 0),
+            }
+            
+            prediction = predictor.predict_success(
+                self._current_target,
+                features,
+                PathStatus.UNKNOWN
+            )
+            
+            return {
+                'probability': prediction.probability,
+                'confidence': prediction.confidence,
+                'explanation': prediction.explanation,
+            }
+        except Exception as e:
+            logger.debug(f"Prediction failed: {e}")
+            return None
     
     def get_strategy(self) -> Optional[dict]:
         """
@@ -414,13 +437,17 @@ class LocalIntelligence(QObject):
         if not predictor or not hasattr(predictor, 'get_strategy'):
             return None
         
-        strategy = predictor.get_strategy(self._current_target)
-        
-        return {
-            'action': strategy.recommended_action,
-            'frequency': strategy.recommended_frequency,
-            'reasons': strategy.reasons,
-        }
+        try:
+            strategy = predictor.get_strategy(self._current_target)
+            
+            return {
+                'action': strategy.recommended_action,
+                'frequency': strategy.recommended_frequency,
+                'reasons': strategy.reasons,
+            }
+        except Exception as e:
+            logger.debug(f"Strategy failed: {e}")
+            return None
     
     def show_training_dialog(self):
         """Show the training dialog."""
@@ -565,4 +592,3 @@ class LocalIntelligence(QObject):
         """Handle stale models notification."""
         self.models_stale.emit(stale_models)
         self._update_model_status()
-

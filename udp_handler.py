@@ -1,5 +1,9 @@
 # QSO Predictor
-# Copyright (C) 2025 [Peter Hirst/WU2C]
+# Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.0.3 Changes:
+# - Added: QSO Logged message handling (Type 5) for auto-clear feature
+#   (suggested by KC0GU)
 
 import socket
 import struct
@@ -9,6 +13,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 class UDPHandler(QObject):
     new_decode = pyqtSignal(dict)
     status_update = pyqtSignal(dict)
+    qso_logged = pyqtSignal(dict)  # v2.0.3: New signal for QSO Logged messages
 
     def __init__(self, config):
         super().__init__()
@@ -93,10 +98,15 @@ class UDPHandler(QObject):
             # Message Type
             msg_type = struct.unpack('>I', data[8:12])[0]
 
-            if msg_type == 1: # Status
+            if msg_type == 1:  # Status
                 self._process_status(data)
-            elif msg_type == 2: # Decode
+            elif msg_type == 2:  # Decode
                 self._process_decode(data)
+            elif msg_type == 5:  # v2.0.3: QSO Logged
+                self._process_qso_logged(data)
+            # Debug: uncomment to see all message types
+            # else:
+            #     print(f"[UDP] Message type {msg_type} (ignored)")
         except Exception as e:
             print(f"Header Error: {e}")
 
@@ -232,3 +242,54 @@ class UDPHandler(QObject):
             })
         except Exception as e:
             print(f"Decode Error: {e}")
+
+    def _process_qso_logged(self, data):
+        """Process WSJT-X QSO Logged message (Type 5).
+        
+        v2.0.3: New handler for QSO Logged messages.
+        Emits qso_logged signal with callsign and grid of logged station.
+        Feature suggested by: Warren KC0GU (Dec 2025)
+        
+        Note: QDateTime size varies between implementations (12-17 bytes).
+        We auto-detect by trying multiple offsets and validating the callsign.
+        """
+        idx = 12
+        try:
+            # 1. ID (String)
+            id_str, idx = self._read_utf8(data, idx)
+            
+            # 2. Date/Time Off (QDateTime) - variable size!
+            # Try multiple formats, use whichever gives valid callsign
+            dx_call = None
+            dx_grid = None
+            
+            for qdatetime_size in [12, 13, 16, 17]:
+                test_idx = idx + qdatetime_size
+                if test_idx + 4 > len(data):
+                    continue
+                    
+                # Read potential string length
+                length = struct.unpack('>I', data[test_idx:test_idx+4])[0]
+                
+                # Valid callsign length: 3-15 characters
+                if 3 <= length <= 15:
+                    test_call, next_idx = self._read_utf8(data, test_idx)
+                    # Validate it looks like a callsign (alphanumeric with optional / or -)
+                    if test_call and len(test_call) >= 3:
+                        clean = test_call.replace('/', '').replace('-', '')
+                        if clean.isalnum() and any(c.isdigit() for c in clean):
+                            # Found valid callsign!
+                            dx_call = test_call
+                            dx_grid, _ = self._read_utf8(data, next_idx)
+                            break
+            
+            # Emit the signal
+            if dx_call:
+                print(f"[QSO Logged] {dx_call} ({dx_grid})")
+                self.qso_logged.emit({
+                    'dx_call': dx_call.upper(),
+                    'dx_grid': dx_grid or '',
+                })
+                
+        except Exception as e:
+            print(f"[UDP] QSO Logged parse error: {e}")
