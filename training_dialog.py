@@ -63,7 +63,16 @@ class TrainingDialog(QDialog):
         self.training_manager.training_error.connect(self._on_error)
     
     def _setup_ui(self):
+        import sys
+        self._is_frozen = getattr(sys, 'frozen', False)
+        
         layout = QVBoxLayout(self)
+        
+        # Adjust title for exe vs source
+        if self._is_frozen:
+            self.setWindowTitle("Bootstrap Behavior History")
+        else:
+            self.setWindowTitle("Train ML Models")
         
         # Log files section
         files_group = QGroupBox("Log Files")
@@ -74,9 +83,9 @@ class TrainingDialog(QDialog):
         
         layout.addWidget(files_group)
         
-        # Models section
-        models_group = QGroupBox("Models to Train")
-        models_layout = QVBoxLayout(models_group)
+        # Models section - only show when running from source
+        self.models_group = QGroupBox("Models to Train")
+        models_layout = QVBoxLayout(self.models_group)
         
         self.success_check = QCheckBox("Success Predictor")
         self.success_check.setChecked(True)
@@ -93,13 +102,15 @@ class TrainingDialog(QDialog):
         self.frequency_check.setToolTip("Learn optimal TX frequency based on your history")
         models_layout.addWidget(self.frequency_check)
         
-        layout.addWidget(models_group)
+        if self._is_frozen:
+            self.models_group.hide()
+        layout.addWidget(self.models_group)
         
         # Progress section
         progress_group = QGroupBox("Progress")
         progress_layout = QVBoxLayout(progress_group)
         
-        self.stage_label = QLabel("Ready to train")
+        self.stage_label = QLabel("Ready")
         progress_layout.addWidget(self.stage_label)
         
         self.progress_bar = QProgressBar()
@@ -155,16 +166,27 @@ class TrainingDialog(QDialog):
         # Buttons
         button_layout = QHBoxLayout()
         
+        # Start Training button - only show when running from source
         self.train_button = QPushButton("Start Training")
         self.train_button.clicked.connect(self._start_training)
+        if self._is_frozen:
+            self.train_button.hide()
         button_layout.addWidget(self.train_button)
         
-        self.bootstrap_button = QPushButton("Bootstrap Behavior")
+        # Bootstrap button - primary action for exe, secondary for source
+        if self._is_frozen:
+            self.bootstrap_button = QPushButton("Start Bootstrap")
+            self.bootstrap_button.setToolTip(
+                "Analyze your log history to learn station behavior patterns.\n"
+                "This enables persona-based predictions for better QSO timing."
+            )
+        else:
+            self.bootstrap_button = QPushButton("Bootstrap Behavior")
+            self.bootstrap_button.setToolTip(
+                "Build behavior history from ALL.TXT without full ML training.\n"
+                "Quick way to get personalized behavior predictions."
+            )
         self.bootstrap_button.clicked.connect(self._bootstrap_behavior)
-        self.bootstrap_button.setToolTip(
-            "Build behavior history from ALL.TXT without full ML training.\n"
-            "Quick way to get personalized behavior predictions."
-        )
         button_layout.addWidget(self.bootstrap_button)
         
         self.cancel_button = QPushButton("Cancel")
@@ -201,8 +223,18 @@ class TrainingDialog(QDialog):
             self.train_button.setEnabled(False)
             self.bootstrap_button.setEnabled(False)
         
-        # Update model checkboxes
-        self._update_model_checkboxes()
+        # Update model checkboxes (only relevant for source mode)
+        if not self._is_frozen:
+            self._update_model_checkboxes()
+        else:
+            # Show helpful intro message for exe users
+            self.results_text.append("Bootstrap analyzes your log history to learn how")
+            self.results_text.append("different stations behave (Contest Op, Casual Op, etc.)")
+            self.results_text.append("")
+            self.results_text.append("This enables personalized predictions without")
+            self.results_text.append("requiring internet access (Purist Mode).")
+            self.results_text.append("")
+            self.results_text.append("Click 'Start Bootstrap' to begin.")
     
     def _update_model_checkboxes(self):
         """Update checkbox labels with current model status."""

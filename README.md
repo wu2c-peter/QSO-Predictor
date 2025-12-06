@@ -160,7 +160,7 @@ The **Path** column shows whether your signal reaches each station:
 2. Extract and run `QSO Predictor.exe`
 3. **First run:** Windows SmartScreen may warn—click "More info" → "Run anyway"
 4. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`
-5. **Initialize Local Intelligence:** Tools → Train Models → Bootstrap from Logs
+5. **Initialize Local Intelligence:** Tools → Bootstrap Behavior
 
 ### From Source
 
@@ -180,7 +180,7 @@ python main_v2.py
 
 After starting QSO Predictor:
 
-1. **Bootstrap your history:** Tools → Train Models → "Bootstrap from Logs"
+1. **Bootstrap your history:** Tools → Bootstrap Behavior
    - Analyzes last 14 days of ALL.TXT data
    - Builds behavioral profiles for observed stations
    - Takes 10-30 seconds depending on log size
@@ -334,9 +334,15 @@ scikit-learn>=1.0.0  # For ML models
 ### File Locations
 
 **Windows:**
-- Config: `%USERPROFILE%\.qso-predictor\config.ini`
+- Config: `%APPDATA%\QSO Predictor\qso_predictor.ini`
 - Models: `%USERPROFILE%\.qso-predictor\models\`
 - Behavior history: `%USERPROFILE%\.qso-predictor\behavior_history.json`
+
+**macOS:**
+- Config: `~/Library/Application Support/QSO Predictor/qso_predictor.ini`
+
+**Linux:**
+- Config: `~/.config/QSO Predictor/qso_predictor.ini`
 
 **Logs searched:**
 - WSJT-X: `%LOCALAPPDATA%\WSJT-X\` 
@@ -347,7 +353,7 @@ scikit-learn>=1.0.0  # For ML models
 
 If you use UDP multicast with JTAlert, N3FJP, or other apps (common setup: `239.0.0.2:2237`), QSO Predictor can join the same multicast group.
 
-Edit `%USERPROFILE%\.qso-predictor\config.ini`:
+Edit your config file (Windows: `%APPDATA%\QSO Predictor\qso_predictor.ini`):
 ```ini
 [NETWORK]
 udp_ip = 239.0.0.2
@@ -373,6 +379,17 @@ qso-predictor/
     ├── feature_builders.py
     └── trainer_process.py
 ```
+
+### ML Training (Developers Only)
+
+The Windows .exe uses Bootstrap for behavior prediction, which works entirely in-process. Full ML model training (success predictor, frequency recommender) requires running from source:
+
+```bash
+python main_v2.py
+# Then: Tools → Train Models → Start Training
+```
+
+This spawns a subprocess for training, which isn't possible in a frozen executable.
 
 ---
 

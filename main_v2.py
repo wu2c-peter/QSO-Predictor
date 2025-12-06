@@ -741,6 +741,11 @@ class MainWindow(QMainWindow):
             # JTDX user selected something NEW (or cleared selection)
             self.jtdx_last_dx_call = dx_call
             
+            # Also skip if it's the same as our current target (set via table click)
+            if dx_call and dx_call == self.current_target_call:
+                print(f"[main_v2] UDP dx_call {dx_call} matches current target, skipping")
+                return
+            
             if dx_call:
                 # Update to the new JTDX target
                 self.dashboard.lbl_target.setText(dx_call)
@@ -790,6 +795,11 @@ class MainWindow(QMainWindow):
             target_call = data.get('call', '')
             target_grid = data.get('grid', '')
             target_freq = data.get('freq', 0)
+            
+            # Skip if clicking same target (avoid redundant processing)
+            if target_call == self.current_target_call:
+                print(f"[main_v2] same target {target_call}, skipping")
+                return
             
             # --- STORE TARGET STATE FOR PERIODIC REFRESH ---
             self.current_target_call = target_call

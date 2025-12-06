@@ -12,11 +12,14 @@ from pathlib import Path
 
 block_cipher = None
 
-# Data files to include (non-Python files)
+# Data files to include (non-Python files AND scripts run as subprocess)
 datas = [
     ('VERSION', '.'),           # Version file for get_version()
     ('icon.ico', '.'),          # Application icon
     ('README.md', '.'),         # Documentation
+    
+    # Training scripts (run as subprocess via QProcess, not imported)
+    ('training', 'training'),   # Include entire training folder
 ]
 
 # Hidden imports that PyInstaller might miss

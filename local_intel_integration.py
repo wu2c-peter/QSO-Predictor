@@ -217,8 +217,12 @@ class LocalIntelligence(QObject):
                 lambda visible: toggle_action.setChecked(visible)
             )
         
-        # Training dialog
-        train_action = menu.addAction("Train ML Models...")
+        # Training dialog - label differs for exe vs source
+        import sys
+        if getattr(sys, 'frozen', False):
+            train_action = menu.addAction("Bootstrap Behavior...")
+        else:
+            train_action = menu.addAction("Train Models...")
         train_action.triggered.connect(self.show_training_dialog)
         
         # Purist mode
@@ -238,26 +242,35 @@ class LocalIntelligence(QObject):
             callsign: Target callsign
             grid: Target grid square (if known)
         """
-        print(f"[LocalIntel] set_target called: {callsign}")
-        
-        if not self._enabled:
-            print(f"[LocalIntel] DISABLED - skipping")
+        # Guard against re-entrant calls (can happen with processEvents)
+        if hasattr(self, '_setting_target') and self._setting_target:
+            print(f"[LocalIntel] RE-ENTRANT CALL blocked: {callsign}")
             return
         
-        self._current_target = callsign.upper() if callsign else None
-        
-        # Show loading state immediately (before slow lookup)
-        if self.insights_panel and callsign:
-            self.insights_panel.show_loading(callsign)
-        
-        # This does the slow lookup
-        self.session_tracker.set_target(callsign, grid)
-        
-        # Now update with results
-        if self.insights_panel:
-            self.insights_panel.set_target(callsign, grid)
-        
-        logger.debug(f"Target set: {callsign}")
+        self._setting_target = True
+        try:
+            print(f"[LocalIntel] set_target called: {callsign}")
+            
+            if not self._enabled:
+                print(f"[LocalIntel] DISABLED - skipping")
+                return
+            
+            self._current_target = callsign.upper() if callsign else None
+            
+            # Show loading state immediately (before slow lookup)
+            if self.insights_panel and callsign:
+                self.insights_panel.show_loading(callsign)
+            
+            # This does the slow lookup
+            self.session_tracker.set_target(callsign, grid)
+            
+            # Now update with results
+            if self.insights_panel:
+                self.insights_panel.set_target(callsign, grid)
+            
+            logger.debug(f"Target set: {callsign}")
+        finally:
+            self._setting_target = False
     
     def set_path_status(self, status: PathStatus):
         """
@@ -481,6 +494,14 @@ class LocalIntelligence(QObject):
     
     def _update_model_status(self):
         """Update model status in insights panel."""
+        import sys
+        
+        # Skip ML model status in frozen exe - users can only use Bootstrap
+        if getattr(sys, 'frozen', False):
+            if self.insights_panel:
+                self.insights_panel.show_model_status("", False)  # Hide status
+            return
+        
         if not self.insights_panel:
             return
         

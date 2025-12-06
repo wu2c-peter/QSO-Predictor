@@ -563,9 +563,9 @@ class InsightsPanel(QWidget):
     
     def show_loading(self, callsign: str):
         """Show immediate loading feedback when target changes."""
-        from PyQt6.QtWidgets import QApplication
         self.behavior_widget.set_loading(callsign)
-        QApplication.processEvents()  # Force UI update before slow lookup
+        # Note: Removed QApplication.processEvents() - it can cause re-entrant 
+        # calls to set_target if UDP events are queued, leading to oscillation/crashes
     
     def set_path_status(self, status: PathStatus):
         """Update path status (from main app's perspective)."""
@@ -631,6 +631,14 @@ class InsightsPanel(QWidget):
     def show_model_status(self, status: str, is_stale: bool = False):
         """Update model status display."""
         self.model_status.setText(status)
+        
+        # Hide completely if no status (e.g., frozen exe mode)
+        if not status:
+            self.model_status.hide()
+            self.retrain_button.hide()
+            return
+        
+        self.model_status.show()
         
         if is_stale:
             self.model_status.setStyleSheet("color: #ffaa00; font-size: 10px;")
