@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec file for QSO Predictor
+# PyInstaller spec file for QSO Predictor v2.0
 # 
 # To build:
 #   pip install pyinstaller
@@ -12,43 +12,68 @@ from pathlib import Path
 
 block_cipher = None
 
-# Collect all Python source files
-py_files = [
-    'main.py',
-    'analyzer.py',
-    'band_map_widget.py',
-    'config_manager.py',
-    'mqtt_client.py',
-    'udp_handler.py',
-    'settings_dialog.py',
-    'solar_client.py',
-    'launcher.py',
-]
-
-# Data files to include (non-Python files)
+# Data files to include (non-Python files AND scripts run as subprocess)
 datas = [
     ('VERSION', '.'),           # Version file for get_version()
     ('icon.ico', '.'),          # Application icon
     ('README.md', '.'),         # Documentation
+    
+    # Training scripts (run as subprocess via QProcess, not imported)
+    ('training', 'training'),   # Include entire training folder
 ]
 
 # Hidden imports that PyInstaller might miss
 hiddenimports = [
+    # MQTT
     'paho.mqtt.client',
     'paho.mqtt.enums',
+    
+    # PyQt6
     'PyQt6.QtCore',
     'PyQt6.QtGui',
     'PyQt6.QtWidgets',
+    
+    # Core dependencies
     'numpy',
-    'requests',                 # For update checker
-    'urllib3',                  # requests dependency
-    'charset_normalizer',       # requests dependency
-    'certifi',                  # requests dependency
-    'idna',                     # requests dependency
+    'requests',
+    'urllib3',
+    'charset_normalizer',
+    'certifi',
+    'idna',
+    
+    # ML dependencies (for trained models)
+    'sklearn',
+    'sklearn.ensemble',
+    'sklearn.ensemble._forest',
+    'sklearn.ensemble._gb',
+    'sklearn.tree',
+    'sklearn.tree._tree',
+    'sklearn.utils._cython_blas',
+    'sklearn.neighbors._typedefs',
+    'sklearn.utils._typedefs',
+    'sklearn.utils._heap',
+    'sklearn.utils._sorting',
+    'sklearn.utils._vector_sentinel',
+    'joblib',
+    
+    # Local intel modules
+    'local_intel',
+    'local_intel.models',
+    'local_intel.session_tracker',
+    'local_intel.predictor',
+    'local_intel.model_manager',
+    'local_intel.behavior_predictor',
+    'local_intel.log_discovery',
+    'local_intel.log_parser',
+    
+    # Training modules
+    'training',
+    'training.feature_builders',
+    'training.trainer_process',
 ]
 
 a = Analysis(
-    ['main.py'],
+    ['main_v2.py'],              # v2 entry point
     pathex=[],
     binaries=[],
     datas=datas,

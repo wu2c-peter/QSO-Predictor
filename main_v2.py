@@ -1,5 +1,5 @@
-# QSO Predictor
-# Copyright (C) 2025 [Peter Hirst/WU2C]
+# QSO Predictor v2.0
+# Copyright (C) 2025 Peter Hirst (WU2C)
 
 import ctypes
 import subprocess
@@ -83,6 +83,16 @@ try:
     SOLAR_AVAILABLE = True
 except ImportError:
     SOLAR_AVAILABLE = False
+
+# --- LOCAL INTELLIGENCE v2.0 ---
+try:
+    from local_intel_integration import LocalIntelligence
+    from local_intel import PathStatus
+    LOCAL_INTEL_AVAILABLE = True
+except ImportError as e:
+    LOCAL_INTEL_AVAILABLE = False
+    print(f"Local Intelligence not available: {e}")
+
 
 # --- WIDGET: TARGET DASHBOARD ---
 class TargetDashboard(QFrame):
@@ -456,9 +466,18 @@ class MainWindow(QMainWindow):
         # --- UPDATE CHECK STATE ---
         self.update_available = None  # Will hold version string if update available
         
+        # --- UDP STATUS TRACKING ---
+        self._decode_count = 0
+        self._decode_start_time = None
+        
         if SOLAR_AVAILABLE:
             self.solar = SolarClient()
             self.solar_update_signal.connect(self.update_solar_ui)
+        
+        # --- LOCAL INTELLIGENCE v2.0 ---
+        self.local_intel = None
+        if LOCAL_INTEL_AVAILABLE:
+            self._init_local_intelligence()
             
         self.init_ui()
         self.setup_connections()
@@ -480,6 +499,37 @@ class MainWindow(QMainWindow):
         
         # Check for updates on startup (non-blocking, silent)
         self.check_for_updates(manual=False)
+        
+        # Check for unconfigured callsign/grid on startup
+        QTimer.singleShot(500, self._check_first_run_config)
+    
+    def _check_first_run_config(self):
+        """Warn user if callsign/grid haven't been configured."""
+        my_call = self.config.get('ANALYSIS', 'my_callsign', fallback='N0CALL')
+        my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='FN00aa')
+        
+        if my_call == 'N0CALL' or my_grid == 'FN00aa':
+            QMessageBox.information(
+                self,
+                "Welcome to QSO Predictor!",
+                "Please configure your callsign and grid square "
+                "for accurate predictions.\n\n"
+                "Go to Edit → Settings to set them up."
+            )
+
+    def _init_local_intelligence(self):
+        """Initialize Local Intelligence v2.0 features."""
+        try:
+            my_callsign = self.config.get('ANALYSIS', 'my_callsign', fallback='')
+            if not my_callsign:
+                print("Local Intelligence: No callsign configured, some features disabled")
+                my_callsign = 'N0CALL'
+            
+            self.local_intel = LocalIntelligence(my_callsign=my_callsign)
+            print("Local Intelligence initialized")
+        except Exception as e:
+            print(f"Failed to initialize Local Intelligence: {e}")
+            self.local_intel = None
 
     solar_update_signal = pyqtSignal(dict)
     update_check_signal = pyqtSignal(str, bool)  # (version_or_status, was_manual)
@@ -582,6 +632,17 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
+        # --- TOOLS MENU (NEW for v2.0) ---
+        tools_menu = menu.addMenu("Tools")
+        
+        # Add Local Intelligence menu items if available
+        if self.local_intel:
+            self.local_intel.add_menu_items(tools_menu)
+        else:
+            disabled_action = QAction("Local Intelligence (not available)", self)
+            disabled_action.setEnabled(False)
+            tools_menu.addAction(disabled_action)
+        
         # Help Menu
         help_menu = menu.addMenu("Help")
         wiki_action = QAction("Documentation (Wiki)", self)
@@ -617,6 +678,13 @@ class MainWindow(QMainWindow):
         
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
+        
+        # --- LOCAL INTELLIGENCE PANEL SETUP ---
+        if self.local_intel:
+            try:
+                self.local_intel.setup(self)
+            except Exception as e:
+                print(f"Failed to setup Local Intelligence panel: {e}")
 
     def setup_connections(self):
         self.udp.new_decode.connect(self.handle_decode)
@@ -629,6 +697,11 @@ class MainWindow(QMainWindow):
 
     def handle_decode(self, data):
         self.buffer.append(data)
+        # Track decode rate
+        if self._decode_start_time is None:
+            from datetime import datetime
+            self._decode_start_time = datetime.now()
+        self._decode_count += 1
 
     def process_buffer(self):
         if not self.buffer: return
@@ -641,6 +714,18 @@ class MainWindow(QMainWindow):
         del self.buffer[:50]
         for item in chunk:
             self.analyzer.analyze_decode(item)
+            
+            # --- LOCAL INTELLIGENCE: Process decode ---
+            if self.local_intel:
+                self.local_intel.process_decode({
+                    'callsign': item.get('call'),
+                    'snr': item.get('snr'),
+                    'frequency': item.get('freq'),
+                    'message': item.get('message'),
+                    'dt': item.get('dt', 0.0),
+                    'mode': 'FT8',
+                })
+        
         self.model.add_batch(chunk)
         self.band_map.update_signals(chunk)
         
@@ -663,6 +748,14 @@ class MainWindow(QMainWindow):
         cur_tx = status.get('tx_df', 0)
         self.band_map.set_current_tx_freq(cur_tx)
         
+        # --- LOCAL INTELLIGENCE: Update TX status ---
+        if self.local_intel:
+            # Check for TX enabled (transmitting or tx_enabled field)
+            tx_enabled = status.get('transmitting', False) or status.get('tx_enabled', False)
+            dx_call = status.get('dx_call', '')
+            # Pass who we're calling so pileup status knows if we're calling THIS target
+            self.local_intel.set_tx_status(tx_enabled, calling=dx_call)
+        
         # Update Dashboard Text Immediately
         rec = self.band_map.best_offset
         self.dashboard.update_rec(rec, cur_tx)
@@ -676,6 +769,11 @@ class MainWindow(QMainWindow):
             # JTDX user selected something NEW (or cleared selection)
             self.jtdx_last_dx_call = dx_call
             
+            # Also skip if it's the same as our current target (set via table click)
+            if dx_call and dx_call == self.current_target_call:
+                print(f"[main_v2] UDP dx_call {dx_call} matches current target, skipping")
+                return
+            
             if dx_call:
                 # Update to the new JTDX target
                 self.dashboard.lbl_target.setText(dx_call)
@@ -684,6 +782,7 @@ class MainWindow(QMainWindow):
                 # Find target in decode list and analyze with full perspective
                 target_grid = ""
                 target_freq = 0
+                target_row = None
                 for row in self.model._data:
                     if row.get('call') == dx_call:
                         target_freq = row.get('freq', 0)
@@ -691,6 +790,7 @@ class MainWindow(QMainWindow):
                         # Re-analyze with full perspective for accurate competition
                         self.analyzer.analyze_decode(row, use_perspective=True)
                         self.dashboard.update_data(row)
+                        target_row = row
                         break
                 
                 # Store target state for perspective refresh
@@ -702,6 +802,12 @@ class MainWindow(QMainWindow):
                 self.band_map.set_target_call(dx_call)
                 self.band_map.set_target_grid(target_grid)
                 
+                # --- LOCAL INTELLIGENCE: Update target ---
+                if self.local_intel:
+                    self.local_intel.set_target(dx_call, target_grid)
+                    if target_row:
+                        self._update_local_intel_path_status(target_row)
+                
                 # Trigger immediate perspective update
                 self._update_perspective_display()
             # Note: If JTDX clears dx_call, we don't clear our target
@@ -709,6 +815,7 @@ class MainWindow(QMainWindow):
 
  
     def on_row_click(self, index):
+        print(f"[main_v2] on_row_click: row {index.row()}")
         row = index.row()
         if row < len(self.model._data):
             data = self.model._data[row]
@@ -716,6 +823,11 @@ class MainWindow(QMainWindow):
             target_call = data.get('call', '')
             target_grid = data.get('grid', '')
             target_freq = data.get('freq', 0)
+            
+            # Skip if clicking same target (avoid redundant processing)
+            if target_call == self.current_target_call:
+                print(f"[main_v2] same target {target_call}, skipping")
+                return
             
             # --- STORE TARGET STATE FOR PERIODIC REFRESH ---
             self.current_target_call = target_call
@@ -734,10 +846,29 @@ class MainWindow(QMainWindow):
             self.analyzer.analyze_decode(data, use_perspective=True)
             self.dashboard.update_data(data)
             
+            # --- LOCAL INTELLIGENCE: Update target ---
+            if self.local_intel:
+                self.local_intel.set_target(target_call, target_grid)
+                self._update_local_intel_path_status(data)
+            
             # 3. Update band map perspective display
             self._update_perspective_display()
 
-
+    def _update_local_intel_path_status(self, row_data):
+        """Update Local Intelligence with current path status."""
+        if not self.local_intel:
+            return
+        
+        path = str(row_data.get('path', ''))
+        
+        if "CONNECTED" in path:
+            self.local_intel.set_path_status(PathStatus.CONNECTED)
+        elif "Path Open" in path:
+            self.local_intel.set_path_status(PathStatus.PATH_OPEN)
+        elif "No Path" in path:
+            self.local_intel.set_path_status(PathStatus.NO_PATH)
+        else:
+            self.local_intel.set_path_status(PathStatus.UNKNOWN)
 
     def refresh_target_perspective(self):
         """Called periodically by timer to keep target perspective current."""
@@ -747,6 +878,10 @@ class MainWindow(QMainWindow):
                 if row.get('call') == self.current_target_call:
                     self.analyzer.analyze_decode(row, use_perspective=True)
                     self.dashboard.update_data(row)
+                    
+                    # --- LOCAL INTELLIGENCE: Update path status ---
+                    if self.local_intel:
+                        self._update_local_intel_path_status(row)
                     break
             
             # Update band map perspective
@@ -919,12 +1054,35 @@ class MainWindow(QMainWindow):
                     webbrowser.open("https://github.com/wu2c-peter/qso-predictor/releases")
 
     def open_settings(self):
-        dlg = SettingsDialog(self.config, self)
+        # Calculate UDP status for settings dialog
+        udp_status = self._get_udp_status()
+        dlg = SettingsDialog(self.config, self, udp_status=udp_status)
         if dlg.exec():
             self.udp.stop()
             self.udp = UDPHandler(self.config)
             self.udp.start()
             self.setup_connections()
+            # Reset decode tracking after settings change
+            self._decode_count = 0
+            self._decode_start_time = None
+    
+    def _get_udp_status(self):
+        """Get current UDP connection status."""
+        from datetime import datetime
+        
+        if self._decode_start_time is None or self._decode_count == 0:
+            return {'receiving': False, 'rate': 0}
+        
+        elapsed = (datetime.now() - self._decode_start_time).total_seconds()
+        if elapsed < 1:
+            elapsed = 1  # Avoid division by zero
+        
+        rate = (self._decode_count / elapsed) * 60  # decodes per minute
+        
+        return {
+            'receiving': self._decode_count > 0,
+            'rate': rate
+        }
 
     def open_wiki(self):
         """Open the GitHub wiki in the default browser."""
@@ -933,11 +1091,13 @@ class MainWindow(QMainWindow):
     def show_about(self):
         """Show about dialog."""
         version = get_version()
+        local_intel_status = "Enabled" if self.local_intel else "Not available"
         QMessageBox.about(self, "About QSO Predictor",
             f"<h2>QSO Predictor v{version}</h2>"
             f"<p>Real-Time Tactical Assistant for FT8 & FT4</p>"
             f"<p>Copyright © 2025 Peter Hirst (WU2C)</p>"
             f"<p>Licensed under GNU GPL v3</p>"
+            f"<p>Local Intelligence: {local_intel_status}</p>"
             f"<p><a href='https://github.com/wu2c-peter/qso-predictor'>GitHub Repository</a></p>"
         )
 
@@ -952,6 +1112,13 @@ class MainWindow(QMainWindow):
             self.solar_update_signal.emit(data)
 
     def closeEvent(self, event):
+        # --- LOCAL INTELLIGENCE: Clean shutdown ---
+        if self.local_intel:
+            try:
+                self.local_intel.shutdown()
+            except Exception as e:
+                print(f"Error shutting down Local Intelligence: {e}")
+        
         self.analyzer.stop()
         self.udp.stop()
         geo = self.saveGeometry().toHex().data().decode()
@@ -960,10 +1127,9 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     # Set Windows taskbar app ID (Windows only)
-    import sys
     if sys.platform == 'win32':
         try:
-            myappid = 'wu2c.qsopredictor.v1.3'
+            myappid = 'wu2c.qsopredictor.v2.0'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass
