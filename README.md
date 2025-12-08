@@ -3,7 +3,7 @@
 **Real-Time Tactical Assistant for FT8 & FT4**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Version](https://img.shields.io/badge/version-2.0.3-green.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.0.4-green.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
 ---
 
@@ -51,7 +51,7 @@ QSO Predictor shows you the **"view from the other end."** Using PSK Reporter da
 - **Sticky recommendations** — Won't bounce around chasing marginal improvements
 - **Click-to-set** — Click band map to manually set frequency
 
-### Workflow Features (v2.0.3)
+### Workflow Features (v2.0.3+)
 - **Clear Target** — Button and Ctrl+R shortcut to reset target
 - **Auto-clear on QSO** — Automatically clears target after logging
 - **Window/column persistence** — Layout saved between sessions
@@ -66,7 +66,11 @@ QSO Predictor shows you the **"view from the other end."** Using PSK Reporter da
 4. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`
 5. Start decoding — select a target station to see their perspective
 
-### Running from Source (Windows/Mac/Linux)
+---
+
+## Running from Source
+
+### Windows
 
 ```bash
 git clone https://github.com/wu2c-peter/qso-predictor.git
@@ -75,7 +79,40 @@ pip install -r requirements.txt
 python main_v2.py
 ```
 
-Requires Python 3.10+
+### macOS
+
+```bash
+# Clone the repository
+git clone https://github.com/wu2c-peter/qso-predictor.git
+cd qso-predictor
+
+# Create virtual environment (recommended - avoids PEP 668 issues)
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run
+python main_v2.py
+```
+
+**To run again later:**
+```bash
+cd qso-predictor
+source venv/bin/activate
+python main_v2.py
+```
+
+**Note:** A packaged Mac app (.app) is planned for a future release.
+
+### Python Version
+
+Requires **Python 3.12 or 3.13**. 
+
+⚠️ Python 3.14 is currently in alpha and has compatibility issues with some dependencies. Avoid 3.14 until it reaches stable release.
+
+Check your version: `python --version` or `python3 --version`
 
 ---
 
@@ -107,6 +144,13 @@ Requires Python 3.10+
 | Path Open | Green | Stations near target heard you |
 | No Path | Orange | Reporters exist but didn't hear you |
 | — | Gray | No data from that region |
+
+### Status Bar
+
+Shows: `{Band} ({Freq}) | Tracking {N} stations | {M} hear {CALL}`
+
+- **Tracking N stations** — Unique callsigns seen in the last 15 minutes
+- **M hear CALL** — Stations that have spotted your signal
 
 ---
 
@@ -177,6 +221,9 @@ If you see prediction errors, delete the model files to use heuristic fallback:
 del "%USERPROFILE%\.qso-predictor\models\*.pkl"
 ```
 
+### High Memory / Slow Performance
+Fixed in v2.0.4. If you see "Tracking 10000+ signals" or performance degrades over time, update to the latest version.
+
 ---
 
 ## Documentation
@@ -190,6 +237,12 @@ Full documentation available on the [GitHub Wiki](https://github.com/wu2c-peter/
 ---
 
 ## Version History
+
+### v2.0.4 (December 2025)
+- **Fixed:** Cache cleanup thread dying silently — caused unbounded memory growth and performance degradation (20,000+ signals accumulating instead of ~400 stations)
+- **Fixed:** MQTT auto-reconnect — now recovers automatically from dropped connections
+- **Fixed:** Timestamp validation — handles invalid data from PSK Reporter gracefully
+- **Improved:** Status bar now shows unique station count instead of total spot reports
 
 ### v2.0.3 (December 2025)
 - **New:** Clear Target button and Ctrl+R shortcut
@@ -222,6 +275,7 @@ QSO Predictor is developed by **Peter Hirst (WU2C)** with AI assistance from Cla
 | Callsign | Contributions |
 |----------|---------------|
 | **Warren KC0GU** | Window/column persistence, Clear Target workflow, Auto-clear on QSO, Hunt Mode concept |
+| **Bill K3CDY** | macOS testing and installation feedback |
 
 ### Want to Contribute?
 
