@@ -495,64 +495,91 @@ class QSOAnalyzer(QObject):
         self.mqtt.stop()
 
     def _maintenance_loop(self):
+        """
+        Background thread that cleans up expired spots from caches.
+        FIX v2.0.4: Wrapped in try/except to prevent thread death from bad data.
+        """
         while self.running:
             time.sleep(2) 
-            now = time.time()
-            cutoff = now - (15 * 60) # Keep 15 mins for BAND MAP history
-            cutoff_recent = now - (3 * 60) # Keep 3 mins for "who hears me" (tactical relevance)
             
-            # LOCK: Modifying cache
-            with self.lock:
-                # --- Original band_cache cleanup ---
-                keys_to_remove = []
-                total_signals = 0
-                for f in self.band_cache:
-                    self.band_cache[f] = [r for r in self.band_cache[f] if r['time'] > cutoff]
-                    if not self.band_cache[f]:
-                        keys_to_remove.append(f)
-                    else:
-                        total_signals += len(self.band_cache[f])
+            try:
+                now = time.time()
+                cutoff = now - (15 * 60)  # Keep 15 mins for BAND MAP history
+                cutoff_recent = now - (3 * 60)  # Keep 3 mins for "who hears me" (tactical relevance)
                 
-                for k in keys_to_remove:
-                    del self.band_cache[k]
+                # LOCK: Modifying cache
+                with self.lock:
+                    # --- Original band_cache cleanup ---
+                    keys_to_remove = []
+                    total_signals = 0
+                    for f in self.band_cache:
+                        # FIX v2.0.4: Safe comparison - skip spots with invalid time
+                        self.band_cache[f] = [
+                            r for r in self.band_cache[f] 
+                            if isinstance(r.get('time'), (int, float)) and r['time'] > cutoff
+                        ]
+                        if not self.band_cache[f]:
+                            keys_to_remove.append(f)
+                        else:
+                            total_signals += len(self.band_cache[f])
+                    
+                    for k in keys_to_remove:
+                        del self.band_cache[k]
+                    
+                    # Use shorter window for "who hears me" - recent propagation matters
+                    # FIX v2.0.4: Safe comparison
+                    self.my_reception_cache = [
+                        r for r in self.my_reception_cache 
+                        if isinstance(r.get('time'), (int, float)) and r['time'] > cutoff_recent
+                    ]
+                    hearing_me_count = len(self.my_reception_cache)
+                    
+                    # --- NEW: Cleanup receiver_cache ---
+                    receiver_keys_to_remove = []
+                    for call in self.receiver_cache:
+                        # FIX v2.0.4: Safe comparison
+                        self.receiver_cache[call] = [
+                            r for r in self.receiver_cache[call] 
+                            if isinstance(r.get('time'), (int, float)) and r['time'] > cutoff
+                        ]
+                        if not self.receiver_cache[call]:
+                            receiver_keys_to_remove.append(call)
+                    for k in receiver_keys_to_remove:
+                        del self.receiver_cache[k]
+                    
+                    # --- NEW: Cleanup grid_cache ---
+                    grid_keys_to_remove = []
+                    for grid in self.grid_cache:
+                        # FIX v2.0.4: Safe comparison
+                        self.grid_cache[grid] = [
+                            r for r in self.grid_cache[grid] 
+                            if isinstance(r.get('time'), (int, float)) and r['time'] > cutoff
+                        ]
+                        if not self.grid_cache[grid]:
+                            grid_keys_to_remove.append(grid)
+                    for k in grid_keys_to_remove:
+                        del self.grid_cache[k]
+                    
+                    # Stats for status
+                    receiver_count = len(self.receiver_cache)
+                    grid_count = len(self.grid_cache)
+                    
+                    # Format dial frequency for display
+                    dial_display = ""
+                    if self.current_dial_freq > 0:
+                        freq_mhz = self.current_dial_freq / 1_000_000
+                        band = self._freq_to_band(self.current_dial_freq)
+                        dial_display = f"{band} ({freq_mhz:.3f} MHz) | "
                 
-                # Use shorter window for "who hears me" - recent propagation matters
-                self.my_reception_cache = [r for r in self.my_reception_cache if r['time'] > cutoff_recent]
-                hearing_me_count = len(self.my_reception_cache)
+                self.cache_updated.emit()
+                self.status_message.emit(
+                    f"{dial_display}Tracking {total_signals} signals | {hearing_me_count} hear {self.my_call}"
+                )
                 
-                # --- NEW: Cleanup receiver_cache ---
-                receiver_keys_to_remove = []
-                for call in self.receiver_cache:
-                    self.receiver_cache[call] = [r for r in self.receiver_cache[call] if r['time'] > cutoff]
-                    if not self.receiver_cache[call]:
-                        receiver_keys_to_remove.append(call)
-                for k in receiver_keys_to_remove:
-                    del self.receiver_cache[k]
-                
-                # --- NEW: Cleanup grid_cache ---
-                grid_keys_to_remove = []
-                for grid in self.grid_cache:
-                    self.grid_cache[grid] = [r for r in self.grid_cache[grid] if r['time'] > cutoff]
-                    if not self.grid_cache[grid]:
-                        grid_keys_to_remove.append(grid)
-                for k in grid_keys_to_remove:
-                    del self.grid_cache[k]
-                
-                # Stats for status
-                receiver_count = len(self.receiver_cache)
-                grid_count = len(self.grid_cache)
-                
-                # Format dial frequency for display
-                dial_display = ""
-                if self.current_dial_freq > 0:
-                    freq_mhz = self.current_dial_freq / 1_000_000
-                    band = self._freq_to_band(self.current_dial_freq)
-                    dial_display = f"{band} ({freq_mhz:.3f} MHz) | "
-            
-            self.cache_updated.emit()
-            self.status_message.emit(
-                f"{dial_display}Tracking {total_signals} signals | {hearing_me_count} hear {self.my_call}"
-            )
+            except Exception as e:
+                # FIX v2.0.4: Log error but don't die - keep cleaning
+                print(f"[Maintenance] Error during cleanup: {e}")
+                # Continue running - next iteration may succeed
     
     def _freq_to_band(self, freq):
         """Convert frequency in Hz to band name."""

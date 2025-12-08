@@ -76,6 +76,12 @@ class MQTTClient(QObject):
             # Payload Example: {"sc":"W1AW","rc":"K1ABC","f":14074123,"rp":-12,"t":1735000000,"rl":"FN42"}
             data = json.loads(msg.payload.decode())
             
+            # FIX v2.0.4: Sanitize timestamp - must be valid number
+            # PSK Reporter sometimes sends null or invalid timestamps
+            spot_time = data.get('t')
+            if not isinstance(spot_time, (int, float)) or spot_time <= 0:
+                spot_time = time.time()
+            
             # FIX: Normalize callsigns and grid to uppercase at ingestion
             # This ensures all downstream comparisons work regardless of PSK Reporter's case
             spot = {
@@ -84,7 +90,7 @@ class MQTTClient(QObject):
                 'freq': data.get('f', 0),
                 'snr': data.get('rp', -99),
                 'grid': data.get('rl', '').upper(),
-                'time': data.get('t', time.time())
+                'time': spot_time  # Now guaranteed to be valid
             }
             self.spot_received.emit(spot)
         except: pass
