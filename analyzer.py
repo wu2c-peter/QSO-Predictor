@@ -511,7 +511,7 @@ class QSOAnalyzer(QObject):
                 with self.lock:
                     # --- Original band_cache cleanup ---
                     keys_to_remove = []
-                    total_signals = 0
+                    unique_senders = set()  # FIX v2.0.4: Count unique callsigns, not total spots
                     for f in self.band_cache:
                         # FIX v2.0.4: Safe comparison - skip spots with invalid time
                         self.band_cache[f] = [
@@ -521,7 +521,9 @@ class QSOAnalyzer(QObject):
                         if not self.band_cache[f]:
                             keys_to_remove.append(f)
                         else:
-                            total_signals += len(self.band_cache[f])
+                            # Count unique senders (more meaningful than total reports)
+                            for r in self.band_cache[f]:
+                                unique_senders.add(r.get('sender', ''))
                     
                     for k in keys_to_remove:
                         del self.band_cache[k]
@@ -573,7 +575,7 @@ class QSOAnalyzer(QObject):
                 
                 self.cache_updated.emit()
                 self.status_message.emit(
-                    f"{dial_display}Tracking {total_signals} signals | {hearing_me_count} hear {self.my_call}"
+                    f"{dial_display}Tracking {len(unique_senders)} stations | {hearing_me_count} hear {self.my_call}"
                 )
                 
             except Exception as e:

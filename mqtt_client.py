@@ -16,6 +16,9 @@ class MQTTClient(QObject):
         self.port = 1883
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         
+        # FIX v2.0.4: Configure auto-reconnect with exponential backoff
+        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
+        
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.on_disconnect = self.on_disconnect
@@ -70,6 +73,13 @@ class MQTTClient(QObject):
 
     def on_disconnect(self, client, userdata, flags, rc, properties=None):
         self.status_message.emit("Live Feed Disconnected")
+        # FIX v2.0.4: Auto-reconnect on unexpected disconnect
+        if self.running and rc != 0:  # rc=0 means clean disconnect
+            self.status_message.emit("Attempting reconnect...")
+            try:
+                self.client.reconnect()
+            except Exception as e:
+                self.status_message.emit(f"Reconnect failed: {e} - will retry")
 
     def on_message(self, client, userdata, msg):
         try:
