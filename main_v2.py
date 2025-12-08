@@ -1,5 +1,11 @@
-# QSO Predictor v2.0.3
+# QSO Predictor v2.0.4
 # Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.0.4 Changes:
+# - Fixed: Cache cleanup thread death (analyzer.py)
+# - Fixed: MQTT auto-reconnect (mqtt_client.py)
+# - Fixed: Status bar shows unique stations instead of total spots
+# - Added: Solar data refresh timer (every 15 minutes)
 #
 # v2.0.3 Changes:
 # - Added: Column width persistence (suggested by KC0GU)
@@ -503,8 +509,13 @@ class MainWindow(QMainWindow):
         
         self.udp.start()
         
+        # --- v2.0.5: Solar data fetch with periodic refresh ---
         if SOLAR_AVAILABLE:
             self.fetch_solar_data()
+            # Refresh solar data every 15 minutes
+            self.solar_timer = QTimer()
+            self.solar_timer.timeout.connect(self.fetch_solar_data)
+            self.solar_timer.start(15 * 60 * 1000)  # 15 minutes
         
         # Check for updates on startup (non-blocking, silent)
         self.check_for_updates(manual=False)
