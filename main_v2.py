@@ -1,5 +1,9 @@
-# QSO Predictor v2.0.4
+# QSO Predictor v2.1.0
 # Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.1.0 Changes:
+# - Added: Startup health check dialog when no UDP data detected
+#   (based on user feedback from Doug McDonald)
 #
 # v2.0.4 Changes:
 # - Fixed: Cache cleanup thread death (analyzer.py)
@@ -91,6 +95,13 @@ except ImportError as e:
     app = QApplication(sys.argv)
     QMessageBox.critical(None, "Missing Files", f"Error: {e}")
     sys.exit(1)
+
+# v2.1.0: Import startup health dialog
+try:
+    from startup_health_dialog import StartupHealthDialog
+    STARTUP_HEALTH_AVAILABLE = True
+except ImportError:
+    STARTUP_HEALTH_AVAILABLE = False
 
 try:
     from solar_client import SolarClient
@@ -522,6 +533,9 @@ class MainWindow(QMainWindow):
         
         # Check for unconfigured callsign/grid on startup
         QTimer.singleShot(500, self._check_first_run_config)
+        
+        # v2.1.0: Start health check timer (checks for UDP data after 20 seconds)
+        self._start_health_check_timer()
     
     def _check_first_run_config(self):
         """Warn user if callsign/grid haven't been configured."""
@@ -741,6 +755,13 @@ class MainWindow(QMainWindow):
         wiki_action.setShortcut(QKeySequence("F1"))
         wiki_action.triggered.connect(self.open_wiki)
         help_menu.addAction(wiki_action)
+        
+        # v2.1.0: Connection Help menu item
+        connection_help_action = QAction("Connection Help...", self)
+        connection_help_action.triggered.connect(self._show_connection_help)
+        help_menu.addAction(connection_help_action)
+        
+        help_menu.addSeparator()
         
         check_update_action = QAction("Check for Updates", self)
         check_update_action.triggered.connect(lambda: self.check_for_updates(manual=True))
@@ -1226,6 +1247,95 @@ class MainWindow(QMainWindow):
                 )
                 if reply == QMessageBox.StandardButton.Yes:
                     webbrowser.open("https://github.com/wu2c-peter/qso-predictor/releases")
+
+    # --- v2.1.0: Startup Health Check ---
+    def _start_health_check_timer(self):
+        """Start a timer to check if data is being received after startup.
+        
+        Shows a help dialog if no UDP data detected after 20 seconds.
+        Feature added based on user feedback from Doug McDonald.
+        """
+        # Check after 20 seconds - enough time for:
+        # - MQTT to connect
+        # - At least one FT8 cycle (15 sec) to complete
+        # - Some buffer for slow startup
+        QTimer.singleShot(20000, self._check_startup_health)
+    
+    def _check_startup_health(self):
+        """Check if we're receiving data. Show help dialog if not."""
+        # Check if user has disabled this popup
+        skip_check = self.config.get('UI', 'skip_startup_health_check', fallback='false') == 'true'
+        if skip_check:
+            return
+        
+        # Check UDP status using the message counter on udp handler
+        has_udp = False
+        if hasattr(self, 'udp') and self.udp:
+            has_udp = getattr(self.udp, 'messages_received', 0) > 0
+        
+        # Alternative check using decode count (should match)
+        if not has_udp:
+            has_udp = self._decode_count > 0
+        
+        # Check MQTT status - look for indication in status message
+        has_mqtt = False
+        if hasattr(self, 'str_status'):
+            # If status contains "tracking X stations", MQTT is working
+            has_mqtt = 'tracking' in self.str_status.lower() or 'stations' in self.str_status.lower()
+        
+        # If UDP is working, we're good - don't show popup
+        if has_udp:
+            return
+        
+        # Show the help dialog
+        self._show_startup_health_dialog(has_udp, has_mqtt)
+    
+    def _show_startup_health_dialog(self, udp_ok, mqtt_ok):
+        """Display the startup health check dialog."""
+        if not STARTUP_HEALTH_AVAILABLE:
+            # Fallback if dialog module not available
+            QMessageBox.warning(
+                self,
+                "No Data Detected",
+                "QSO Predictor isn't receiving data from WSJT-X or JTDX.\n\n"
+                "Please check:\n"
+                "• WSJT-X/JTDX Settings → Reporting → UDP Server\n"
+                "• Address: 127.0.0.1  Port: 2237\n"
+                "• 'Accept UDP Requests' is checked\n\n"
+                "See Help → Documentation for more details."
+            )
+            return
+        
+        dialog = StartupHealthDialog(
+            parent=self,
+            udp_ok=udp_ok,
+            mqtt_ok=mqtt_ok
+        )
+        
+        result = dialog.exec()
+        
+        # Handle "don't show again"
+        if dialog.dont_show_again:
+            self.config.save_setting('UI', 'skip_startup_health_check', 'true')
+        
+        # Handle "Open Settings" button (custom return code 2)
+        if result == 2:
+            self.open_settings()
+    
+    def _show_connection_help(self):
+        """Manually show the connection help dialog (from Help menu)."""
+        # Get current status
+        has_udp = False
+        if hasattr(self, 'udp') and self.udp:
+            has_udp = getattr(self.udp, 'messages_received', 0) > 0
+        if not has_udp:
+            has_udp = self._decode_count > 0
+        
+        has_mqtt = False
+        if hasattr(self, 'str_status'):
+            has_mqtt = 'tracking' in self.str_status.lower() or 'stations' in self.str_status.lower()
+        
+        self._show_startup_health_dialog(has_udp, has_mqtt)
 
     def open_settings(self):
         # Calculate UDP status for settings dialog

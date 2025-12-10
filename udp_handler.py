@@ -1,6 +1,9 @@
 # QSO Predictor
 # Copyright (C) 2025 Peter Hirst (WU2C)
 #
+# v2.1.0 Changes:
+# - Added: messages_received counter for startup health check
+#
 # v2.0.3 Changes:
 # - Added: QSO Logged message handling (Type 5) for auto-clear feature
 #   (suggested by KC0GU)
@@ -23,6 +26,9 @@ class UDPHandler(QObject):
         self.forward_ports = config.get_forward_ports()
         self.running = False
         self.is_multicast = self._is_multicast_address(self.ip)
+        
+        # v2.1.0: Track message count for startup health check
+        self.messages_received = 0
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -89,6 +95,9 @@ class UDPHandler(QObject):
 
     def _parse_packet(self, data):
         if len(data) < 12: return
+        
+        # v2.1.0: Count all valid packets for health check
+        self.messages_received += 1
 
         # Check Magic Number
         magic = struct.unpack('>I', data[0:4])[0]
