@@ -1294,22 +1294,27 @@ class MainWindow(QMainWindow):
         """Display the startup health check dialog."""
         if not STARTUP_HEALTH_AVAILABLE:
             # Fallback if dialog module not available
+            configured_port = self.config.get('NETWORK', 'udp_port', fallback='2237')
             QMessageBox.warning(
                 self,
                 "No Data Detected",
-                "QSO Predictor isn't receiving data from WSJT-X or JTDX.\n\n"
-                "Please check:\n"
-                "• WSJT-X/JTDX Settings → Reporting → UDP Server\n"
-                "• Address: 127.0.0.1  Port: 2237\n"
-                "• 'Accept UDP Requests' is checked\n\n"
-                "See Help → Documentation for more details."
+                f"QSO Predictor isn't receiving data from WSJT-X or JTDX.\n\n"
+                f"Please check:\n"
+                f"• WSJT-X/JTDX Settings → Reporting → UDP Server\n"
+                f"• Port in WSJT-X/JTDX matches QSO Predictor ({configured_port})\n"
+                f"• 'Accept UDP Requests' is checked\n\n"
+                f"See Help → Documentation for more details."
             )
             return
+        
+        # Get the configured port to show in dialog
+        configured_port = int(self.config.get('NETWORK', 'udp_port', fallback='2237'))
         
         dialog = StartupHealthDialog(
             parent=self,
             udp_ok=udp_ok,
-            mqtt_ok=mqtt_ok
+            mqtt_ok=mqtt_ok,
+            configured_port=configured_port
         )
         
         result = dialog.exec()

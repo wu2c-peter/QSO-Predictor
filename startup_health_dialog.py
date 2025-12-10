@@ -26,10 +26,11 @@ class StartupHealthDialog(QDialog):
     Provides diagnostic info and setup guidance.
     """
     
-    def __init__(self, parent=None, udp_ok=False, mqtt_ok=False):
+    def __init__(self, parent=None, udp_ok=False, mqtt_ok=False, configured_port=2237):
         super().__init__(parent)
         self.udp_ok = udp_ok
         self.mqtt_ok = mqtt_ok
+        self.configured_port = configured_port
         self.dont_show_again = False
         
         self.setWindowTitle("No Data Detected")
@@ -65,10 +66,11 @@ class StartupHealthDialog(QDialog):
         
         # Item 1: UDP Settings
         udp_section = QLabel(
-            "<b>1. WSJT-X/JTDX UDP Settings</b><br>"
-            "&nbsp;&nbsp;&nbsp;→ Settings → Reporting → UDP Server<br>"
-            "&nbsp;&nbsp;&nbsp;→ Address: <code>127.0.0.1</code>&nbsp;&nbsp;Port: <code>2237</code><br>"
-            "&nbsp;&nbsp;&nbsp;→ ☑ Accept UDP Requests"
+            f"<b>1. WSJT-X/JTDX UDP Settings</b><br>"
+            f"&nbsp;&nbsp;&nbsp;→ Settings → Reporting → UDP Server<br>"
+            f"&nbsp;&nbsp;&nbsp;→ Address: <code>127.0.0.1</code>&nbsp;&nbsp;Port: <code>{self.configured_port}</code><br>"
+            f"&nbsp;&nbsp;&nbsp;→ ☑ Accept UDP Requests<br>"
+            f"&nbsp;&nbsp;&nbsp;<i>(Port must match QSO Predictor settings)</i>"
         )
         udp_section.setTextFormat(Qt.TextFormat.RichText)
         checklist_layout.addWidget(udp_section)
@@ -160,8 +162,8 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     
     # Test with different states
-    print("Testing dialog with UDP=False, MQTT=True...")
-    dialog = StartupHealthDialog(udp_ok=False, mqtt_ok=True)
+    print("Testing dialog with UDP=False, MQTT=True, Port=2237...")
+    dialog = StartupHealthDialog(udp_ok=False, mqtt_ok=True, configured_port=2237)
     result = dialog.exec()
     
     print(f"Result: {result}")
