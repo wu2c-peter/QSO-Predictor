@@ -535,7 +535,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(500, self._check_first_run_config)
         
         # v2.1.0: Start health check timer (checks for UDP data after 20 seconds)
-        self._start_health_check_timer()
+        #self._start_health_check_timer()
     
     def _check_first_run_config(self):
         """Warn user if callsign/grid haven't been configured."""
