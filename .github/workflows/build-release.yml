@@ -51,6 +51,148 @@ jobs:
           # Create zip
           Compress-Archive -Path "release\*" -DestinationPath "QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_Windows.zip"
       
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_Windows.zip
+
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Write VERSION file from tag
+        run: echo "${{ steps.get_version.outputs.VERSION }}" > VERSION
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install PyQt6 paho-mqtt numpy
+      
+      - name: Import certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          
+          # Decode certificate
+          echo -n "$MACOS_CERTIFICATE" | base64 --decode -o $CERTIFICATE_PATH
+          
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Import certificate
+          security import $CERTIFICATE_PATH -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+      
+      - name: Build macOS app
+        run: |
+          pyinstaller --windowed --name "QSO Predictor" \
+            --icon icon.icns \
+            --osx-bundle-identifier com.wu2c.qsopredictor \
+            main_v2.py || pyinstaller --windowed --name "QSO Predictor" main_v2.py
+      
+      - name: Sign the app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Sign all frameworks and dylibs first, then the app
+          find "dist/QSO Predictor.app" -name "*.dylib" -o -name "*.so" -o -name "*.framework" | while read file; do
+            codesign --force --options runtime --sign "Developer ID Application: Peter Hirst ($APPLE_TEAM_ID)" "$file" || true
+          done
+          
+          # Sign the main executable
+          codesign --force --options runtime --sign "Developer ID Application: Peter Hirst ($APPLE_TEAM_ID)" "dist/QSO Predictor.app/Contents/MacOS/QSO Predictor" || true
+          
+          # Sign the entire app bundle
+          codesign --force --deep --options runtime --sign "Developer ID Application: Peter Hirst ($APPLE_TEAM_ID)" "dist/QSO Predictor.app"
+          
+          # Verify
+          codesign --verify --verbose "dist/QSO Predictor.app"
+      
+      - name: Notarize the app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          # Create zip for notarization
+          ditto -c -k --keepParent "dist/QSO Predictor.app" "QSOPredictor.zip"
+          
+          # Submit for notarization
+          xcrun notarytool submit "QSOPredictor.zip" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait
+          
+          # Staple the ticket
+          xcrun stapler staple "dist/QSO Predictor.app"
+      
+      - name: Create DMG
+        run: |
+          # Install create-dmg
+          brew install create-dmg
+          
+          # Create DMG
+          create-dmg \
+            --volname "QSO Predictor" \
+            --volicon "icon.icns" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "QSO Predictor.app" 150 190 \
+            --app-drop-link 450 185 \
+            "QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_macOS.dmg" \
+            "dist/QSO Predictor.app" || \
+          # Fallback if create-dmg fails (e.g., no icon)
+          hdiutil create -volname "QSO Predictor" -srcfolder "dist/QSO Predictor.app" -ov -format UDZO "QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_macOS.dmg"
+      
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_macOS.dmg
+
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+      
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+      
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -59,26 +201,35 @@ jobs:
           prerelease: false
           files: |
             QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_Windows.zip
+            QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_macOS.dmg
           body: |
             ## QSO Predictor v${{ steps.get_version.outputs.VERSION }}
             
-            **Windows Download:** `QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_Windows.zip`
+            ### Downloads
+            - **Windows:** `QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_Windows.zip`
+            - **macOS:** `QSO_Predictor_v${{ steps.get_version.outputs.VERSION }}_macOS.dmg`
             
-            Extract the zip and run `QSO Predictor.exe`. No Python installation required.
+            ---
             
-            ### First Run (Windows)
-            - Windows SmartScreen may warn about an unrecognized app. Click **"More info"** → **"Run anyway"**.
-            - If it won't start, right-click → **"Run as administrator"** once. After the first run, it launches normally.
+            ### Windows Installation
+            1. Extract the zip and run `QSO Predictor.exe`
+            2. Windows SmartScreen may warn about an unrecognized app — click **"More info"** → **"Run anyway"**
+            
+            ### macOS Installation
+            1. Open the DMG file
+            2. Drag **QSO Predictor** to your **Applications** folder
+            3. The app is signed and notarized — it should open without Gatekeeper warnings
+            
+            ---
             
             ### Requirements
-            - Windows 10/11
+            - Windows 10/11 or macOS 10.15+
             - WSJT-X or JTDX configured for UDP output
             
             ### Setup
-            1. Extract the zip to a folder
-            2. Run `QSO Predictor.exe`
-            3. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = 127.0.0.1, Port = 2237
+            1. Run QSO Predictor
+            2. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = 127.0.0.1, Port = 2237
             
-            For source code and Linux/Mac users, see the repository.
+            For source code and Linux users, see the repository.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
