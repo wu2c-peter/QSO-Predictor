@@ -6,6 +6,9 @@ features into the existing main application.
 
 Copyright (C) 2025 Peter Hirst (WU2C)
 
+v2.0.6 Changes:
+- Added: Connect insights panel sync button to main window
+
 v2.0.3 Changes:
 - Fixed: set_target now handles None/empty callsign gracefully
 - Added: Defensive checks throughout to prevent NoneType errors
@@ -156,6 +159,10 @@ class LocalIntelligence(QObject):
                 parent=main_window
             )
             self.insights_panel.retrain_requested.connect(self.show_training_dialog)
+            
+            # v2.0.6: Connect sync button to main window's sync method
+            if hasattr(main_window, 'sync_to_jtdx'):
+                self.insights_panel.sync_requested.connect(main_window.sync_to_jtdx)
             
             # Create dock widget
             self.insights_dock = QDockWidget("Local Intelligence", main_window)

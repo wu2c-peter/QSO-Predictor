@@ -9,6 +9,9 @@ UI widget displaying local intelligence:
 
 Copyright (C) 2025 Peter Hirst (WU2C)
 
+v2.0.6 Changes:
+- Added: Sync button in target header (syncs to WSJT-X/JTDX selection)
+
 v2.0.3 Changes:
 - Fixed: Wrapped prediction calls in try/except to prevent console spam
 - Fixed: Better error handling when ML models fail to load
@@ -436,6 +439,9 @@ class InsightsPanel(QWidget):
     # Signal when user wants to retrain models
     retrain_requested = pyqtSignal()
     
+    # v2.0.6: Signal when user wants to sync target to JTDX
+    sync_requested = pyqtSignal()
+    
     def __init__(self, 
                  session_tracker: SessionTracker = None,
                  predictor: BayesianPredictor = None,
@@ -500,12 +506,40 @@ class InsightsPanel(QWidget):
             }
         """)
         
-        # Target header (white for visibility on any background)
+        # Target header with Sync button (v2.0.6)
+        target_header = QHBoxLayout()
+        target_header.setSpacing(4)
+        
         self.target_label = QLabel("Target: —")
         self.target_label.setFont(QFont("Consolas", 12, QFont.Weight.Bold))
         self.target_label.setStyleSheet("color: #ffffff; background-color: #333333; padding: 4px; border-radius: 3px;")
         self.target_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.target_label)
+        target_header.addWidget(self.target_label, stretch=1)
+        
+        # v2.0.6: Sync button - syncs QSO Predictor target to JTDX selection
+        self.sync_button = QPushButton("⟳")
+        self.sync_button.setToolTip("Sync target to WSJT-X/JTDX (Ctrl+Y)")
+        self.sync_button.setFixedSize(28, 28)
+        self.sync_button.setStyleSheet("""
+            QPushButton {
+                background-color: #444;
+                color: #DDD;
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #555;
+            }
+            QPushButton:pressed {
+                background-color: #333;
+            }
+        """)
+        self.sync_button.clicked.connect(self.sync_requested.emit)
+        target_header.addWidget(self.sync_button)
+        
+        layout.addLayout(target_header)
         
         # Separator
         line = QFrame()

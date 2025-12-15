@@ -1,5 +1,10 @@
 # QSO Predictor
 # Copyright (C) 2025 [Peter Hirst/WU2C]
+#
+# Performance optimized version (v2.0.5)
+# - Timer reduced from 50ms to 250ms (20Hz -> 4Hz)
+# - Changed repaint() to update() for Qt batching
+# - Cached all paint objects (QColor, QFont, QPen, QBrush) to avoid per-frame allocation
 
 import numpy as np
 import time
@@ -40,17 +45,138 @@ class BandMapWidget(QWidget):
         self.manual_override_time = 0
         self.manual_override_duration = 3.0  # seconds
         
+        # === PERFORMANCE FIX: Cache all paint objects ===
+        self._init_paint_cache()
+        
+        # === PERFORMANCE FIX: Slower timer (was 50ms = 20Hz, now 250ms = 4Hz) ===
         self.timer = QTimer()
         self.timer.timeout.connect(self._tick)
-        self.timer.start(50)
+        self.timer.start(250)
+
+    def _init_paint_cache(self):
+        """Pre-create all paint objects to avoid per-frame allocation overhead."""
+        
+        # Colors
+        self._colors = {
+            'background': QColor("#101010"),
+            'background_dark': QColor("#0A0A0A"),
+            'grid': QColor("#222"),
+            'divider': QColor("#333"),
+            'placeholder': QColor("#555"),
+            'label_dim': QColor("#666"),
+            'label_medium': QColor("#888"),
+            'label_light': QColor("#DDD"),
+            
+            # Tier colors
+            'tier1_bright': QColor(0, 255, 255),       # Cyan - 1-3 signals
+            'tier1_medium': QColor(0, 200, 220),      # Cyan-blue - 4-5 signals
+            'tier1_dim': QColor(100, 150, 200),       # Dim - 6+ signals
+            'tier2': QColor(170, 100, 255),           # Purple - same grid
+            'tier3': QColor(130, 70, 200),            # Violet - same field
+            'tier4': QColor(90, 90, 120),             # Gray-purple - global
+            
+            # Score graph colors
+            'score_excellent': QColor(0, 255, 0),      # Green
+            'score_good': QColor(180, 255, 0),         # Yellow-green
+            'score_moderate': QColor(255, 255, 0),     # Yellow
+            'score_poor': QColor(255, 128, 0),         # Orange
+            'score_avoid': QColor(255, 50, 50),        # Red
+            
+            # Local signal colors
+            'local_strong': QColor(0, 255, 0),         # Green >0dB
+            'local_medium': QColor(255, 255, 0),       # Yellow >-10dB
+            'local_weak': QColor(255, 50, 50),         # Red <-10dB
+            
+            # Overlay colors
+            'target_line': QColor("#FF00FF"),
+            'target_fill': QColor(255, 0, 255, 20),
+            'tx_line': QColor("#FFFF00"),
+            'rec_line': QColor("#00FF00"),
+            
+            # Text colors
+            'text_cyan': QColor("#00FFFF"),
+            'text_yellow': QColor("#FFFF00"),
+            'text_orange': QColor("#FF8800"),
+            'text_green': QColor("#00FF00"),
+            'text_magenta': QColor("#FF00FF"),
+        }
+        
+        # Fonts
+        self._fonts = {
+            'normal': QFont("Segoe UI", 11),
+            'small': QFont("Segoe UI", 8),
+            'small_bold': QFont("Segoe UI", 8, QFont.Weight.Bold),
+            'medium': QFont("Segoe UI", 9),
+            'medium_bold': QFont("Segoe UI", 9, QFont.Weight.Bold),
+        }
+        
+        # Pens
+        self._pens = {
+            'none': Qt.PenStyle.NoPen,
+            'grid': QPen(QColor("#222"), 1),
+            'divider': QPen(QColor("#333"), 1),
+            'baseline_dot': QPen(QColor("#333"), 1, Qt.PenStyle.DotLine),
+            'target': QPen(QColor("#FF00FF"), 2),
+            'tx': QPen(QColor("#FFFF00"), 2, Qt.PenStyle.DotLine),
+            'rec': QPen(QColor("#00FF00"), 2),
+            'score_solid_green': QPen(QColor(0, 255, 0), 2, Qt.PenStyle.SolidLine),
+            'score_solid_yellow_green': QPen(QColor(180, 255, 0), 2, Qt.PenStyle.SolidLine),
+            'score_solid_yellow': QPen(QColor(255, 255, 0), 2, Qt.PenStyle.SolidLine),
+            'score_solid_orange': QPen(QColor(255, 128, 0), 2, Qt.PenStyle.SolidLine),
+            'score_solid_red': QPen(QColor(255, 50, 50), 2, Qt.PenStyle.SolidLine),
+            'score_dot_green': QPen(QColor(0, 255, 0), 3, Qt.PenStyle.DotLine),
+            'score_dot_yellow_green': QPen(QColor(180, 255, 0), 3, Qt.PenStyle.DotLine),
+            'score_dot_yellow': QPen(QColor(255, 255, 0), 3, Qt.PenStyle.DotLine),
+            'score_dot_orange': QPen(QColor(255, 128, 0), 3, Qt.PenStyle.DotLine),
+            'score_dot_red': QPen(QColor(255, 50, 50), 3, Qt.PenStyle.DotLine),
+        }
+        
+        # Brushes for legend
+        self._brushes = {
+            'tier1_bright': QBrush(QColor(0, 255, 255)),
+            'tier1_medium': QBrush(QColor(0, 200, 220)),
+            'tier1_dim': QBrush(QColor(100, 150, 200)),
+            'tier2': QBrush(QColor(170, 100, 255)),
+            'tier3': QBrush(QColor(130, 70, 200)),
+            'tier4': QBrush(QColor(90, 90, 120)),
+            'local_strong': QBrush(QColor(0, 255, 0)),
+            'local_medium': QBrush(QColor(255, 255, 0)),
+            'local_weak': QBrush(QColor(255, 50, 50)),
+        }
+        
+        # Pre-create alpha variants for common colors (indexed by alpha 0-255)
+        # We'll create them on-demand and cache
+        self._alpha_color_cache = {}
+
+    def _get_alpha_color(self, base_color_key, alpha):
+        """Get a cached color with specific alpha value."""
+        cache_key = (base_color_key, alpha)
+        if cache_key not in self._alpha_color_cache:
+            base = self._colors[base_color_key]
+            color = QColor(base.red(), base.green(), base.blue(), alpha)
+            self._alpha_color_cache[cache_key] = color
+        return self._alpha_color_cache[cache_key]
+
+    def _get_score_pen(self, score, has_tier1_data):
+        """Get cached pen for score graph based on score value and data availability."""
+        if score >= 85:
+            return self._pens['score_solid_green'] if has_tier1_data else self._pens['score_dot_green']
+        elif score >= 60:
+            return self._pens['score_solid_yellow_green'] if has_tier1_data else self._pens['score_dot_yellow_green']
+        elif score >= 40:
+            return self._pens['score_solid_yellow'] if has_tier1_data else self._pens['score_dot_yellow']
+        elif score >= 20:
+            return self._pens['score_solid_orange'] if has_tier1_data else self._pens['score_dot_orange']
+        else:
+            return self._pens['score_solid_red'] if has_tier1_data else self._pens['score_dot_red']
 
     def set_target_call(self, call):
         self.target_call = call.strip().upper()
-        self.repaint()
+        self.update()  # PERFORMANCE FIX: was repaint()
 
     def set_target_grid(self, grid):
         self.target_grid = (grid or "").strip().upper()
-        self.repaint()
+        self.update()  # PERFORMANCE FIX: was repaint()
 
     def update_signals(self, signals):
         """Update local decode signals (what we hear)."""
@@ -98,7 +224,7 @@ class BandMapWidget(QWidget):
                 except: pass
             self.perspective_data[tier_name] = processed
         
-        self.repaint()
+        self.update()  # PERFORMANCE FIX: was repaint()
 
     # Legacy method for backward compatibility
     def update_qrm(self, spots):
@@ -112,11 +238,11 @@ class BandMapWidget(QWidget):
 
     def set_current_tx_freq(self, freq):
         self.current_tx_freq = freq
-        self.repaint()
+        self.update()  # PERFORMANCE FIX: was repaint()
 
     def set_target_freq(self, freq):
         self.target_freq = freq
-        self.repaint()
+        self.update()  # PERFORMANCE FIX: was repaint()
 
     def _tick(self):
         self._cleanup_data()
@@ -130,7 +256,7 @@ class BandMapWidget(QWidget):
         if not self.manual_override:
             self._calculate_best_frequency()
         
-        self.repaint()
+        self.update()  # PERFORMANCE FIX: was repaint()
 
     def mousePressEvent(self, event):
         """Handle click to manually set frequency."""
@@ -151,7 +277,7 @@ class BandMapWidget(QWidget):
             # Emit signal so dashboard updates
             self.recommendation_changed.emit(freq)
             
-            self.repaint()
+            self.update()  # PERFORMANCE FIX: was repaint()
 
     def _cleanup_data(self):
         now = time.time()
@@ -421,24 +547,24 @@ class BandMapWidget(QWidget):
         score_top = top_h
         bottom_top = top_h + score_h
         
-        # 1. Background
-        qp.fillRect(0, 0, w, h, QColor("#101010"))
+        # 1. Background - use cached color
+        qp.fillRect(0, 0, w, h, self._colors['background'])
         
-        # Grid lines
-        qp.setPen(QColor("#222"))
+        # Grid lines - use cached pen
+        qp.setPen(self._pens['grid'])
         for i in range(0, 3000, 500):
             x = (i / 3000) * w
             qp.drawLine(int(x), 0, int(x), h)
         
-        # Section dividers
-        qp.setPen(QColor("#333"))
+        # Section dividers - use cached pen
+        qp.setPen(self._pens['divider'])
         qp.drawLine(0, top_h, w, top_h)
         qp.drawLine(0, bottom_top, w, bottom_top)
 
         # 2. PLACEHOLDER TEXT if no target selected (top section)
         if not self.target_call:
-            qp.setPen(QColor("#555"))
-            qp.setFont(QFont("Segoe UI", 11))
+            qp.setPen(self._colors['placeholder'])
+            qp.setFont(self._fonts['normal'])
             qp.drawText(
                 QRectF(0, 0, w, top_h),
                 Qt.AlignmentFlag.AlignCenter,
@@ -450,15 +576,15 @@ class BandMapWidget(QWidget):
             
             # Layer 4: Global (dimmest) - Gray-purple
             for spot in self.perspective_data.get('global', []):
-                self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(90, 90, 120), 0.3)
+                self._draw_perspective_bar(qp, spot, w, top_h, 0, 'tier4', 0.3)
             
             # Layer 3: Same Field - Violet
             for spot in self.perspective_data.get('tier3', []):
-                self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(130, 70, 200), 0.5)
+                self._draw_perspective_bar(qp, spot, w, top_h, 0, 'tier3', 0.5)
             
             # Layer 2: Same Grid Square - Purple
             for spot in self.perspective_data.get('tier2', []):
-                self._draw_perspective_bar(qp, spot, w, top_h, 0, QColor(170, 100, 255), 0.8)
+                self._draw_perspective_bar(qp, spot, w, top_h, 0, 'tier2', 0.8)
             
             # Layer 1: Direct from Target - Cyan (highest priority)
             # First, bucket them to count density
@@ -479,25 +605,22 @@ class BandMapWidget(QWidget):
                 count = len(spots)
                 for spot in spots:
                     if count <= 3:
-                        # Ideal: bright cyan
-                        color = QColor(0, 255, 255)
+                        color_key = 'tier1_bright'
                     elif count <= 5:
-                        # Getting crowded: cyan-blue
-                        color = QColor(0, 200, 220)
+                        color_key = 'tier1_medium'
                     else:
-                        # Crowded: dimmer cyan-purple
-                        color = QColor(100, 150, 200)
-                    self._draw_perspective_bar(qp, spot, w, top_h, 0, color, 1.0)
+                        color_key = 'tier1_dim'
+                    self._draw_perspective_bar(qp, spot, w, top_h, 0, color_key, 1.0)
                 
                 # Draw count label at the bucket center
                 x = int((bucket / 3000) * w)
-                qp.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+                qp.setFont(self._fonts['small_bold'])
                 if count <= 3:
-                    qp.setPen(QColor("#00FFFF"))  # Cyan text
+                    qp.setPen(self._colors['text_cyan'])
                 elif count <= 5:
-                    qp.setPen(QColor("#FFFF00"))  # Yellow text - warning
+                    qp.setPen(self._colors['text_yellow'])
                 else:
-                    qp.setPen(QColor("#FF8800"))  # Orange text - crowded
+                    qp.setPen(self._colors['text_orange'])
                 qp.drawText(x - 4, top_h - 3, str(count))
 
         # 5. DRAW SCORE GRAPH (Middle Section)
@@ -512,13 +635,15 @@ class BandMapWidget(QWidget):
             bar_width = (50 / 3000) * w 
             alpha = int(255 * decay)
             
+            # Use cached colors with alpha
             if snr > 0:
-                col = QColor(0, 255, 0, alpha)
+                color_key = 'local_strong'
             elif snr > -10:
-                col = QColor(255, 255, 0, alpha)
+                color_key = 'local_medium'
             else:
-                col = QColor(255, 50, 50, alpha)
+                color_key = 'local_weak'
             
+            col = self._get_alpha_color(color_key, alpha)
             norm = max(0, min(1, (snr + 24) / 44))
             bar_h = bottom_h * 0.9 * norm
             
@@ -530,24 +655,22 @@ class BandMapWidget(QWidget):
         # Target frequency marker
         if self.target_freq > 0:
             x = (self.target_freq / 3000) * w
-            qp.setPen(QPen(QColor("#FF00FF"), 2))
+            qp.setPen(self._pens['target'])
             qp.drawLine(int(x), 0, int(x), h)
-            qp.setBrush(QColor(255, 0, 255, 20))
+            qp.setBrush(self._colors['target_fill'])
             qp.setPen(Qt.PenStyle.NoPen)
             qp.drawRect(QRectF(x-15, 0, 30, h))
 
         # Current TX frequency (yellow dotted)
         if self.current_tx_freq > 0:
             x = (self.current_tx_freq / 3000) * w
-            pen = QPen(QColor("#FFFF00"), 2, Qt.PenStyle.DotLine)
-            qp.setPen(pen)
+            qp.setPen(self._pens['tx'])
             qp.drawLine(int(x), 0, int(x), h)
         
         # Recommended frequency (green solid)
         if self.best_offset > 0:
             x = (self.best_offset / 3000) * w
-            pen = QPen(QColor("#00FF00"), 2)
-            qp.setPen(pen)
+            qp.setPen(self._pens['rec'])
             qp.drawLine(int(x), 0, int(x), h)
             # Arrow markers at top and bottom
             qp.drawLine(int(x)-5, 0, int(x)+5, 0)
@@ -557,14 +680,14 @@ class BandMapWidget(QWidget):
             if self.manual_override:
                 remaining = self.manual_override_duration - (time.time() - self.manual_override_time)
                 if remaining > 0:
-                    qp.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-                    qp.setPen(QColor("#00FF00"))
+                    qp.setFont(self._fonts['medium_bold'])
+                    qp.setPen(self._colors['text_green'])
                     qp.drawText(int(x) + 8, score_top + score_h - 5, f"{remaining:.1f}s")
             
         # 8. LEGEND
         self._draw_legend(qp)
 
-    def _draw_perspective_bar(self, qp, spot, w, section_h, section_top, base_color, opacity_mult):
+    def _draw_perspective_bar(self, qp, spot, w, section_h, section_top, color_key, opacity_mult):
         """Draw a bar in the perspective section representing target's view."""
         freq = spot.get('freq', 0)
         snr = spot.get('snr', -20)
@@ -574,8 +697,7 @@ class BandMapWidget(QWidget):
             return
         
         alpha = int(255 * decay * opacity_mult)
-        color = QColor(base_color)
-        color.setAlpha(alpha)
+        color = self._get_alpha_color(color_key, alpha)
         
         x = (freq / 3000) * w
         bar_width = (40 / 3000) * w
@@ -591,16 +713,16 @@ class BandMapWidget(QWidget):
         """Draw the score visualization graph in the middle section."""
         
         # Background for score section
-        qp.fillRect(0, section_top, w, section_h, QColor("#0A0A0A"))
+        qp.fillRect(0, section_top, w, section_h, self._colors['background_dark'])
         
         # Label
-        qp.setFont(QFont("Segoe UI", 8))
-        qp.setPen(QColor("#666"))
+        qp.setFont(self._fonts['small'])
+        qp.setPen(self._colors['label_dim'])
         qp.drawText(5, section_top + 12, "Score")
         
         # 50% line (unproven baseline)
         y_50 = section_top + section_h * 0.5
-        qp.setPen(QPen(QColor("#333"), 1, Qt.PenStyle.DotLine))
+        qp.setPen(self._pens['baseline_dot'])
         qp.drawLine(0, int(y_50), w, int(y_50))
         
         # Check if we have tier1 data (proven frequencies)
@@ -625,26 +747,9 @@ class BandMapWidget(QWidget):
                 y = int(section_top + section_h * (1.0 - avg_score / 100.0))
                 y = max(section_top + 2, min(section_top + section_h - 2, y))
                 
-                # Color based on score - avoid cyan (used for tier1 bars)
-                if avg_score >= 85:
-                    color = QColor(0, 255, 0)      # Green - excellent
-                elif avg_score >= 60:
-                    color = QColor(180, 255, 0)    # Yellow-green - good (was cyan)
-                elif avg_score >= 40:
-                    color = QColor(255, 255, 0)    # Yellow - moderate
-                elif avg_score >= 20:
-                    color = QColor(255, 128, 0)    # Orange - poor
-                else:
-                    color = QColor(255, 50, 50)    # Red - avoid
-                
-                # Draw line segment - dotted if no tier1 data (but thicker so visible)
+                # Draw line segment using cached pen
                 if prev_x is not None:
-                    if has_tier1_data:
-                        qp.setPen(QPen(color, 2, Qt.PenStyle.SolidLine))
-                    else:
-                        # No tier1 data - use dotted line to show "no proven data"
-                        # But still show gap-based scoring
-                        qp.setPen(QPen(color, 3, Qt.PenStyle.DotLine))
+                    qp.setPen(self._get_score_pen(avg_score, has_tier1_data))
                     qp.drawLine(prev_x, prev_y, x, y)
                 
                 prev_x = x
@@ -652,75 +757,73 @@ class BandMapWidget(QWidget):
         
         # Show "No perspective data" message if no tier1
         if not has_tier1_data:
-            qp.setFont(QFont("Segoe UI", 8))
-            qp.setPen(QColor("#888"))
+            qp.setFont(self._fonts['small'])
+            qp.setPen(self._colors['label_medium'])
             qp.drawText(w - 130, section_top + 12, "(gap-based scoring)")
         
         # Show score at current recommendation
         if self.best_offset > 0:
             idx = max(0, min(len(self.score_map) - 1, self.best_offset))
             score = self.score_map[idx]
-            qp.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-            qp.setPen(QColor("#00FF00"))
+            qp.setFont(self._fonts['medium_bold'])
+            qp.setPen(self._colors['text_green'])
             x = int((self.best_offset / self.bandwidth) * w)
             qp.drawText(x + 8, section_top + section_h - 3, f"{int(score)}")
 
     def _draw_legend(self, qp):
-        qp.setFont(QFont("Segoe UI", 9))
+        qp.setFont(self._fonts['medium'])
         
         # Row 1: Lines
-        qp.setPen(QColor("#FF00FF")); qp.drawText(10, 20, "— Target")
-        qp.setPen(QColor("#FFFF00")); qp.drawText(80, 20, "··· TX")
-        qp.setPen(QColor("#00FF00")); qp.drawText(140, 20, "— Rec")
+        qp.setPen(self._colors['text_magenta']); qp.drawText(10, 20, "— Target")
+        qp.setPen(self._colors['text_yellow']); qp.drawText(80, 20, "··· TX")
+        qp.setPen(self._colors['text_green']); qp.drawText(140, 20, "— Rec")
         
         # Row 2: Perspective Tiers (Top Half - What Target Hears)
         qp.setPen(Qt.PenStyle.NoPen)
         
-        qp.setBrush(QColor(0, 255, 255))
+        qp.setBrush(self._brushes['tier1_bright'])
         qp.drawRect(10, 30, 8, 8)
-        qp.setPen(QColor("#00FFFF")); qp.drawText(22, 38, "1-3")
+        qp.setPen(self._colors['text_cyan']); qp.drawText(22, 38, "1-3")
         
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(0, 200, 220))
+        qp.setBrush(self._brushes['tier1_medium'])
         qp.drawRect(50, 30, 8, 8)
-        qp.setPen(QColor("#FFFF00")); qp.drawText(62, 38, "4-5")
+        qp.setPen(self._colors['text_yellow']); qp.drawText(62, 38, "4-5")
         
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(100, 150, 200))
+        qp.setBrush(self._brushes['tier1_dim'])
         qp.drawRect(95, 30, 8, 8)
-        qp.setPen(QColor("#FF8800")); qp.drawText(107, 38, "6+")
+        qp.setPen(self._colors['text_orange']); qp.drawText(107, 38, "6+")
 
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(170, 100, 255))  # Purple for Grid (tier2)
+        qp.setBrush(self._brushes['tier2'])
         qp.drawRect(140, 30, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(152, 38, "Grid")
+        qp.setPen(self._colors['label_light']); qp.drawText(152, 38, "Grid")
 
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(130, 70, 200))   # Violet for Field (tier3)
+        qp.setBrush(self._brushes['tier3'])
         qp.drawRect(190, 30, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(202, 38, "Field")
+        qp.setPen(self._colors['label_light']); qp.drawText(202, 38, "Field")
 
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(90, 90, 120))    # Gray-purple for Global (tier4)
+        qp.setBrush(self._brushes['tier4'])
         qp.drawRect(245, 30, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(257, 38, "Global")
-        
-        # Collision removed - no longer used in v2.0
+        qp.setPen(self._colors['label_light']); qp.drawText(257, 38, "Global")
         
         # Row 3: Local Signals (Bottom Half - What You Hear)
-        qp.setPen(QColor("#888")); qp.drawText(10, 52, "Local:")
+        qp.setPen(self._colors['label_medium']); qp.drawText(10, 52, "Local:")
         
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(0, 255, 0))
+        qp.setBrush(self._brushes['local_strong'])
         qp.drawRect(50, 44, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(62, 52, ">0dB")
+        qp.setPen(self._colors['label_light']); qp.drawText(62, 52, ">0dB")
 
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(255, 255, 0))
+        qp.setBrush(self._brushes['local_medium'])
         qp.drawRect(100, 44, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(112, 52, ">-10")
+        qp.setPen(self._colors['label_light']); qp.drawText(112, 52, ">-10")
 
         qp.setPen(Qt.PenStyle.NoPen)
-        qp.setBrush(QColor(255, 50, 50))
+        qp.setBrush(self._brushes['local_weak'])
         qp.drawRect(155, 44, 8, 8)
-        qp.setPen(QColor("#DDD")); qp.drawText(167, 52, "Weak")
+        qp.setPen(self._colors['label_light']); qp.drawText(167, 52, "Weak")

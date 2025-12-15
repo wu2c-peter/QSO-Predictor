@@ -5,6 +5,13 @@
 # - Added: Startup health check dialog when no UDP data detected
 #   (based on user feedback from Doug McDonald)
 #
+# v2.0.6 Changes:
+# - Fixed: Severe CPU usage on macOS (band map optimization)
+# - Fixed: Splitter position persistence (suggested by KC0GU)
+# - Fixed: VERSION file not bundled in macOS build
+# - Added: Sync to WSJT-X/JTDX button and Ctrl+Y shortcut (suggested by KC0GU)
+# - Added: Dock widget (Local Intelligence panel) position persistence
+#
 # v2.0.4 Changes:
 # - Fixed: Cache cleanup thread death (analyzer.py)
 # - Fixed: MQTT auto-reconnect (mqtt_client.py)
@@ -121,6 +128,9 @@ except ImportError as e:
 
 # --- WIDGET: TARGET DASHBOARD ---
 class TargetDashboard(QFrame):
+    # v2.0.6: Signal when user wants to sync target to JTDX
+    sync_requested = pyqtSignal()
+    
     def __init__(self):
         super().__init__()
         self.setFrameShape(QFrame.Shape.StyledPanel)
@@ -134,7 +144,7 @@ class TargetDashboard(QFrame):
             QLabel { color: #DDD; font-size: 11pt; border: none; padding: 0 5px; }
             QLabel#header { color: #888; font-size: 8pt; font-weight: bold; }
             QLabel#data { font-weight: bold; color: #FFF; }
-            QLabel#target { color: #FF00FF; font-size: 16pt; font-weight: bold; padding-right: 15px; }
+            QLabel#target { color: #FF00FF; font-size: 16pt; font-weight: bold; padding-right: 5px; }
             QLabel#rec { 
                 font-family: Consolas, monospace; 
                 font-weight: bold; 
@@ -142,6 +152,21 @@ class TargetDashboard(QFrame):
                 border-radius: 4px; 
                 padding: 4px; 
                 background-color: #001100; 
+            }
+            QPushButton#sync {
+                background-color: #444;
+                color: #DDD;
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 2px;
+            }
+            QPushButton#sync:hover {
+                background-color: #555;
+            }
+            QPushButton#sync:pressed {
+                background-color: #333;
             }
         """)
         
@@ -152,6 +177,14 @@ class TargetDashboard(QFrame):
         self.lbl_target = QLabel("NO TARGET")
         self.lbl_target.setObjectName("target")
         layout.addWidget(self.lbl_target)
+        
+        # v2.0.6: Sync button next to target
+        self.btn_sync = QPushButton("⟳")
+        self.btn_sync.setObjectName("sync")
+        self.btn_sync.setToolTip("Sync target to WSJT-X/JTDX (Ctrl+Y)")
+        self.btn_sync.setFixedSize(28, 28)
+        self.btn_sync.clicked.connect(self.sync_requested.emit)
+        layout.addWidget(self.btn_sync)
         
         def add_field(label_text, width=None, stretch=False):
             container = QWidget()
@@ -520,7 +553,7 @@ class MainWindow(QMainWindow):
         
         self.udp.start()
         
-        # --- v2.0.5: Solar data fetch with periodic refresh ---
+        # --- v2.0.6: Solar data fetch with periodic refresh ---
         if SOLAR_AVAILABLE:
             self.fetch_solar_data()
             # Refresh solar data every 15 minutes
@@ -626,6 +659,12 @@ class MainWindow(QMainWindow):
         self.btn_clear_target.clicked.connect(self.clear_target)
         toolbar.addWidget(self.btn_clear_target)
         
+        # v2.0.6: Sync to JTDX button
+        self.btn_sync_jtdx = QPushButton("Sync to JTDX")
+        self.btn_sync_jtdx.setToolTip("Set target to match WSJT-X/JTDX selection (Ctrl+Y)")
+        self.btn_sync_jtdx.clicked.connect(self.sync_to_jtdx)
+        toolbar.addWidget(self.btn_sync_jtdx)
+        
         # Auto-clear checkbox
         self.chk_auto_clear = QCheckBox("Auto-clear on QSO")
         self.chk_auto_clear.setToolTip("Automatically clear target after logging a QSO")
@@ -644,7 +683,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         
         # --- SPLITTER START ---
-        splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
         
         # 1. TOP: Table View
         cols = ["UTC", "dB", "DT", "Freq", "Call", "Grid", "Message", "Prob %", "Path"]
@@ -690,7 +729,7 @@ class MainWindow(QMainWindow):
         # --- v2.0.3: Restore column widths ---
         self._restore_column_widths()
         
-        splitter.addWidget(self.table_view)
+        self.splitter.addWidget(self.table_view)
         
         # 2. BOTTOM: Container for Dashboard + Map
         bottom_container = QWidget()
@@ -700,6 +739,7 @@ class MainWindow(QMainWindow):
         
         # Dashboard
         self.dashboard = TargetDashboard()
+        self.dashboard.sync_requested.connect(self.sync_to_jtdx)  # v2.0.6
         bottom_layout.addWidget(self.dashboard)
         
         # Band Map
@@ -707,11 +747,16 @@ class MainWindow(QMainWindow):
         self.band_map.recommendation_changed.connect(self.on_recommendation)
         bottom_layout.addWidget(self.band_map)
         
-        splitter.addWidget(bottom_container)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
+        self.splitter.addWidget(bottom_container)
+        self.splitter.setStretchFactor(0, 3)
+        self.splitter.setStretchFactor(1, 1)
         
-        main_layout.addWidget(splitter)
+        # --- v2.0.6: Restore splitter position ---
+        splitter_state = self.config.get('WINDOW', 'splitter_state')
+        if splitter_state:
+            self.splitter.restoreState(QByteArray.fromHex(splitter_state.encode()))
+        
+        main_layout.addWidget(self.splitter)
         
         # Menu
         menu = self.menuBar()
@@ -737,6 +782,12 @@ class MainWindow(QMainWindow):
         clear_target_action.setShortcut(QKeySequence("Ctrl+R"))
         clear_target_action.triggered.connect(self.clear_target)
         edit_menu.addAction(clear_target_action)
+        
+        # v2.0.6: Sync to JTDX action with Ctrl+Y shortcut
+        sync_jtdx_action = QAction("Sync to WSJT-X/JTDX", self)
+        sync_jtdx_action.setShortcut(QKeySequence("Ctrl+Y"))
+        sync_jtdx_action.triggered.connect(self.sync_to_jtdx)
+        edit_menu.addAction(sync_jtdx_action)
         
         # --- TOOLS MENU ---
         tools_menu = menu.addMenu("Tools")
@@ -796,6 +847,11 @@ class MainWindow(QMainWindow):
         if self.local_intel:
             try:
                 self.local_intel.setup(self)
+                
+                # --- v2.0.6: Restore dock widget positions (must be after dock is created) ---
+                dock_state = self.config.get('WINDOW', 'dock_state')
+                if dock_state:
+                    self.restoreState(QByteArray.fromHex(dock_state.encode()))
             except Exception as e:
                 print(f"Failed to setup Local Intelligence panel: {e}")
     
@@ -889,6 +945,52 @@ class MainWindow(QMainWindow):
             if logged_call and logged_call == current_upper:
                 print(f"[Auto-clear] Target cleared after logging {logged_call}")
                 self.clear_target()
+
+    # --- v2.0.6: Sync to JTDX (suggested by KC0GU) ---
+    def sync_to_jtdx(self):
+        """Sync target to match WSJT-X/JTDX's current DX call.
+        
+        When user has clicked a different station in QSO Predictor,
+        double-clicking in JTDX won't re-send the UDP message (JTDX
+        thinks it's already on that station). This button forces
+        QSO Predictor to match JTDX's selection.
+        
+        Feature suggested by: Warren KC0GU (Dec 2025)
+        """
+        if not self.jtdx_last_dx_call:
+            # No DX call from JTDX yet
+            return
+        
+        # If already on this target, nothing to do
+        if self.jtdx_last_dx_call == self.current_target_call:
+            return
+        
+        dx_call = self.jtdx_last_dx_call
+        print(f"[Sync] Syncing to JTDX target: {dx_call}")
+        
+        # Set target (same logic as on_status)
+        self.dashboard.lbl_target.setText(dx_call)
+        self.model.set_target_call(dx_call)
+        
+        # Find grid from decode table if available
+        target_grid = ""
+        for row in self.model._data:
+            if row.get('call') == dx_call:
+                target_grid = row.get('grid', '')
+                self.dashboard.update_data(row)
+                break
+        
+        self.current_target_call = dx_call
+        self.current_target_grid = target_grid
+        
+        # Update band map
+        self.band_map.set_target_call(dx_call)
+        if target_grid:
+            self.band_map.set_target_grid(target_grid)
+        
+        # Update Local Intelligence
+        if self.local_intel:
+            self.local_intel.set_target(dx_call, target_grid)
 
     def handle_decode(self, data):
         self.buffer.append(data)
@@ -1414,6 +1516,14 @@ class MainWindow(QMainWindow):
         # --- v2.0.3: Save window geometry ---
         geo = self.saveGeometry().toHex().data().decode()
         self.config.save_setting('WINDOW', 'geometry', geo)
+        
+        # --- v2.0.6: Save splitter position ---
+        splitter_state = self.splitter.saveState().toHex().data().decode()
+        self.config.save_setting('WINDOW', 'splitter_state', splitter_state)
+        
+        # --- v2.0.6: Save dock widget positions (Local Intelligence panel) ---
+        dock_state = self.saveState().toHex().data().decode()
+        self.config.save_setting('WINDOW', 'dock_state', dock_state)
         
         # --- v2.0.3: Save column widths ---
         self._save_column_widths()
