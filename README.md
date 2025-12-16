@@ -1,305 +1,196 @@
 # QSO Predictor
 
+[![Version](https://img.shields.io/badge/version-2.0.6-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![License](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+
 **Real-Time Tactical Assistant for FT8 & FT4**
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Version](https://img.shields.io/badge/version-2.0.4-green.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+QSO Predictor shows you the "view from the other end" — what the DX station is experiencing at their location, not just what you're hearing. Using PSK Reporter data and local intelligence, it helps you make smarter decisions about when and where to call.
 
 ---
 
-## The Problem
+## 🆕 What's New in v2.0.6
 
-You're calling a DX station. No response. Is the band dead? Is your signal too weak? Or are you buried under a pileup you can't even hear?
+### Performance
+- **Fixed:** Severe CPU usage on macOS (reduced from 38% to 6% at idle)
 
-Today's tools show you the band from **your** perspective — who you're decoding, who's spotting you. They don't show you what's happening at the **DX station's** end.
+### UI Improvements  
+- **New:** Sync to WSJT-X/JTDX button — syncs target when selections diverge
+- **New:** Window layout persistence — splitter positions and panel sizes now remembered
+- **New:** Keyboard shortcut **Ctrl+Y** for quick sync
 
-## The Solution
+### Bug Fixes
+- **Fixed:** "Check for Updates" now works in packaged builds
+- **Fixed:** macOS version display showing "0.0.0"
 
-QSO Predictor shows you the **"view from the other end."** Using PSK Reporter data, it builds a picture of band conditions at the target's location — what signals are arriving there, how crowded each frequency is, and whether your signal path is open.
+---
 
-| Traditional Tools | QSO Predictor |
-|-------------------|---------------|
-| "Who heard me?" | "What does the DX station hear?" |
-| Global band activity | Target's local RF environment |
-| Your waterfall | Their pileup |
-| After-the-fact confirmation | Real-time tactical intelligence |
+## Downloads
+
+| Platform | Download |
+|----------|----------|
+| **Windows** | [QSO_Predictor_v2.0.6_Windows.zip](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
+| **macOS** | [QSO_Predictor_v2.0.6_macOS.dmg](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
 
 ---
 
 ## Features
 
 ### Target Perspective Engine
-- **Geographic tiering** — Prioritizes data from stations near your target
-- **Tier 1 (Cyan):** Signals the target actually decodes
-- **Tier 2-3 (Blue):** Regional proxy data from nearby stations
-- **Collision detection** — Shows frequency conflicts at target's location
+- See what the DX station hears, not just what you hear
+- Geographic tiering shows signals by proximity to target
+- Real-time pileup visualization
 
 ### Local Intelligence (v2.0)
-- **Behavior prediction** — Learn how DX stations pick callers (Loudest First, Methodical, Random)
-- **Persona classification** — Contest Op, Casual Op, DX Hunter, etc.
-- **Pileup tracking** — See your rank in real-time
-- **Strategy recommendations** — CALL NOW / WAIT / TRY LATER
-
-### Path Status
-- **CONNECTED** — Target has decoded YOUR signal — call them!
-- **Path Open** — Stations near target heard you — path confirmed
-- **No Path** — Reporters exist but haven't heard you
+- Behavior prediction based on station patterns
+- Persona classification (Contest Op, Casual, DX Hunter, etc.)
+- Works offline using your WSJT-X/JTDX logs
 
 ### Smart Frequency Recommendations
-- **Score graph** — Visual representation of best TX frequencies
-- **Proven vs Empty** — Frequencies where target IS decoding score higher
-- **Sticky recommendations** — Won't bounce around chasing marginal improvements
-- **Click-to-set** — Click band map to manually set frequency
+- Proven frequencies scored higher than empty gaps
+- Visual score graph across the band
+- Click-to-set with dwell timer
 
-### Workflow Features (v2.0.3+)
-- **Clear Target** — Button and Ctrl+R shortcut to reset target
-- **Auto-clear on QSO** — Automatically clears target after logging
-- **Window/column persistence** — Layout saved between sessions
+### Path Status
+- CONNECTED — target has decoded your signal
+- Path Open — nearby stations heard you
+- No Path — propagation not confirmed
 
 ---
 
-## Quick Start (Windows)
+## Quick Start
 
-1. Download the latest `.zip` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases)
-2. Extract and run `QSO Predictor.exe`
-3. **First run:** Windows SmartScreen may warn — click "More info" → "Run anyway"
+### Windows
+1. Download and extract the `.zip` file
+2. Run `QSO Predictor.exe`
+3. Windows SmartScreen may warn — click **"More info"** → **"Run anyway"**
+
+### macOS
+1. Download and open the `.dmg` file
+2. Drag QSO Predictor to Applications
+3. App is signed and notarized — should open without warnings
+
+### Both Platforms
 4. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`
 5. Start decoding — select a target station to see their perspective
 
 ---
 
-## Running from Source
-
-### Windows
-
-```bash
-git clone https://github.com/wu2c-peter/qso-predictor.git
-cd qso-predictor
-pip install -r requirements.txt
-python main_v2.py
-```
-
-### macOS
-
-```bash
-# Clone the repository
-git clone https://github.com/wu2c-peter/qso-predictor.git
-cd qso-predictor
-
-# Create virtual environment (recommended - avoids PEP 668 issues)
-python3 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run
-python main_v2.py
-```
-
-**To run again later:**
-```bash
-cd qso-predictor
-source venv/bin/activate
-python main_v2.py
-```
-
-**Note:** A packaged Mac app (.app) is planned for a future release.
-
-### Python Version
-
-Requires **Python 3.12 or 3.13**. 
-
-⚠️ Python 3.14 is currently in alpha and has compatibility issues with some dependencies. Avoid 3.14 until it reaches stable release.
-
-Check your version: `python --version` or `python3 --version`
-
----
-
-## Understanding the Display
-
-### Band Map (Three Sections)
-
-**Top: Target Perspective** — What stations near the target are hearing
-- Cyan bars with count numbers show signal density (1-3 ideal, 6+ crowded)
-
-**Middle: Score Graph** — Algorithm's frequency recommendations
-- Green peaks = best frequencies
-- Solid line = proven data, Dotted = gap-based estimate
-
-**Bottom: Your Local Decodes** — What your radio receives
-- Green/Yellow/Red by signal strength
-
-### Overlay Lines
-| Line | Color | Meaning |
-|------|-------|---------|
-| Target | Magenta | Target station's TX frequency |
-| TX | Yellow (dotted) | Your current TX frequency |
-| Rec | Green | Recommended TX frequency |
-
-### Path Column
-| Status | Color | Meaning |
-|--------|-------|---------|
-| CONNECTED | Cyan | Target decoded YOU — call now! |
-| Path Open | Green | Stations near target heard you |
-| No Path | Orange | Reporters exist but didn't hear you |
-| — | Gray | No data from that region |
-
-### Status Bar
-
-Shows: `{Band} ({Freq}) | Tracking {N} stations | {M} hear {CALL}`
-
-- **Tracking N stations** — Unique callsigns seen in the last 15 minutes
-- **M hear CALL** — Stations that have spotted your signal
-
----
-
 ## Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| Ctrl+R | Clear target selection |
-| Ctrl+S | Open Settings |
-| F1 | Open Documentation (Wiki) |
-| F5 | Force refresh spots |
+| Shortcut | Action |
+|----------|--------|
+| **Ctrl+R** | Clear target selection |
+| **Ctrl+Y** | Sync target to WSJT-X/JTDX |
+| **Ctrl+S** | Open Settings |
+| **F1** | Open Documentation |
+| **F5** | Force refresh spots |
 
 ---
 
-## Configuration
+## Workflow Features (v2.0.3+)
 
-### Network Settings
+### Clear Target
+- **Button:** "Clear Target" in toolbar
+- **Shortcut:** Ctrl+R
+- Clears current target and resets all displays
 
-**Standard (single application):**
-```ini
-[NETWORK]
-udp_ip = 127.0.0.1
-udp_port = 2237
-```
+### Auto-Clear on QSO
+- **Checkbox:** "Auto-clear on QSO" in toolbar
+- Automatically clears target after logging a contact with that station
 
-**Multicast (with JTAlert, GridTracker, N3FJP):**
-```ini
-[NETWORK]
-udp_ip = 239.0.0.2
-udp_port = 2237
-```
-
-### Config File Locations
-
-| Platform | Location |
-|----------|----------|
-| Windows | `%APPDATA%\QSO Predictor\qso_predictor.ini` |
-| macOS | `~/Library/Application Support/QSO Predictor/` |
-| Linux | `~/.config/QSO Predictor/` |
-
----
-
-## Local Intelligence Setup
-
-For best results, initialize behavior history from your logs:
-
-1. Go to **Tools → Bootstrap Behavior**
-2. Click **Start Bootstrap**
-3. Wait 10-30 seconds (analyzes last 14 days of ALL.TXT)
-
-Re-run after major operating sessions or contests.
-
----
-
-## Troubleshooting
-
-### No Decodes Appearing
-1. Check WSJT-X/JTDX UDP settings match QSO Predictor
-2. If using multicast, ensure QSO Predictor config matches
-3. Check Windows Firewall allows UDP port
-
-### Running with GridTracker / JTAlert
-Use JTDX Secondary UDP Server or multicast mode. See [Wiki](https://github.com/wu2c-peter/qso-predictor/wiki/Help-and-Troubleshooting) for detailed setup.
-
-### ML Prediction Errors
-If you see prediction errors, delete the model files to use heuristic fallback:
-```
-del "%USERPROFILE%\.qso-predictor\models\*.pkl"
-```
-
-### High Memory / Slow Performance
-Fixed in v2.0.4. If you see "Tracking 10000+ signals" or performance degrades over time, update to the latest version.
+### Sync to WSJT-X/JTDX (v2.0.6)
+- **Button:** "Sync to JTDX" in toolbar, or ⟳ next to target callsign
+- **Shortcut:** Ctrl+Y
+- Forces QSO Predictor to match JTDX's current DX call selection
 
 ---
 
 ## Documentation
 
-Full documentation available on the [GitHub Wiki](https://github.com/wu2c-peter/qso-predictor/wiki):
-
-- [Quick Usage Guide](https://github.com/wu2c-peter/qso-predictor/wiki/Quick-Usage-Guide)
-- [How and Why It Works](https://github.com/wu2c-peter/qso-predictor/wiki/How-and-Why-It-Works)
-- [Help and Troubleshooting](https://github.com/wu2c-peter/qso-predictor/wiki/Help-and-Troubleshooting)
+- **[Wiki Home](https://github.com/wu2c-peter/qso-predictor/wiki)** — Overview and quick start
+- **[Quick Usage Guide](https://github.com/wu2c-peter/qso-predictor/wiki/Quick-Usage-Guide)** — Operational workflows
+- **[How It Works](https://github.com/wu2c-peter/qso-predictor/wiki/QSO-Predictor-How-and-Why-It-Works)** — Technical deep-dive
+- **[Help & Troubleshooting](https://github.com/wu2c-peter/qso-predictor/wiki/Help-and-Troubleshooting)** — Common problems
 
 ---
 
 ## Version History
 
+### v2.0.6 (December 2025)
+- Fixed: Severe CPU usage on macOS (38% → 6% idle)
+- Fixed: Window layout persistence (splitters, dock widgets)
+- Fixed: "Check for Updates" in packaged builds
+- Fixed: macOS version display
+- Added: Sync to WSJT-X/JTDX button and Ctrl+Y shortcut
+
 ### v2.0.4 (December 2025)
-- **Fixed:** Cache cleanup thread dying silently — caused unbounded memory growth and performance degradation (20,000+ signals accumulating instead of ~400 stations)
-- **Fixed:** MQTT auto-reconnect — now recovers automatically from dropped connections
-- **Fixed:** Timestamp validation — handles invalid data from PSK Reporter gracefully
-- **Improved:** Status bar now shows unique station count instead of total spot reports
+- Fixed: Cache cleanup thread crash with invalid timestamps
+- Fixed: MQTT auto-reconnect after connection loss
+- Fixed: Status bar shows unique stations instead of total spots
+- Added: Solar data refresh timer
 
 ### v2.0.3 (December 2025)
-- **New:** Clear Target button and Ctrl+R shortcut
-- **New:** Auto-clear on QSO logged option
-- **New:** Window and column width persistence
-- **Fixed:** ML prediction error spam
-- **Fixed:** Crash when clearing target
+- Added: Clear Target button and Ctrl+R shortcut
+- Added: Auto-clear on QSO logged
+- Added: Window size/position and column width persistence
+- Fixed: QSO Logged message parsing
 
-### v2.0.0 (November 2025)
-- Local Intelligence System with behavior prediction
-- Persona-based classification
-- Insights Panel with pileup tracking
-- Purist Mode for offline operation
+### v2.0.0 (December 2025)
+- Major release: Local Intelligence system
+- Persona-based behavior prediction
+- Insights panel with pileup status
+- Purist mode (offline operation)
 
-### v1.3.0
+### v1.3.0 (November 2025)
 - Smart frequency scoring
+- Score graph visualization
 - Click-to-set frequency
-- Update notification system
-
-[Full version history](https://github.com/wu2c-peter/qso-predictor/releases)
 
 ---
 
-## Contributors & Acknowledgments
+## Requirements
 
-QSO Predictor is developed by **Peter Hirst (WU2C)** with AI assistance from Claude (Anthropic).
+- Windows 10/11 or macOS 10.15+
+- WSJT-X or JTDX configured for UDP output
+- Internet connection (for PSK Reporter features)
 
-### Beta Testers & Feature Contributors
+---
 
-| Callsign | Contributions |
-|----------|---------------|
-| **Warren KC0GU** | Window/column persistence, Clear Target workflow, Auto-clear on QSO, Hunt Mode concept |
-| **Bill K3CDY** | macOS testing and installation feedback |
+## Running from Source
 
-### Want to Contribute?
+```bash
+git clone https://github.com/wu2c-peter/qso-predictor.git
+cd qso-predictor
+pip install -r requirements.txt
+python main_v2.py
+```
 
-- **Bug reports:** [Open an issue](https://github.com/wu2c-peter/qso-predictor/issues)
-- **Feature ideas:** [Start a discussion](https://github.com/wu2c-peter/qso-predictor/discussions)
-- **Beta testing:** Contact WU2C via QRZ or GitHub
+---
 
-We welcome feedback from the amateur radio community!
+## Contributing
+
+Contributions welcome! Please open an issue or pull request.
+
+### Contributors
+- **Warren KC0GU** — Feature suggestions (Clear Target, Auto-clear, UI persistence, Sync button), bug reports (CPU usage)
+- **Doug McDonald** — Startup health check feedback
 
 ---
 
 ## License
 
-QSO Predictor is free software released under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0).
-
-Copyright © 2025 Peter Hirst (WU2C)
+GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
 
 ---
 
-## Acknowledgments
+## Links
 
-- **PSK Reporter** — Real-time spot data via MQTT
-- **WSJT-X / JTDX** — The foundation of FT8/FT4 operation
-- **Amateur Radio Community** — Feedback and testing
+- [Releases](https://github.com/wu2c-peter/qso-predictor/releases)
+- [Discussions](https://github.com/wu2c-peter/qso-predictor/discussions)
+- [Issues](https://github.com/wu2c-peter/qso-predictor/issues)
+- [Wiki](https://github.com/wu2c-peter/qso-predictor/wiki)
 
 ---
 
