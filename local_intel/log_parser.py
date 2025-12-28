@@ -230,13 +230,14 @@ class LogParser:
     
     # Line parsing pattern for JTDX dated files (YYYYMM_ALL.TXT)
     # Format: 20251122_212145  -6  0.2 2521 ~ CQ WY0V EN12              *
+    # Trailing markers: * (low confidence), ^ (a priori), d (deleted?), . (unknown)
     JTDX_DATED_LINE = re.compile(
         r'^(\d{8}_\d{6})\s+'        # Timestamp: YYYYMMDD_HHMMSS
         r'([+-]?\d+)\s+'             # SNR
         r'([+-]?\d+\.\d+)\s+'        # DT
         r'(\d+)\s+'                  # Audio freq
         r'~\s*'                      # Tilde separator
-        r'(.+?)\s*[*d]?\s*$'         # Message (strip trailing * or d)
+        r'(.+?)\s*[*d^.&]?\s*$'      # Message (strip trailing markers)
     )
     
     def __init__(self, my_callsign: str = None):
