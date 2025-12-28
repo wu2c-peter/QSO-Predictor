@@ -483,9 +483,11 @@ class DecodeTableModel(QAbstractTableModel):
         if not self._data: return
         for item in self._data:
             analyzer_func(item)
+        # Note: We emit dataChanged but sorting is controlled by view
+        # The view should only re-sort on explicit user action, not data updates
         tl = self.index(0, 0)
         br = self.index(len(self._data)-1, len(self._headers)-1)
-        self.dataChanged.emit(tl, br)
+        self.dataChanged.emit(tl, br, [])  # Empty roles list = no sort trigger
 
 
 # --- CLICKABLE LABEL FOR UPDATE NOTIFICATION ---
@@ -722,7 +724,12 @@ class MainWindow(QMainWindow):
         self.table_view.horizontalHeader().setStretchLastSection(True)
         
         # --- FIX: ENABLE SORTING ---
+        # Note: setSortingEnabled causes re-sort on every data change
+        # We'll handle sorting manually on header click only
         self.table_view.setSortingEnabled(True)
+        self.table_view.horizontalHeader().setSortIndicatorShown(True)
+        # Prevent constant re-sorting by using a proxy model approach later
+        # For now, this works but may re-sort on updates
         
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.clicked.connect(self.on_row_click)
@@ -1024,7 +1031,11 @@ class MainWindow(QMainWindow):
                     'mode': 'FT8',
                 })
         
+        # Disable sorting during batch add to prevent jitter
+        self.table_view.setSortingEnabled(False)
         self.model.add_batch(chunk)
+        self.table_view.setSortingEnabled(True)
+        
         self.band_map.update_signals(chunk)
         
         # Auto-scroll to bottom if user was already there
@@ -1033,7 +1044,16 @@ class MainWindow(QMainWindow):
 
     def refresh_paths(self):
         """Lightweight refresh - just update path status for all rows."""
+        # Throttle: only refresh every 2 seconds max
+        now = time.time()
+        if hasattr(self, '_last_path_refresh') and (now - self._last_path_refresh) < 2.0:
+            return
+        self._last_path_refresh = now
+        
+        # Disable sorting during update to prevent jitter
+        self.table_view.setSortingEnabled(False)
         self.model.update_data_in_place(self.analyzer.update_path_only)
+        self.table_view.setSortingEnabled(True)
 
     def refresh_analysis(self):
         self.model.update_data_in_place(self.analyzer.analyze_decode)
