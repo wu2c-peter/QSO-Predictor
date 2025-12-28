@@ -330,6 +330,20 @@ class LogParser:
         
         return None
     
+    def parse_line(self, line: str) -> Optional[Decode]:
+        """
+        Parse a single log line (public API).
+        
+        Tries all known formats automatically.
+        
+        Args:
+            line: Raw line from log file
+            
+        Returns:
+            Decode object or None if line doesn't match
+        """
+        return self._parse_line(line, None)
+    
     def _build_decode(self, match: re.Match, format_type: str) -> Decode:
         """Build a Decode object from regex match."""
         groups = match.groups()
