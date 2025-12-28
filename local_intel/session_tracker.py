@@ -101,9 +101,12 @@ class SessionTracker:
             )
             self.active_sessions[callsign] = self.target_session
         
-        # On-demand lookup: if we don't have behavior history, quick search logs
-        print(f"[SessionTracker] calling lookup_station for {callsign}")
-        self._behavior_predictor.lookup_station(callsign)  # Uses 3s default timeout
+        # Check cache only - don't block UI with file scanning
+        # Background scanner will fill in data for unknown stations
+        if self._behavior_predictor.has_cached_history(callsign):
+            print(f"[SessionTracker] {callsign}: found in behavior cache")
+        else:
+            print(f"[SessionTracker] {callsign}: not in cache, will observe live")
         
         logger.info(f"Target set: {callsign}")
     

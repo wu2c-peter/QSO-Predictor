@@ -1523,6 +1523,29 @@ class BehaviorPredictor:
             'persona_distribution': persona_counts,
         }
     
+    def has_cached_history(self, callsign: str) -> bool:
+        """
+        Check if we have cached behavior history for a station.
+        
+        This is a fast cache-only check - no file I/O.
+        Used to avoid blocking the UI when clicking stations.
+        
+        Args:
+            callsign: Station callsign to check
+            
+        Returns:
+            True if we have meaningful data in cache
+        """
+        callsign = callsign.upper()
+        if callsign not in self._history:
+            return False
+        
+        record = self._history[callsign]
+        # Consider "cached" if we have picking observations OR activity data
+        has_picking = record.observations >= 2
+        has_activity = record.sessions_seen >= 1 and record.total_qsos >= 3
+        return has_picking or has_activity
+    
     def reload_history(self):
         """Reload behavior history from disk."""
         self._history.clear()
