@@ -1,5 +1,13 @@
-# QSO Predictor v2.1.0
+# QSO Predictor v2.0.7
 # Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.0.7 Changes:
+# - Fixed: UI freeze when clicking stations with large ALL.TXT files
+#   (removed blocking log scan, now cache-only lookup)
+# - Fixed: Rapid table refresh from UDP status flooding (throttled to 2Hz)
+# - Fixed: Yellow TX line flickering on band map
+# - Fixed: Table re-sorting jitter during decode updates
+#   (reported by Doug McDonald)
 #
 # v2.1.0 Changes:
 # - Added: Startup health check dialog when no UDP data detected

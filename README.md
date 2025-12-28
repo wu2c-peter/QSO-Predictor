@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.0.6-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.0.7-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,19 +10,21 @@ QSO Predictor shows you the "view from the other end" — what the DX station is
 
 ---
 
-## 🆕 What's New in v2.0.6
+## 🆕 What's New in v2.0.7
 
 ### Performance
-- **Fixed:** Severe CPU usage on macOS (reduced from 38% to 6% at idle)
+- **Fixed:** UI freeze when clicking stations with large log files (168MB+ ALL.TXT)
+- **Fixed:** Status update flooding causing rapid table refresh and yellow line flicker
+- **Fixed:** Table re-sorting jitter during decode updates
 
-### UI Improvements  
-- **New:** Sync to WSJT-X/JTDX button — syncs target when selections diverge
-- **New:** Window layout persistence — splitter positions and panel sizes now remembered
-- **New:** Keyboard shortcut **Ctrl+Y** for quick sync
+### Technical
+- Station lookup now uses cache-only check (instant) instead of blocking file scan
+- UDP status updates throttled to 2Hz (was flooding at 50+ Hz from JTDX)
+- Path refresh throttled to max once per 2 seconds
+- Table sorting disabled during batch updates to prevent visual jitter
 
-### Bug Fixes
-- **Fixed:** "Check for Updates" now works in packaged builds
-- **Fixed:** macOS version display showing "0.0.0"
+### Note
+Local Intelligence behavior cache requires Bootstrap (Tools → Bootstrap Behavior) to populate. Stations not in cache will show "Observing..." with live tracking.
 
 ---
 
@@ -30,8 +32,8 @@ QSO Predictor shows you the "view from the other end" — what the DX station is
 
 | Platform | Download |
 |----------|----------|
-| **Windows** | [QSO_Predictor_v2.0.6_Windows.zip](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
-| **macOS** | [QSO_Predictor_v2.0.6_macOS.dmg](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
+| **Windows** | [QSO_Predictor_v2.0.7_Windows.zip](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
+| **macOS** | [QSO_Predictor_v2.0.7_macOS.dmg](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
 
 ---
 
@@ -118,6 +120,13 @@ QSO Predictor shows you the "view from the other end" — what the DX station is
 
 ## Version History
 
+### v2.0.7 (December 2025)
+- Fixed: UI freeze when clicking stations (large ALL.TXT file scan)
+- Fixed: Rapid table refresh and re-sorting from UDP flooding
+- Fixed: Yellow TX line flickering on band map
+- Changed: Station lookup uses cache-only (requires Bootstrap for history)
+- Added: Throttling for status updates and path refresh
+
 ### v2.0.6 (December 2025)
 - Fixed: Severe CPU usage on macOS (38% → 6% idle)
 - Fixed: Window layout persistence (splitters, dock widgets)
@@ -175,7 +184,7 @@ Contributions welcome! Please open an issue or pull request.
 
 ### Contributors
 - **Warren KC0GU** — Feature suggestions (Clear Target, Auto-clear, UI persistence, Sync button), bug reports (CPU usage)
-- **Doug McDonald** — Startup health check feedback
+- **Doug McDonald** — Bug reports (UI freeze with large logs, startup health check feedback)
 
 ---
 
