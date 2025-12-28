@@ -455,6 +455,7 @@ class SessionTracker:
             Dict with behavior analysis, including:
             - Live pattern analysis (if enough observations)
             - Bayesian estimate (from historical/ML + live updates)
+            - Distribution of observed behaviors
         """
         if not self.target_session:
             logger.debug("get_target_behavior: No target session")
@@ -472,6 +473,9 @@ class SessionTracker:
                     f"conf={bayesian.confidence:.2f}, "
                     f"source={bayesian.source}")
         
+        # Get behavior distribution from historical data
+        distribution = self._behavior_predictor.get_behavior_distribution(session.callsign)
+        
         return {
             'callsign': session.callsign,
             'qso_count': session.qso_count,
@@ -486,6 +490,8 @@ class SessionTracker:
             'style_probs': bayesian.style_probs,
             # Metadata (includes prefix info for ML predictions)
             'bayesian_metadata': getattr(bayesian, 'metadata', None),
+            # Distribution of historical behaviors
+            'distribution': distribution,
         }
     
     def get_your_status(self) -> Dict:

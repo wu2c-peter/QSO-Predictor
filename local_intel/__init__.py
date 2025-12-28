@@ -47,6 +47,7 @@ from .log_parser import LogParser, MessageParser, QSOExtractor, parse_log_files
 from .session_tracker import SessionTracker, MultiTargetTracker
 from .model_manager import ModelManager, PredictionCache
 from .predictor import BayesianPredictor, HeuristicPredictor
+from .background_scanner import BackgroundScanner
 
 __all__ = [
     # Enums
@@ -97,4 +98,7 @@ __all__ = [
     # Prediction
     'BayesianPredictor',
     'HeuristicPredictor',
+    
+    # Background Processing
+    'BackgroundScanner',
 ]

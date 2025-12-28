@@ -157,6 +157,25 @@ class BehaviorWidget(QGroupBox):
         pattern_layout.addStretch()
         layout.addLayout(pattern_layout)
         
+        # Distribution bar (L/M/R proportions)
+        dist_layout = QHBoxLayout()
+        dist_layout.setSpacing(2)
+        self.dist_label = QLabel("")
+        self.dist_label.setStyleSheet("font-size: 9px; color: #888888;")
+        dist_layout.addWidget(self.dist_label)
+        dist_layout.addStretch()
+        layout.addLayout(dist_layout)
+        
+        # Distribution bar widget
+        self.dist_bar = QFrame()
+        self.dist_bar.setFixedHeight(8)
+        self.dist_bar.setStyleSheet("background: #333333; border-radius: 2px;")
+        layout.addWidget(self.dist_bar)
+        
+        # Hidden by default until we have data
+        self.dist_bar.hide()
+        self.dist_label.hide()
+        
         # Confidence
         conf_layout = QHBoxLayout()
         conf_layout.addWidget(QLabel("Confidence:"))
@@ -182,6 +201,54 @@ class BehaviorWidget(QGroupBox):
         self.pattern_label.setStyleSheet("color: #888888;")
         self.confidence_bar.setValue(0)
         self.advice_label.setText("Searching history...")
+        self.dist_bar.hide()
+        self.dist_label.hide()
+    
+    def _update_distribution_bar(self, distribution: dict):
+        """Update the distribution bar showing L/M/R proportions."""
+        if not distribution or distribution.get('total', 0) == 0:
+            self.dist_bar.hide()
+            self.dist_label.hide()
+            return
+        
+        loudest = distribution.get('loudest', 0)
+        methodical = distribution.get('methodical', 0)
+        random = distribution.get('random', 0)
+        total = distribution.get('total', 0)
+        
+        # Show distribution label
+        self.dist_label.setText(f"L:{loudest:.0%} M:{methodical:.0%} R:{random:.0%} ({total} obs)")
+        self.dist_label.show()
+        
+        # Create colored bar segments using stylesheet gradient
+        # Orange for loudest, Blue for methodical, Green for random
+        if loudest + methodical + random > 0:
+            l_pct = loudest * 100
+            m_pct = methodical * 100
+            r_pct = random * 100
+            
+            # Build gradient stops
+            # Orange (loudest) from 0 to l_pct
+            # Blue (methodical) from l_pct to l_pct + m_pct
+            # Green (random) from l_pct + m_pct to 100
+            l_end = l_pct
+            m_end = l_pct + m_pct
+            
+            gradient = f"""
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #ff8800,
+                    stop:{l_end/100:.3f} #ff8800,
+                    stop:{l_end/100:.3f} #00aaff,
+                    stop:{m_end/100:.3f} #00aaff,
+                    stop:{m_end/100:.3f} #88ff88,
+                    stop:1 #88ff88
+                );
+                border-radius: 2px;
+            """
+            self.dist_bar.setStyleSheet(gradient)
+            self.dist_bar.show()
+        else:
+            self.dist_bar.hide()
     
     def update_display(self, behavior_info: Optional[Dict]):
         """Update with behavior analysis including Bayesian estimate."""
@@ -280,6 +347,10 @@ class BehaviorWidget(QGroupBox):
             self.pattern_label.setStyleSheet("")
             self.confidence_bar.setValue(0)
             self.advice_label.setText(f"Watching target ({behavior_info.get('qso_count', 0)} QSOs observed)")
+        
+        # Update distribution bar if we have distribution data
+        distribution = behavior_info.get('distribution')
+        self._update_distribution_bar(distribution)
     
     def clear(self):
         """Clear the display."""
@@ -289,6 +360,8 @@ class BehaviorWidget(QGroupBox):
         self.pattern_label.setStyleSheet("")
         self.confidence_bar.setValue(0)
         self.advice_label.setText("Select a target")
+        self.dist_bar.hide()
+        self.dist_label.hide()
 
 
 class PredictionWidget(QGroupBox):

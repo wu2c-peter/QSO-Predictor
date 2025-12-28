@@ -1,5 +1,13 @@
-# QSO Predictor v2.0.7
+# QSO Predictor v2.0.8
 # Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.0.8 Changes:
+# - Added: Background scanner for incremental log file processing
+# - Added: Behavior distribution display (L/M/R bar) in Insights panel
+# - Added: get_behavior_distribution() method for historical data
+# - Added: Bayesian update_observations() for incremental count updates
+# - Fixed: Bootstrap timeout with large log files (background processing)
+# - Fixed: JTDX dated file trailing markers (^ * . d)
 #
 # v2.0.7 Changes:
 # - Fixed: UI freeze when clicking stations with large ALL.TXT files

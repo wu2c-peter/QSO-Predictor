@@ -30,6 +30,7 @@ from local_intel import (
     AnalysisConfig,
     PathStatus,
     Decode,
+    BackgroundScanner,
 )
 from local_intel.log_parser import MessageParser
 from training_manager import TrainingManager, TrainingStatusChecker
@@ -103,6 +104,9 @@ class LocalIntelligence(QObject):
             parent=self
         )
         self.status_checker: Optional[TrainingStatusChecker] = None
+        
+        # Background scanner (created in setup())
+        self.background_scanner: Optional[BackgroundScanner] = None
         
         # UI components (created in setup())
         self.insights_panel: Optional[InsightsPanel] = None
@@ -195,6 +199,13 @@ class LocalIntelligence(QObject):
             )
             self.status_checker.models_stale.connect(self._on_models_stale)
             self.status_checker.start()
+            
+            # Start background scanner for incremental log processing
+            behavior_predictor = self.session_tracker._behavior_predictor
+            self.background_scanner = BackgroundScanner(behavior_predictor, parent=self)
+            self.background_scanner.scan_complete.connect(self._on_background_scan_complete)
+            self.background_scanner.start()
+            logger.info("Background scanner started")
             
             # Start panel updates
             self.insights_panel.start_updates(interval_ms=1000)
@@ -480,6 +491,12 @@ class LocalIntelligence(QObject):
     
     def shutdown(self):
         """Clean shutdown of local intelligence."""
+        if self.background_scanner:
+            logger.info("Stopping background scanner...")
+            self.background_scanner.stop()
+            self.background_scanner.wait(5000)  # Wait up to 5 seconds
+            logger.info("Background scanner stopped")
+        
         if self.status_checker:
             self.status_checker.stop()
         
@@ -594,6 +611,14 @@ class LocalIntelligence(QObject):
                 logger.info("Switched to Bayesian predictor")
         
         self._update_model_status()
+    
+    def _on_background_scan_complete(self, stations_updated: int):
+        """Handle background scan completion."""
+        if stations_updated > 0:
+            logger.info(f"Background scan: {stations_updated} stations updated")
+            # Refresh insights panel if we have a target
+            if self._current_target and self.insights_panel:
+                self.insights_panel.refresh()
     
     def _on_models_stale(self, stale_models: list):
         """Handle stale models notification."""

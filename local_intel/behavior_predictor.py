@@ -1546,6 +1546,127 @@ class BehaviorPredictor:
         has_activity = record.sessions_seen >= 1 and record.total_qsos >= 3
         return has_picking or has_activity
     
+    def update_observations(self, callsign: str, answers: list) -> bool:
+        """
+        Incrementally update behavior observations for a station.
+        
+        This is the Bayesian update - just increment counts based on 
+        new picking observations. No need to re-scan history.
+        
+        Args:
+            callsign: Station callsign
+            answers: List of (was_loudest, answered_call) tuples
+            
+        Returns:
+            True if station was updated
+        """
+        if not answers:
+            return False
+        
+        callsign = callsign.upper()
+        
+        # Get or create history record
+        if callsign not in self._history:
+            self._history[callsign] = HistoricalRecord(callsign=callsign)
+        
+        record = self._history[callsign]
+        record.last_seen = datetime.now().isoformat()
+        
+        # Count picking behavior in this batch
+        loudest_count = sum(1 for was_loudest, _ in answers if was_loudest)
+        total = len(answers)
+        
+        # Calculate ratio for this batch
+        loudest_ratio = loudest_count / total if total > 0 else 0.5
+        
+        # Increment appropriate counts
+        record.observations += total
+        
+        if loudest_ratio > 0.7:
+            record.loudest_first_count += total
+        elif loudest_ratio < 0.3:
+            record.random_count += total
+        else:
+            record.methodical_count += total
+        
+        # Also count as QSOs
+        record.total_qsos += total
+        
+        logger.debug(f"Updated {callsign}: +{total} observations "
+                    f"(L:{record.loudest_first_count} M:{record.methodical_count} "
+                    f"R:{record.random_count})")
+        
+        return True
+    
+    def get_behavior_distribution(self, callsign: str) -> dict:
+        """
+        Get the distribution of observed behaviors for a station.
+        
+        Returns percentages for each behavior type, useful for UI display
+        when behavior is mixed/unpredictable.
+        
+        Args:
+            callsign: Station callsign
+            
+        Returns:
+            Dict with 'loudest', 'methodical', 'random' percentages and 'total'
+        """
+        callsign = callsign.upper()
+        
+        if callsign not in self._history:
+            return {
+                'loudest': 0.0,
+                'methodical': 0.0,
+                'random': 0.0,
+                'total': 0,
+                'dominant': None,
+                'confidence': 0.0
+            }
+        
+        record = self._history[callsign]
+        total = record.observations
+        
+        if total == 0:
+            return {
+                'loudest': 0.0,
+                'methodical': 0.0,
+                'random': 0.0,
+                'total': 0,
+                'dominant': None,
+                'confidence': 0.0
+            }
+        
+        loudest_pct = record.loudest_first_count / total
+        methodical_pct = record.methodical_count / total
+        random_pct = record.random_count / total
+        
+        # Find dominant behavior
+        max_pct = max(loudest_pct, methodical_pct, random_pct)
+        if max_pct == loudest_pct:
+            dominant = 'loudest'
+        elif max_pct == methodical_pct:
+            dominant = 'methodical'
+        else:
+            dominant = 'random'
+        
+        # Confidence based on how dominant the top behavior is
+        # 100% one type = high confidence, 33/33/33 = low confidence
+        confidence = (max_pct - 0.33) / 0.67 if max_pct > 0.33 else 0.0
+        confidence = min(1.0, max(0.0, confidence))
+        
+        # Also factor in observation count
+        obs_factor = min(1.0, total / 10)  # Full confidence at 10+ observations
+        confidence *= obs_factor
+        
+        return {
+            'loudest': loudest_pct,
+            'methodical': methodical_pct,
+            'random': random_pct,
+            'total': total,
+            'dominant': dominant,
+            'confidence': confidence
+        }
+    
     def reload_history(self):
         """Reload behavior history from disk."""
         self._history.clear()
