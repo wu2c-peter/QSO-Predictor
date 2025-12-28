@@ -29,6 +29,7 @@ import ctypes
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from pathlib import Path
 from collections import deque
@@ -1038,6 +1039,12 @@ class MainWindow(QMainWindow):
         self.model.update_data_in_place(self.analyzer.analyze_decode)
 
     def handle_status_update(self, status):
+        # Throttle: JTDX sends status many times per second, we only need ~2Hz
+        now = time.time()
+        if hasattr(self, '_last_status_time') and (now - self._last_status_time) < 0.5:
+            return
+        self._last_status_time = now
+        
         dial = status.get('dial_freq', 0)
         if dial > 0: self.analyzer.set_dial_freq(dial)
         
