@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.0.7-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.0.8-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,21 +10,19 @@ QSO Predictor shows you the "view from the other end" — what the DX station is
 
 ---
 
-## 🆕 What's New in v2.0.7
+## 🆕 What's New in v2.0.8
 
-### Performance
-- **Fixed:** UI freeze when clicking stations with large log files (168MB+ ALL.TXT)
-- **Fixed:** Status update flooding causing rapid table refresh and yellow line flicker
-- **Fixed:** Table re-sorting jitter during decode updates
+### Local Intelligence Improvements
+- **Fixed:** Bootstrap timeout with large log files — now runs in background thread
+- **Added:** Background scanner for incremental log processing (no more timeouts!)
+- **Added:** Behavior distribution bar showing L/M/R percentages in Insights panel
+- **Fixed:** JTDX dated file parsing (trailing `^` `*` `.` `d` markers)
 
-### Technical
-- Station lookup now uses cache-only check (instant) instead of blocking file scan
-- UDP status updates throttled to 2Hz (was flooding at 50+ Hz from JTDX)
-- Path refresh throttled to max once per 2 seconds
-- Table sorting disabled during batch updates to prevent visual jitter
-
-### Note
-Local Intelligence behavior cache requires Bootstrap (Tools → Bootstrap Behavior) to populate. Stations not in cache will show "Observing..." with live tracking.
+### How It Works Now
+- On first run, background scanner processes your full log history (may take 1-2 minutes for large files)
+- Saves file position — subsequent runs only scan new data
+- UI stays responsive during scanning
+- Distribution bar shows observed picking behavior breakdown (Loudest/Methodical/Random)
 
 ---
 
@@ -32,8 +30,8 @@ Local Intelligence behavior cache requires Bootstrap (Tools → Bootstrap Behavi
 
 | Platform | Download |
 |----------|----------|
-| **Windows** | [QSO_Predictor_v2.0.7_Windows.zip](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
-| **macOS** | [QSO_Predictor_v2.0.7_macOS.dmg](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
+| **Windows** | [QSO_Predictor_v2.0.8_Windows.zip](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
+| **macOS** | [QSO_Predictor_v2.0.8_macOS.dmg](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
 
 ---
 
@@ -119,6 +117,12 @@ Local Intelligence behavior cache requires Bootstrap (Tools → Bootstrap Behavi
 ---
 
 ## Version History
+
+### v2.0.8 (December 2025)
+- Fixed: Bootstrap timeout with large log files (background processing)
+- Added: Background scanner for incremental log file processing
+- Added: Behavior distribution bar in Insights panel (L/M/R percentages)
+- Fixed: JTDX dated file trailing markers (^ * . d)
 
 ### v2.0.7 (December 2025)
 - Fixed: UI freeze when clicking stations (large ALL.TXT file scan)
