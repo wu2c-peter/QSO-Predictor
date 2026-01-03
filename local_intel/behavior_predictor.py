@@ -404,7 +404,7 @@ class BehaviorPredictor:
             stats['random'] += record.random_count
         
         self._prefix_stats_dirty = False
-        print(f"[prefix] Built prefix stats: {len(self._prefix_stats)} prefixes from {len(self._history)} stations")
+        logger.debug(f"prefix: Built prefix stats: {len(self._prefix_stats)} prefixes from {len(self._history)} stations")
         logger.debug(f"Built prefix stats for {len(self._prefix_stats)} prefixes")
     
     def _get_prefix_prior(self, callsign: str) -> Optional[BehaviorPrior]:
@@ -419,14 +419,14 @@ class BehaviorPredictor:
         prefix = self._extract_prefix(callsign)
         
         if prefix not in self._prefix_stats:
-            print(f"[prefix] {callsign} -> {prefix}: no stations with this prefix yet")
+            logger.debug(f"prefix: {callsign} -> {prefix}: no stations with this prefix yet")
             return None
         
         stats = self._prefix_stats[prefix]
         
         # Need meaningful sample (at least 2 stations with this prefix)
         if stats['total_stations'] < 2:
-            print(f"[prefix] {callsign} -> {prefix}: only {stats['total_stations']} station(s), need 2+")
+            logger.debug(f"prefix: {callsign} -> {prefix}: only {stats['total_stations']} station(s), need 2+")
             return None
         
         total = stats['loudest_first'] + stats['methodical'] + stats['random']
@@ -444,7 +444,7 @@ class BehaviorPredictor:
         confidence = min(0.7, stats['total_stations'] / 20)
         
         most_likely = max(probs, key=probs.get)
-        print(f"[prefix] {callsign} -> {prefix}: {most_likely} ({probs[most_likely]:.0%}) from {stats['total_stations']} stations")
+        logger.debug(f"prefix: {callsign} -> {prefix}: {most_likely} ({probs[most_likely]:.0%}) from {stats['total_stations']} stations")
         
         return BehaviorPrior(
             style_probs=probs,
@@ -486,8 +486,8 @@ class BehaviorPredictor:
         sample_factor = min(1.0, record.total_qsos / 20)  # Scale by sample
         confidence = base_confidence * sample_factor
         
-        print(f"[persona] {callsign}: {persona.name} (score={score:.2f}, conf={confidence:.0%})")
-        print(f"         rate={record.qso_rate:.1f}/min, completion={record.completion_rate:.0%}")
+        logger.debug(f"persona: {callsign}: {persona.name} (score={score:.2f}, conf={confidence:.0%})")
+        logger.debug(f"persona: {callsign}: rate={record.qso_rate:.1f}/min, completion={record.completion_rate:.0%}")
         
         return BehaviorPrior(
             style_probs=persona.picking_probs.copy(),
@@ -901,8 +901,7 @@ class BehaviorPredictor:
             has_activity = record.sessions_seen >= 1 and record.total_qsos >= 3
             
             if has_picking or has_activity:
-                print(f"[lookup] {callsign}: CACHE HIT - {record.observations} picking obs, {record.total_qsos} QSOs, {record.sessions_seen} sessions")
-                logger.info(f"[lookup] {callsign}: cache hit")
+                logger.debug(f"lookup: {callsign}: CACHE HIT - {record.observations} picking obs, {record.total_qsos} QSOs, {record.sessions_seen} sessions")
                 return True
         
         start_time = time.time()
@@ -911,8 +910,7 @@ class BehaviorPredictor:
         # Look back 14 days to handle monthly boundaries
         cutoff_date = datetime.now() - timedelta(days=14)
         
-        logger.info(f"[lookup] {callsign}: searching logs (timeout={timeout_ms}ms)")
-        print(f"[lookup] {callsign}: searching logs... (cutoff={cutoff_date.strftime('%Y-%m-%d')})")
+        logger.debug(f"lookup: {callsign}: searching logs (cutoff={cutoff_date.strftime('%Y-%m-%d')}, timeout={timeout_ms}ms)")
         
         # Use cached log sources (refresh every 5 minutes)
         if (self._cached_log_sources is None or 
@@ -921,13 +919,12 @@ class BehaviorPredictor:
             discovery = LogFileDiscovery()
             self._cached_log_sources = discovery.discover_all_files()
             self._log_sources_cache_time = datetime.now()
-            print(f"[lookup] {callsign}: refreshed log sources cache")
+            logger.debug(f"lookup: {callsign}: refreshed log sources cache")
         
         sources = list(self._cached_log_sources)  # Copy to avoid modifying cache
         
         if not sources:
-            logger.info(f"[lookup] {callsign}: no log files found")
-            print(f"[lookup] {callsign}: NO LOG FILES FOUND")
+            logger.debug(f"lookup: {callsign}: no log files found")
             return False
         
         # Filter and prioritize files:
@@ -938,12 +935,12 @@ class BehaviorPredictor:
             if s.date_range:
                 first_date, last_date = s.date_range
                 if last_date < cutoff_date:
-                    print(f"[lookup] {callsign}: skipping {s.path.name} (ends {last_date.strftime('%Y-%m-%d')}, before cutoff)")
+                    logger.debug(f"lookup: {callsign}: skipping {s.path.name} (ends {last_date.strftime('%Y-%m-%d')}, before cutoff)")
                     continue
             valid_sources.append(s)
         
         if not valid_sources:
-            print(f"[lookup] {callsign}: no files with recent data")
+            logger.debug(f"lookup: {callsign}: no files with recent data")
             return False
         
         # Sort by recency (most recent last_date first)
@@ -953,7 +950,7 @@ class BehaviorPredictor:
             return s.modified  # Fallback to modified time
         
         valid_sources.sort(key=file_sort_key, reverse=True)
-        print(f"[lookup] {callsign}: scanning {len(valid_sources)} files: {[s.path.name for s in valid_sources]}")
+        logger.debug(f"lookup: {callsign}: scanning {len(valid_sources)} files: {[s.path.name for s in valid_sources]}")
         
         parser = LogParser()
         
@@ -975,10 +972,10 @@ class BehaviorPredictor:
         for source in valid_sources:
             elapsed = time.time() - start_time
             if elapsed > timeout_sec:
-                print(f"[lookup] {callsign}: TIMEOUT after {elapsed:.1f}s")
+                logger.debug(f"lookup: {callsign}: TIMEOUT after {elapsed:.1f}s")
                 break
             
-            print(f"[lookup] {callsign}: scanning {source.path.name}...")
+            logger.debug(f"lookup: {callsign}: scanning {source.path.name}...")
             file_decodes = 0
             
             try:
@@ -989,7 +986,7 @@ class BehaviorPredictor:
                     # Check timeout every 10000 decodes
                     if file_decodes % 10000 == 0:
                         if time.time() - start_time > timeout_sec:
-                            print(f"[lookup] {callsign}: timeout mid-file at {file_decodes} decodes")
+                            logger.debug(f"lookup: {callsign}: timeout mid-file at {file_decodes} decodes")
                             break
                     
                     # Is this our target DX?
@@ -1037,15 +1034,15 @@ class BehaviorPredictor:
                         if caller:
                             callers[caller] = d.snr
                 
-                print(f"[lookup] {callsign}: {source.path.name} -> {file_decodes} decodes, {matches_found} matches")
+                logger.debug(f"lookup: {callsign}: {source.path.name} -> {file_decodes} decodes, {matches_found} matches")
                 
                 # If we have enough observations, stop early
                 if len(answers) >= 10 and len(qsos) >= 5:
-                    print(f"[lookup] {callsign}: have {len(answers)} picking obs, {len(qsos)} QSOs, stopping early")
+                    logger.debug(f"lookup: {callsign}: have {len(answers)} picking obs, {len(qsos)} QSOs, stopping early")
                     break
                     
             except Exception as e:
-                print(f"[lookup] {callsign}: ERROR parsing {source.path.name}: {e}")
+                logger.debug(f"lookup: {callsign}: ERROR parsing {source.path.name}: {e}")
         
         # Calculate session info from timestamps
         sessions = []
@@ -1078,8 +1075,8 @@ class BehaviorPredictor:
         total_session_seconds = sum(sessions)
         sessions_seen = len(sessions)
         
-        print(f"[lookup] {callsign}: total {decodes_scanned} decodes, {matches_found} matches, {len(answers)} picking obs")
-        print(f"[lookup] {callsign}: activity: {cq_count} CQs, {total_qsos} QSOs ({completed_qsos} completed), {sessions_seen} sessions")
+        logger.debug(f"lookup: {callsign}: total {decodes_scanned} decodes, {matches_found} matches, {len(answers)} picking obs")
+        logger.debug(f"lookup: {callsign}: activity: {cq_count} CQs, {total_qsos} QSOs ({completed_qsos} completed), {sessions_seen} sessions")
         
         # Build history from what we found (need EITHER picking data OR activity data)
         has_picking_data = len(answers) >= 2
@@ -1130,11 +1127,11 @@ class BehaviorPredictor:
                 persona, score = persona_result
                 persona_info = f", persona={persona.name} ({score:.0%})"
             
-            print(f"[lookup] {callsign}: SUCCESS! picking={style}, rate={record.qso_rate:.1f}/min, completion={record.completion_rate:.0%}{persona_info}")
+            logger.debug(f"lookup: {callsign}: SUCCESS! picking={style}, rate={record.qso_rate:.1f}/min, completion={record.completion_rate:.0%}{persona_info}")
             logger.info(f"[lookup] {callsign}: SUCCESS - {len(answers)} picking obs, {total_qsos} QSOs")
             return True
         
-        print(f"[lookup] {callsign}: not enough data (picking={len(answers)}, qsos={total_qsos})")
+        logger.debug(f"lookup: {callsign}: not enough data (picking={len(answers)}, qsos={total_qsos})")
         logger.info(f"[lookup] {callsign}: not enough data")
         return False
 
@@ -1172,7 +1169,7 @@ class BehaviorPredictor:
         cutoff_date = datetime.now() - timedelta(days=max_days)
         
         logger.info(f"Fast bootstrap: last {max_days} days, max {max_decodes} decodes")
-        print(f"[bootstrap] Starting: last {max_days} days, max {max_decodes} decodes")
+        logger.info(f"bootstrap: Starting: last {max_days} days, max {max_decodes} decodes")
         
         # Discover log files
         discovery = LogFileDiscovery()
@@ -1204,7 +1201,7 @@ class BehaviorPredictor:
             return 0
         
         logger.info(f"Parsed {len(all_decodes)} decodes in {time.time() - start_time:.1f}s")
-        print(f"[bootstrap] Parsed {len(all_decodes)} decodes in {time.time() - start_time:.1f}s")
+        logger.info(f"bootstrap: Parsed {len(all_decodes)} decodes in {time.time() - start_time:.1f}s")
         
         # Sort by timestamp for session detection
         all_decodes.sort(key=lambda d: d.timestamp or datetime.min)
@@ -1219,7 +1216,7 @@ class BehaviorPredictor:
             logger.info("No DX stations found")
             return 0
         
-        print(f"[bootstrap] Found {len(dx_stations)} DX stations")
+        logger.info(f"bootstrap: Found {len(dx_stations)} DX stations")
         
         # Track activity per DX station
         # dx_data[call] = {
@@ -1295,7 +1292,7 @@ class BehaviorPredictor:
                                 was_loudest = answered_snr >= max_snr - 1
                                 data['answers'].append(was_loudest)
         
-        print(f"[bootstrap] Activity tracking done in {time.time() - start_time:.1f}s")
+        logger.info(f"bootstrap: Activity tracking done in {time.time() - start_time:.1f}s")
         
         # Third pass: calculate sessions and build history
         stations_processed = 0
@@ -1381,12 +1378,12 @@ class BehaviorPredictor:
         
         elapsed = time.time() - start_time
         logger.info(f"Fast bootstrap complete: {stations_processed} stations in {elapsed:.1f}s")
-        print(f"[bootstrap] Complete: {stations_processed} stations in {elapsed:.1f}s")
+        logger.info(f"bootstrap: Complete: {stations_processed} stations in {elapsed:.1f}s")
         
         # Print some stats
         total_with_persona = sum(1 for r in self._history.values() 
                                   if r.sessions_seen > 0 and r.total_qsos >= 3)
-        print(f"[bootstrap] {total_with_persona} stations have persona traits")
+        logger.info(f"bootstrap: {total_with_persona} stations have persona traits")
         
         return stations_processed
 

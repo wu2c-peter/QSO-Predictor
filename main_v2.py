@@ -17,7 +17,7 @@
 # - Fixed: Table re-sorting jitter during decode updates
 #   (reported by Doug McDonald)
 #
-# v2.1.0 Changes:
+# v2.0.9 Changes:
 # - Added: Startup health check dialog when no UDP data detected
 #   (based on user feedback from Doug McDonald)
 #
@@ -42,6 +42,7 @@
 # - Fixed: Ctrl+R shortcut (was documented but not implemented)
 
 import ctypes
+import logging
 import subprocess
 import sys
 import threading
@@ -49,6 +50,12 @@ import time
 import webbrowser
 from pathlib import Path
 from collections import deque
+
+# Initialize logging FIRST before other imports
+from logging_config import setup_logging, set_debug_mode, get_log_file_path, open_log_folder
+setup_logging(console=True, file=True)
+
+logger = logging.getLogger(__name__)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QTableView, QLabel, QHeaderView, QSplitter, 
                              QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, 
@@ -120,7 +127,7 @@ except ImportError as e:
     QMessageBox.critical(None, "Missing Files", f"Error: {e}")
     sys.exit(1)
 
-# v2.1.0: Import startup health dialog
+# v2.0.9: Import startup health dialog
 try:
     from startup_health_dialog import StartupHealthDialog
     STARTUP_HEALTH_AVAILABLE = True
@@ -140,7 +147,7 @@ try:
     LOCAL_INTEL_AVAILABLE = True
 except ImportError as e:
     LOCAL_INTEL_AVAILABLE = False
-    print(f"Local Intelligence not available: {e}")
+    logger.warning(f"Local Intelligence not available: {e}")
 
 
 # --- WIDGET: TARGET DASHBOARD ---
@@ -586,7 +593,7 @@ class MainWindow(QMainWindow):
         # Check for unconfigured callsign/grid on startup
         QTimer.singleShot(500, self._check_first_run_config)
         
-        # v2.1.0: Start health check timer (checks for UDP data after 20 seconds)
+        # v2.0.9: Start health check timer (checks for UDP data after 20 seconds)
         #self._start_health_check_timer()
     
     def _check_first_run_config(self):
@@ -608,13 +615,13 @@ class MainWindow(QMainWindow):
         try:
             my_callsign = self.config.get('ANALYSIS', 'my_callsign', fallback='')
             if not my_callsign:
-                print("Local Intelligence: No callsign configured, some features disabled")
+                logger.info("Local Intelligence: No callsign configured, some features disabled")
                 my_callsign = 'N0CALL'
             
             self.local_intel = LocalIntelligence(my_callsign=my_callsign)
-            print("Local Intelligence initialized")
+            logger.info("Local Intelligence initialized")
         except Exception as e:
-            print(f"Failed to initialize Local Intelligence: {e}")
+            logger.error(f"Failed to initialize Local Intelligence: {e}")
             self.local_intel = None
 
     solar_update_signal = pyqtSignal(dict)
@@ -831,10 +838,26 @@ class MainWindow(QMainWindow):
         wiki_action.triggered.connect(self.open_wiki)
         help_menu.addAction(wiki_action)
         
-        # v2.1.0: Connection Help menu item
+        # v2.0.9: Connection Help menu item
         connection_help_action = QAction("Connection Help...", self)
         connection_help_action.triggered.connect(self._show_connection_help)
         help_menu.addAction(connection_help_action)
+        
+        help_menu.addSeparator()
+        
+        # v2.0.9: Debug Logging toggle
+        self.debug_logging_action = QAction("Enable Debug Logging", self)
+        self.debug_logging_action.setCheckable(True)
+        self.debug_logging_action.setChecked(False)
+        self.debug_logging_action.setToolTip("Enable verbose logging for troubleshooting")
+        self.debug_logging_action.triggered.connect(self._toggle_debug_logging)
+        help_menu.addAction(self.debug_logging_action)
+        
+        # v2.0.9: Open Log Folder
+        open_log_action = QAction("Open Log Folder...", self)
+        open_log_action.setToolTip("Open the folder containing log files")
+        open_log_action.triggered.connect(self._open_log_folder)
+        help_menu.addAction(open_log_action)
         
         help_menu.addSeparator()
         
@@ -877,7 +900,7 @@ class MainWindow(QMainWindow):
                 if dock_state:
                     self.restoreState(QByteArray.fromHex(dock_state.encode()))
             except Exception as e:
-                print(f"Failed to setup Local Intelligence panel: {e}")
+                logger.error(f"Failed to setup Local Intelligence panel: {e}")
     
     # --- v2.0.3: Column width persistence ---
     def _restore_column_widths(self):
@@ -890,7 +913,7 @@ class MainWindow(QMainWindow):
                     if i < self.model.columnCount() and width > 0:
                         self.table_view.setColumnWidth(i, width)
             except (ValueError, IndexError) as e:
-                print(f"Could not restore column widths: {e}")
+                logger.debug(f"Could not restore column widths: {e}")
     
     def _save_column_widths(self):
         """Save current column widths to config."""
@@ -948,7 +971,7 @@ class MainWindow(QMainWindow):
             try:
                 self.local_intel.set_target("", "")
             except Exception as e:
-                print(f"Error clearing local intel target: {e}")
+                logger.debug(f"Error clearing local intel target: {e}")
     
     # --- v2.0.3: QSO Logged handler (suggested by KC0GU) ---
     def on_qso_logged(self, data):
@@ -967,7 +990,7 @@ class MainWindow(QMainWindow):
             # Only clear if we logged the station we were targeting
             current_upper = self.current_target_call.upper() if self.current_target_call else ''
             if logged_call and logged_call == current_upper:
-                print(f"[Auto-clear] Target cleared after logging {logged_call}")
+                logger.info(f"Auto-clear: Target cleared after logging {logged_call}")
                 self.clear_target()
 
     # --- v2.0.6: Sync to JTDX (suggested by KC0GU) ---
@@ -990,7 +1013,7 @@ class MainWindow(QMainWindow):
             return
         
         dx_call = self.jtdx_last_dx_call
-        print(f"[Sync] Syncing to JTDX target: {dx_call}")
+        logger.info(f"Sync: Syncing to JTDX target: {dx_call}")
         
         # Set target (same logic as on_status)
         self.dashboard.lbl_target.setText(dx_call)
@@ -1111,7 +1134,7 @@ class MainWindow(QMainWindow):
             
             # Also skip if it's the same as our current target (set via table click)
             if dx_call and dx_call == self.current_target_call:
-                print(f"[main_v2] UDP dx_call {dx_call} matches current target, skipping")
+                logger.debug(f"UDP dx_call {dx_call} matches current target, skipping")
                 return
             
             if dx_call:
@@ -1155,7 +1178,7 @@ class MainWindow(QMainWindow):
 
  
     def on_row_click(self, index):
-        print(f"[main_v2] on_row_click: row {index.row()}")
+        logger.debug(f"on_row_click: row {index.row()}")
         row = index.row()
         if row < len(self.model._data):
             data = self.model._data[row]
@@ -1166,7 +1189,7 @@ class MainWindow(QMainWindow):
             
             # Skip if clicking same target (avoid redundant processing)
             if target_call == self.current_target_call:
-                print(f"[main_v2] same target {target_call}, skipping")
+                logger.debug(f"Same target {target_call}, skipping")
                 return
             
             # --- STORE TARGET STATE FOR PERIODIC REFRESH ---
@@ -1393,7 +1416,7 @@ class MainWindow(QMainWindow):
                 if reply == QMessageBox.StandardButton.Yes:
                     webbrowser.open("https://github.com/wu2c-peter/qso-predictor/releases")
 
-    # --- v2.1.0: Startup Health Check ---
+    # --- v2.0.9: Startup Health Check ---
     def _start_health_check_timer(self):
         """Start a timer to check if data is being received after startup.
         
@@ -1522,16 +1545,44 @@ class MainWindow(QMainWindow):
         """Open the GitHub wiki in the default browser."""
         webbrowser.open("https://github.com/wu2c-peter/qso-predictor/wiki")
     
+    # v2.0.9: Debug logging menu handlers
+    def _toggle_debug_logging(self, checked):
+        """Toggle debug logging on/off.
+        
+        When enabled, verbose DEBUG level messages are written to log.
+        When disabled, only INFO and above are logged.
+        """
+        set_debug_mode(checked)
+        if checked:
+            logger.info("Debug logging enabled by user")
+            # Show confirmation with log file location
+            QMessageBox.information(
+                self,
+                "Debug Logging Enabled",
+                f"Verbose logging is now enabled.\n\n"
+                f"Log file location:\n{get_log_file_path()}\n\n"
+                f"Note: Debug logging will be disabled on next restart."
+            )
+        else:
+            logger.info("Debug logging disabled by user")
+    
+    def _open_log_folder(self):
+        """Open the log folder in system file browser."""
+        open_log_folder()
+        logger.info(f"Opened log folder: {get_log_file_path().parent}")
+    
     def show_about(self):
         """Show about dialog."""
         version = get_version()
         local_intel_status = "Enabled" if self.local_intel else "Not available"
+        log_path = str(get_log_file_path())
         QMessageBox.about(self, "About QSO Predictor",
             f"<h2>QSO Predictor v{version}</h2>"
             f"<p>Real-Time Tactical Assistant for FT8 & FT4</p>"
             f"<p>Copyright © 2025 Peter Hirst (WU2C)</p>"
             f"<p>Licensed under GNU GPL v3</p>"
             f"<p>Local Intelligence: {local_intel_status}</p>"
+            f"<p>Log file: <small>{log_path}</small></p>"
             f"<p><a href='https://github.com/wu2c-peter/qso-predictor'>GitHub Repository</a></p>"
         )
 
@@ -1551,7 +1602,7 @@ class MainWindow(QMainWindow):
             try:
                 self.local_intel.shutdown()
             except Exception as e:
-                print(f"Error shutting down Local Intelligence: {e}")
+                logger.error(f"Error shutting down Local Intelligence: {e}")
         
         self.analyzer.stop()
         self.udp.stop()

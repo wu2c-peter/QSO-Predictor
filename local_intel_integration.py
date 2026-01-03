@@ -154,7 +154,12 @@ class LocalIntelligence(QObject):
                 logger.info("Using Bayesian predictor with trained models")
             else:
                 self.predictor = None
-                logger.info("No trained models - using heuristic predictor")
+                # User-friendly message based on build type
+                import sys
+                if getattr(sys, 'frozen', False):
+                    logger.info("Using heuristic predictor (ML training not available in standalone build)")
+                else:
+                    logger.info("No trained models - using heuristic predictor")
             
             # Create insights panel
             self.insights_panel = InsightsPanel(

@@ -1,7 +1,7 @@
 # QSO Predictor
 # Copyright (C) 2025 Peter Hirst (WU2C)
 #
-# v2.1.0 New file: Startup health check dialog
+# v2.0.9 New file: Startup health check dialog
 # Shows helpful guidance when no data is detected after startup.
 # Feature added based on user feedback from Doug McDonald.
 
@@ -12,12 +12,15 @@ Shows a helpful popup if no data is detected after startup,
 guiding users through common configuration issues.
 """
 
+import logging
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QCheckBox, QFrame, QGroupBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
+
+logger = logging.getLogger(__name__)
 
 
 class StartupHealthDialog(QDialog):
@@ -162,11 +165,11 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     
     # Test with different states
-    print("Testing dialog with UDP=False, MQTT=True, Port=2237...")
+    logger.info("Testing dialog with UDP=False, MQTT=True, Port=2237...")
     dialog = StartupHealthDialog(udp_ok=False, mqtt_ok=True, configured_port=2237)
     result = dialog.exec()
     
-    print(f"Result: {result}")
-    print(f"Don't show again: {dialog.dont_show_again}")
+    logger.info(f"Result: {result}")
+    logger.info(f"Don't show again: {dialog.dont_show_again}")
     
     sys.exit(0)

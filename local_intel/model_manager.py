@@ -94,6 +94,7 @@ class ModelManager:
         self.models: Dict[str, Any] = {}
         self.metadata: Dict[str, ModelMetadata] = {}
         self._loaded = False
+        self._no_models_logged = False  # Track whether we've logged the "no models" message
     
     def ensure_directory(self):
         """Create model directory if it doesn't exist."""
@@ -120,7 +121,14 @@ class ModelManager:
         self.metadata.clear()
         
         if not self.model_dir.exists():
-            logger.info(f"Model directory does not exist: {self.model_dir}")
+            # Only log once, and make message user-friendly
+            if not self._no_models_logged:
+                import sys
+                if getattr(sys, 'frozen', False):
+                    logger.debug(f"ML models not available in standalone build (this is normal)")
+                else:
+                    logger.debug(f"Model directory does not exist: {self.model_dir}")
+                self._no_models_logged = True
             return False
         
         loaded_count = 0

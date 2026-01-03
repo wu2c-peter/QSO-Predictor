@@ -83,7 +83,7 @@ class SessionTracker:
             frequency: Target's TX frequency offset
         """
         callsign = callsign.upper()
-        print(f"[SessionTracker] set_target called: {callsign}")
+        logger.debug(f"SessionTracker: set_target called: {callsign}")
         
         # Reset TX tracking when target changes
         if not self.target_session or self.target_session.callsign != callsign:
@@ -104,9 +104,9 @@ class SessionTracker:
         # Check cache only - don't block UI with file scanning
         # Background scanner will fill in data for unknown stations
         if self._behavior_predictor.has_cached_history(callsign):
-            print(f"[SessionTracker] {callsign}: found in behavior cache")
+            logger.debug(f"SessionTracker: {callsign}: found in behavior cache")
         else:
-            print(f"[SessionTracker] {callsign}: not in cache, will observe live")
+            logger.debug(f"SessionTracker: {callsign}: not in cache, will observe live")
         
         logger.info(f"Target set: {callsign}")
     
@@ -124,9 +124,9 @@ class SessionTracker:
         # Only log on change
         if new_calling != self._calling_target or enabled != self._tx_enabled:
             if enabled and new_calling:
-                print(f"[TX] Calling {new_calling}")
+                logger.debug(f"TX: Calling {new_calling}")
             elif enabled:
-                print(f"[TX] CQing (not calling target)")
+                logger.debug(f"TX: CQing (not calling target)")
             # else: TX off, no log needed
         
         self._calling_target = new_calling
@@ -458,8 +458,14 @@ class SessionTracker:
             - Distribution of observed behaviors
         """
         if not self.target_session:
-            logger.debug("get_target_behavior: No target session")
+            # Only log state change, not every poll
+            if not hasattr(self, '_last_no_target_logged') or not self._last_no_target_logged:
+                logger.debug("get_target_behavior: No target session")
+                self._last_no_target_logged = True
             return None
+        
+        # Reset the flag when we have a target
+        self._last_no_target_logged = False
         
         session = self.target_session
         

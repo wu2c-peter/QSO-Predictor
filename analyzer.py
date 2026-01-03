@@ -1,10 +1,13 @@
 # QSO Predictor
-# Copyright (C) 2025 [Peter Hirst/WU2C]
+# Copyright (C) 2025 Peter Hirst (WU2C)
 
+import logging
 import threading
 import time
 from PyQt6.QtCore import QObject, pyqtSignal
 from mqtt_client import MQTTClient
+
+logger = logging.getLogger(__name__)
 
 class QSOAnalyzer(QObject):
     cache_updated = pyqtSignal()
@@ -580,7 +583,7 @@ class QSOAnalyzer(QObject):
                 
             except Exception as e:
                 # FIX v2.0.4: Log error but don't die - keep cleaning
-                print(f"[Maintenance] Error during cleanup: {e}")
+                logger.warning(f"Maintenance: Error during cleanup: {e}")
                 # Continue running - next iteration may succeed
     
     def _freq_to_band(self, freq):

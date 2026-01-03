@@ -1,11 +1,16 @@
 # QSO Predictor
-# Copyright (C) 2025 [Peter Hirst/WU2C]
+# Copyright (C) 2025 Peter Hirst (WU2C)
 
+import logging
 import sys
 import subprocess
 import importlib.util
 import os
 import traceback
+
+# Simple logging for launcher (runs before main app)
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+logger = logging.getLogger(__name__)
 
 # --- ADDED: paho (for MQTT) ---
 REQUIRED_PACKAGES = [
@@ -16,8 +21,8 @@ REQUIRED_PACKAGES = [
 ]
 
 def check_and_install():
-    print("--- QSO Predictor Launcher ---")
-    print("Checking system dependencies...")
+    logger.info("--- QSO Predictor Launcher ---")
+    logger.info("Checking system dependencies...")
     
     for package, import_name in REQUIRED_PACKAGES:
         # Check if installed
@@ -27,44 +32,44 @@ def check_and_install():
             spec = None
             
         if spec is None:
-            print(f" [ MISSING ] {package} not found. Installing...")
+            logger.info(f" [ MISSING ] {package} not found. Installing...")
             try:
                 # Install via pip
                 subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                print(f" [ INSTALLED ] {package} installed successfully.")
+                logger.info(f" [ INSTALLED ] {package} installed successfully.")
             except subprocess.CalledProcessError as e:
-                print(f" [ ERROR ] Failed to install {package}.")
-                print(f" Error details: {e}")
+                logger.error(f" [ ERROR ] Failed to install {package}.")
+                logger.error(f" Error details: {e}")
                 return False
             except Exception as e:
-                print(f" [ ERROR ] Unexpected error installing {package}: {e}")
+                logger.error(f" [ ERROR ] Unexpected error installing {package}: {e}")
                 return False
         else:
-            print(f" [ OK ] {package} is ready.")
+            logger.info(f" [ OK ] {package} is ready.")
     
-    print("Dependencies OK.\n")
+    logger.info("Dependencies OK.\n")
     return True
 
 def launch_app():
-    print("Launching main.py...")
+    logger.info("Launching main.py...")
     if not os.path.exists("main.py"):
-        print(" [ ERROR ] main.py not found in this folder!")
+        logger.error(" [ ERROR ] main.py not found in this folder!")
         return
 
     try:
         # Run main.py
         result = subprocess.run([sys.executable, "main.py"])
         if result.returncode != 0:
-            print(f"Application exited with error code: {result.returncode}")
+            logger.warning(f"Application exited with error code: {result.returncode}")
     except Exception as e:
-        print(f"Failed to launch main.py: {e}")
+        logger.error(f"Failed to launch main.py: {e}")
 
 if __name__ == "__main__":
     try:
         if check_and_install():
             launch_app()
     except Exception:
-        print("\nCRITICAL LAUNCHER CRASH:")
+        logger.critical("\nCRITICAL LAUNCHER CRASH:")
         traceback.print_exc()
     
     print("\n------------------------------------------------")

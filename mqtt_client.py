@@ -1,10 +1,18 @@
 # QSO Predictor
-# Copyright (C) 2025 [Peter Hirst/WU2C]
+# Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.0.9 Changes:
+# - Added: Proper logging throughout
+# - Added: Periodic spot rate logging (every 60s) instead of per-spot
 
 import json
+import logging
 import time
 import paho.mqtt.client as mqtt
 from PyQt6.QtCore import QObject, pyqtSignal
+
+logger = logging.getLogger(__name__)
+
 
 class MQTTClient(QObject):
     spot_received = pyqtSignal(dict)
@@ -26,27 +34,49 @@ class MQTTClient(QObject):
         self.my_call = "N0CALL"
         self.current_band = "20m"
         self.running = False
+        
+        # Track statistics for diagnostics and periodic logging
+        self._spots_received = 0
+        self._spots_since_last_log = 0
+        self._last_spot_time = None
+        self._last_stats_log_time = None
+        self._stats_log_interval = 60  # Log spot rate every 60 seconds
+        
+        logger.debug(f"MQTT: Client initialized, broker={self.broker}:{self.port}")
 
     def start(self):
-        if self.running: return
+        if self.running: 
+            logger.debug("MQTT: Already running, ignoring start()")
+            return
         self.running = True
         try:
+            logger.info(f"MQTT: Connecting to {self.broker}:{self.port}")
             self.status_message.emit("Connecting to Live Feed...")
             self.client.connect_async(self.broker, self.port, 60)
             self.client.loop_start()
         except Exception as e:
+            logger.error(f"MQTT: Connection error - {e}")
             self.status_message.emit(f"MQTT Error: {e}")
 
     def stop(self):
+        logger.info(f"MQTT: Stopping client (total spots received: {self._spots_received})")
         self.running = False
         try:
             self.client.loop_stop()
             self.client.disconnect()
-        except: pass
+            logger.info("MQTT: Client stopped")
+        except Exception as e:
+            logger.debug(f"MQTT: Error during stop: {e}")
 
     def update_subscriptions(self, my_call, freq_hz):
+        old_call = self.my_call
+        old_band = self.current_band
+        
         self.my_call = my_call.upper()  # Normalize stored callsign
         self.current_band = self._freq_to_band(freq_hz)
+        
+        if old_call != self.my_call or old_band != self.current_band:
+            logger.info(f"MQTT: Subscription update - call={self.my_call}, band={self.current_band}")
         
         if self.client.is_connected():
             self._subscribe()
@@ -61,24 +91,31 @@ class MQTTClient(QObject):
         try:
             self.client.unsubscribe("#") 
             self.client.subscribe([(topic_band, 0), (topic_me, 0)])
+            logger.info(f"MQTT: Subscribed to {topic_band} and {topic_me}")
             self.status_message.emit(f"Live: {self.current_band} + {self.my_call}")
-        except: pass
+        except Exception as e:
+            logger.error(f"MQTT: Subscribe error - {e}")
 
     def on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
+            logger.info("MQTT: Connected to PSK Reporter")
             self.status_message.emit("Connected to PSK Reporter MQTT")
             self._subscribe()
         else:
+            logger.warning(f"MQTT: Connection failed with code {rc}")
             self.status_message.emit(f"MQTT Connection Failed: {rc}")
 
     def on_disconnect(self, client, userdata, flags, rc, properties=None):
+        logger.warning(f"MQTT: Disconnected (rc={rc}, total spots received: {self._spots_received})")
         self.status_message.emit("Live Feed Disconnected")
         # FIX v2.0.4: Auto-reconnect on unexpected disconnect
         if self.running and rc != 0:  # rc=0 means clean disconnect
+            logger.info("MQTT: Unexpected disconnect, attempting reconnect...")
             self.status_message.emit("Attempting reconnect...")
             try:
                 self.client.reconnect()
             except Exception as e:
+                logger.warning(f"MQTT: Reconnect failed - {e} - will retry")
                 self.status_message.emit(f"Reconnect failed: {e} - will retry")
 
     def on_message(self, client, userdata, msg):
@@ -102,8 +139,31 @@ class MQTTClient(QObject):
                 'grid': data.get('rl', '').upper(),
                 'time': spot_time  # Now guaranteed to be valid
             }
+            
+            self._spots_received += 1
+            self._spots_since_last_log += 1
+            self._last_spot_time = time.time()
+            
+            # Log first spot to confirm data is flowing
+            if self._spots_received == 1:
+                logger.info(f"MQTT: First spot received - {spot['sender']} -> {spot['receiver']} {spot['snr']}dB")
+                logger.info("MQTT: Spots are flowing (individual spots not logged to reduce verbosity)")
+            
+            # Periodic stats logging (every 60 seconds when debug enabled)
+            now = time.time()
+            if self._last_stats_log_time is None:
+                self._last_stats_log_time = now
+            elif now - self._last_stats_log_time >= self._stats_log_interval:
+                rate = self._spots_since_last_log / (now - self._last_stats_log_time) * 60
+                logger.debug(f"MQTT: Spot rate: {rate:.1f}/min (total: {self._spots_received})")
+                self._spots_since_last_log = 0
+                self._last_stats_log_time = now
+            
             self.spot_received.emit(spot)
-        except: pass
+        except json.JSONDecodeError as e:
+            logger.debug(f"MQTT: JSON decode error - {e}")
+        except Exception as e:
+            logger.debug(f"MQTT: Message processing error - {e}")
 
     def _freq_to_band(self, freq):
         f = freq / 1_000_000
@@ -119,3 +179,16 @@ class MQTTClient(QObject):
         if 28.0 <= f <= 29.7: return "10m"
         if 50.0 <= f <= 54.0: return "6m"
         return "20m"
+    
+    def get_diagnostics(self) -> dict:
+        """Return diagnostic information about MQTT status."""
+        return {
+            'broker': self.broker,
+            'port': self.port,
+            'running': self.running,
+            'connected': self.client.is_connected() if self.client else False,
+            'my_call': self.my_call,
+            'current_band': self.current_band,
+            'spots_received': self._spots_received,
+            'last_spot_age': (time.time() - self._last_spot_time) if self._last_spot_time else None,
+        }

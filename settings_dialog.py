@@ -1,5 +1,5 @@
 # QSO Predictor
-# Copyright (C) 2025 [Peter Hirst/WU2C]
+# Copyright (C) 2025 Peter Hirst (WU2C)
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -11,12 +11,14 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
-
+import logging
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QTabWidget, QWidget, 
                              QFormLayout, QMessageBox, QComboBox, QGroupBox,
                              QSpinBox)
 from PyQt6.QtCore import Qt
+
+logger = logging.getLogger(__name__)
 
 
 # Common UDP configurations

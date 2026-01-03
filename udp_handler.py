@@ -1,17 +1,24 @@
 # QSO Predictor
 # Copyright (C) 2025 Peter Hirst (WU2C)
 #
-# v2.1.0 Changes:
+# v2.0.9 Changes:
+# - Added: Proper logging throughout (replacing print statements)
+# - Added: Periodic stats logging instead of per-packet logging
 # - Added: messages_received counter for startup health check
 #
 # v2.0.3 Changes:
 # - Added: QSO Logged message handling (Type 5) for auto-clear feature
 #   (suggested by KC0GU)
 
+import logging
 import socket
 import struct
 import threading
+import time
 from PyQt6.QtCore import QObject, pyqtSignal
+
+logger = logging.getLogger(__name__)
+
 
 class UDPHandler(QObject):
     new_decode = pyqtSignal(dict)
@@ -27,8 +34,17 @@ class UDPHandler(QObject):
         self.running = False
         self.is_multicast = self._is_multicast_address(self.ip)
         
-        # v2.1.0: Track message count for startup health check
+        # v2.0.9: Track statistics for logging and diagnostics
         self.messages_received = 0
+        self._decodes_received = 0
+        self._status_received = 0
+        self._first_decode_logged = False
+        self._first_status_logged = False
+        self._last_stats_log_time = None
+        self._stats_log_interval = 60  # Log stats every 60 seconds
+        
+        # Track last received time for diagnostics
+        self._last_packet_time = None
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -41,13 +57,14 @@ class UDPHandler(QObject):
                 # Join the multicast group
                 mreq = struct.pack("4sl", socket.inet_aton(self.ip), socket.INADDR_ANY)
                 self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                print(f"UDP Multicast joined {self.ip}:{self.port}")
+                logger.info(f"UDP: Multicast joined {self.ip}:{self.port}")
             else:
                 # Standard unicast
                 self.sock.bind(('0.0.0.0', self.port))
-                print(f"UDP Bound to {self.port}")
+                logger.info(f"UDP: Bound to port {self.port}")
         except Exception as e:
-            print(f"UDP Bind Error: {e}")
+            logger.error(f"UDP: Bind error - {e}")
+            raise
     
     def _is_multicast_address(self, ip: str) -> bool:
         """Check if IP is in multicast range (224.0.0.0 - 239.255.255.255)"""
@@ -64,44 +81,67 @@ class UDPHandler(QObject):
         self.running = True
         self.thread = threading.Thread(target=self._listen_loop, daemon=True)
         self.thread.start()
+        logger.info("UDP: Listener thread started")
 
     def stop(self):
+        logger.info(f"UDP: Stopping listener (total: {self.messages_received} packets, {self._decodes_received} decodes, {self._status_received} status)")
         self.running = False
         try:
             if self.is_multicast:
                 # Leave multicast group
                 mreq = struct.pack("4sl", socket.inet_aton(self.ip), socket.INADDR_ANY)
                 self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq)
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"UDP: Error leaving multicast group: {e}")
         try: 
             self.sock.close()
-        except: 
-            pass
+        except Exception as e:
+            logger.debug(f"UDP: Error closing socket: {e}")
+        logger.info("UDP: Listener stopped")
 
     def _listen_loop(self):
+        logger.debug("UDP: Listen loop started")
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(4096)
+                self._last_packet_time = time.time()
                 self._forward_packet(data)
                 self._parse_packet(data)
-            except OSError: break
-            except Exception: pass
+                self._periodic_stats_log()
+            except OSError as e:
+                if self.running:
+                    logger.warning(f"UDP: Socket error in listen loop: {e}")
+                break
+            except Exception as e:
+                logger.debug(f"UDP: Exception in listen loop: {e}")
+    
+    def _periodic_stats_log(self):
+        """Log periodic stats summary instead of per-packet logging."""
+        now = time.time()
+        if self._last_stats_log_time is None:
+            self._last_stats_log_time = now
+        elif now - self._last_stats_log_time >= self._stats_log_interval:
+            logger.debug(f"UDP: Stats - {self._decodes_received} decodes, {self._status_received} status updates total")
+            self._last_stats_log_time = now
 
     def _forward_packet(self, data):
         for port in self.forward_ports:
-            try: self.sock.sendto(data, ('127.0.0.1', port))
-            except: pass
+            try: 
+                self.sock.sendto(data, ('127.0.0.1', port))
+            except Exception as e:
+                logger.debug(f"UDP: Forward to port {port} failed: {e}")
 
     def _parse_packet(self, data):
-        if len(data) < 12: return
+        if len(data) < 12: 
+            return
         
-        # v2.1.0: Count all valid packets for health check
+        # Count all valid packets for health check
         self.messages_received += 1
 
         # Check Magic Number
         magic = struct.unpack('>I', data[0:4])[0]
-        if magic != 2914763738 and magic != 2914831322: return
+        if magic != 2914763738 and magic != 2914831322: 
+            return
 
         try:
             # Message Type
@@ -113,11 +153,8 @@ class UDPHandler(QObject):
                 self._process_decode(data)
             elif msg_type == 5:  # v2.0.3: QSO Logged
                 self._process_qso_logged(data)
-            # Debug: uncomment to see all message types
-            # else:
-            #     print(f"[UDP] Message type {msg_type} (ignored)")
         except Exception as e:
-            print(f"Header Error: {e}")
+            logger.warning(f"UDP: Header parse error: {e}")
 
     def _read_utf8(self, data, idx):
         """Reads a WSJT-X style UTF-8 string (Length + Bytes)"""
@@ -174,6 +211,14 @@ class UDPHandler(QObject):
             if idx + 4 <= len(data):
                 tx_df = struct.unpack('>I', data[idx:idx+4])[0]
 
+                self._status_received += 1
+                
+                # Log first status to confirm data is flowing
+                if not self._first_status_logged:
+                    logger.info(f"UDP: First status received - freq={dial_freq}, dx_call={dx_call or '(none)'}")
+                    logger.info("UDP: Status updates flowing (not logged individually)")
+                    self._first_status_logged = True
+                
                 # Emit the update!
                 self.status_update.emit({
                     'dial_freq': dial_freq,
@@ -182,9 +227,8 @@ class UDPHandler(QObject):
                     'tx_enabled': tx_enabled,
                     'transmitting': transmitting,
                 })
-        except Exception:
-            # Silently fail on bad packet, but don't crash thread
-            pass
+        except Exception as e:
+            logger.debug(f"UDP: Status parse error: {e}")
 
     def _process_decode(self, data):
         idx = 12
@@ -244,13 +288,21 @@ class UDPHandler(QObject):
             call = call.strip('<>')
             # ---------------------
 
+            self._decodes_received += 1
+            
+            # Log first decode to confirm data is flowing
+            if not self._first_decode_logged:
+                logger.info(f"UDP: First decode received - {time_str} {call} {snr}dB {freq}Hz")
+                logger.info("UDP: Decodes flowing (not logged individually)")
+                self._first_decode_logged = True
+            
             self.new_decode.emit({
                 'time': time_str, 'snr': snr, 'dt': round(dt, 1),
                 'freq': freq, 'mode': mode, 'message': message,
                 'call': call, 'grid': grid
             })
         except Exception as e:
-            print(f"Decode Error: {e}")
+            logger.warning(f"UDP: Decode parse error: {e}")
 
     def _process_qso_logged(self, data):
         """Process WSJT-X QSO Logged message (Type 5).
@@ -290,15 +342,35 @@ class UDPHandler(QObject):
                             # Found valid callsign!
                             dx_call = test_call
                             dx_grid, _ = self._read_utf8(data, next_idx)
+                            logger.debug(f"UDP: QSO Logged parsed with QDateTime size {qdatetime_size}")
                             break
             
             # Emit the signal
             if dx_call:
-                print(f"[QSO Logged] {dx_call} ({dx_grid})")
+                logger.info(f"UDP: QSO Logged - {dx_call} ({dx_grid})")
                 self.qso_logged.emit({
                     'dx_call': dx_call.upper(),
                     'dx_grid': dx_grid or '',
                 })
+            else:
+                logger.warning(f"UDP: QSO Logged - could not parse callsign from {len(data)} byte packet")
                 
         except Exception as e:
-            print(f"[UDP] QSO Logged parse error: {e}")
+            logger.warning(f"UDP: QSO Logged parse error: {e}")
+    
+    def get_diagnostics(self) -> dict:
+        """Return diagnostic information about UDP status.
+        
+        Useful for troubleshooting connection issues.
+        """
+        return {
+            'port': self.port,
+            'ip': self.ip,
+            'is_multicast': self.is_multicast,
+            'running': self.running,
+            'messages_received': self.messages_received,
+            'decodes_received': self._decodes_received,
+            'status_received': self._status_received,
+            'last_packet_age': (time.time() - self._last_packet_time) if self._last_packet_time else None,
+            'forward_ports': self.forward_ports,
+        }

@@ -1,16 +1,19 @@
 # QSO Predictor
-# Copyright (C) 2025 [Peter Hirst/WU2C]
+# Copyright (C) 2025 Peter Hirst (WU2C)
 #
 # Performance optimized version (v2.0.5)
 # - Timer reduced from 50ms to 250ms (20Hz -> 4Hz)
 # - Changed repaint() to update() for Qt batching
 # - Cached all paint objects (QColor, QFont, QPen, QBrush) to avoid per-frame allocation
 
+import logging
 import numpy as np
 import time
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRectF
+
+logger = logging.getLogger(__name__)
 
 class BandMapWidget(QWidget):
     recommendation_changed = pyqtSignal(int)
