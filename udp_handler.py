@@ -60,11 +60,11 @@ class UDPHandler(QObject):
         if platform.system() == 'Windows':
             try:
                 # SIO_UDP_CONNRESET - Windows IOCTL to disable connection reset errors
-                # Value must be signed 32-bit: -1744830452 (or 0x9800000C as unsigned)
-                SIO_UDP_CONNRESET = -1744830452
-                self.sock.ioctl(SIO_UDP_CONNRESET, False)
+                # Must use struct.pack for the value parameter
+                SIO_UDP_CONNRESET = struct.unpack('i', struct.pack('I', 0x9800000C))[0]
+                self.sock.ioctl(SIO_UDP_CONNRESET, struct.pack('I', 0))
                 logger.debug("UDP: Disabled Windows ICMP connection reset errors")
-            except (AttributeError, OSError) as e:
+            except (AttributeError, OSError, ValueError) as e:
                 logger.debug(f"UDP: Could not disable ICMP errors (non-critical): {e}")
         
         try:
