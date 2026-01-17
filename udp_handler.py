@@ -33,6 +33,12 @@ class UDPHandler(QObject):
         # Support multicast address configuration
         self.ip = config.get('NETWORK', 'udp_ip', fallback='0.0.0.0')
         self.forward_ports = config.get_forward_ports()
+        
+        # Filter out self-forwarding at init time (not per-packet)
+        if self.port in self.forward_ports:
+            logger.warning(f"UDP: Removed self-forward to port {self.port} (same as listen port)")
+            self.forward_ports = [p for p in self.forward_ports if p != self.port]
+        
         self.running = False
         self.is_multicast = self._is_multicast_address(self.ip)
         
@@ -159,13 +165,6 @@ class UDPHandler(QObject):
     def _forward_packet(self, data):
         """Forward packet to configured ports, handling errors gracefully."""
         for port in self.forward_ports:
-            # Safety check: don't forward to our own listen port (would cause loop)
-            if port == self.port:
-                if port not in self._forward_errors_logged:
-                    logger.warning(f"UDP: Skipping forward to own port {port} (would cause loop)")
-                    self._forward_errors_logged.add(port)
-                continue
-                
             try: 
                 self.sock.sendto(data, ('127.0.0.1', port))
             except OSError as e:

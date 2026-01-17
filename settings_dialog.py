@@ -235,6 +235,30 @@ class SettingsDialog(QDialog):
                     self.preset_combo.blockSignals(False)
 
     def save_settings(self):
+        # Validate forward ports before saving
+        listen_port = self.inp_port.value()
+        forward_text = self.inp_fwd.text().strip()
+        
+        if forward_text:
+            try:
+                forward_ports = [int(p.strip()) for p in forward_text.split(',') if p.strip()]
+                if listen_port in forward_ports:
+                    QMessageBox.warning(
+                        self, 
+                        "Invalid Configuration",
+                        f"Forward port cannot be the same as listen port ({listen_port}).\n\n"
+                        "This would create a packet loop."
+                    )
+                    return  # Don't save, keep dialog open
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Forward Ports",
+                    "Forward ports must be comma-separated numbers.\n\n"
+                    "Example: 2238,2239"
+                )
+                return  # Don't save, keep dialog open
+        
         self.config.save_setting('ANALYSIS', 'my_callsign', self.inp_call.text().upper())
         self.config.save_setting('ANALYSIS', 'my_grid', self.inp_grid.text().upper())
         self.config.save_setting('NETWORK', 'udp_ip', self.inp_ip.text())
