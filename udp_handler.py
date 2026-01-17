@@ -54,13 +54,14 @@ class UDPHandler(QObject):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
-        # v2.0.9: On Windows, disable ICMP "port unreachable" errors from killing the socket
+        # v2.0.10: On Windows, disable ICMP "port unreachable" errors from killing the socket
         # This is critical for UDP forwarding to work reliably
         # See: https://stackoverflow.com/questions/34242622/windows-udp-sockets-recvfrom-fails-with-error-10054
         if platform.system() == 'Windows':
             try:
-                # SIO_UDP_CONNRESET = 0x9800000C (Windows IOCTL to disable connection reset errors)
-                SIO_UDP_CONNRESET = 0x9800000C
+                # SIO_UDP_CONNRESET - Windows IOCTL to disable connection reset errors
+                # Value must be signed 32-bit: -1744830452 (or 0x9800000C as unsigned)
+                SIO_UDP_CONNRESET = -1744830452
                 self.sock.ioctl(SIO_UDP_CONNRESET, False)
                 logger.debug("UDP: Disabled Windows ICMP connection reset errors")
             except (AttributeError, OSError) as e:
