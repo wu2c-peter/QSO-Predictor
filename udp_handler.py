@@ -5,12 +5,14 @@
 # - Added: Proper logging throughout (replacing print statements)
 # - Added: Periodic stats logging instead of per-packet logging
 # - Added: messages_received counter for startup health check
+# - Fixed: Windows 10054 error when forwarding to closed port (SIO_UDP_CONNRESET)
 #
 # v2.0.3 Changes:
 # - Added: QSO Logged message handling (Type 5) for auto-clear feature
 #   (suggested by KC0GU)
 
 import logging
+import platform
 import socket
 import struct
 import threading
@@ -45,9 +47,24 @@ class UDPHandler(QObject):
         
         # Track last received time for diagnostics
         self._last_packet_time = None
+        
+        # Track forward errors to avoid log spam
+        self._forward_errors_logged = set()
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        
+        # v2.0.9: On Windows, disable ICMP "port unreachable" errors from killing the socket
+        # This is critical for UDP forwarding to work reliably
+        # See: https://stackoverflow.com/questions/34242622/windows-udp-sockets-recvfrom-fails-with-error-10054
+        if platform.system() == 'Windows':
+            try:
+                # SIO_UDP_CONNRESET = 0x9800000C (Windows IOCTL to disable connection reset errors)
+                SIO_UDP_CONNRESET = 0x9800000C
+                self.sock.ioctl(SIO_UDP_CONNRESET, False)
+                logger.debug("UDP: Disabled Windows ICMP connection reset errors")
+            except (AttributeError, OSError) as e:
+                logger.debug(f"UDP: Could not disable ICMP errors (non-critical): {e}")
         
         try:
             if self.is_multicast:
@@ -62,6 +79,11 @@ class UDPHandler(QObject):
                 # Standard unicast
                 self.sock.bind(('0.0.0.0', self.port))
                 logger.info(f"UDP: Bound to port {self.port}")
+                
+            # Log forward ports if configured
+            if self.forward_ports:
+                logger.info(f"UDP: Forwarding enabled to ports: {self.forward_ports}")
+                
         except Exception as e:
             logger.error(f"UDP: Bind error - {e}")
             raise
@@ -110,8 +132,17 @@ class UDPHandler(QObject):
                 self._periodic_stats_log()
             except OSError as e:
                 if self.running:
-                    logger.warning(f"UDP: Socket error in listen loop: {e}")
-                break
+                    # Check for Windows ICMP errors that we can safely ignore
+                    error_code = getattr(e, 'winerror', None) or getattr(e, 'errno', None)
+                    if error_code == 10054:
+                        # WSAECONNRESET - "Connection reset by remote host"
+                        # This happens on Windows when forwarding to a closed port
+                        # The SIO_UDP_CONNRESET ioctl should prevent this, but just in case...
+                        logger.debug("UDP: Ignoring Windows ICMP connection reset (forward target may be closed)")
+                        continue  # Don't break - keep listening!
+                    else:
+                        logger.warning(f"UDP: Socket error in listen loop: {e}")
+                        break
             except Exception as e:
                 logger.debug(f"UDP: Exception in listen loop: {e}")
     
@@ -125,11 +156,30 @@ class UDPHandler(QObject):
             self._last_stats_log_time = now
 
     def _forward_packet(self, data):
+        """Forward packet to configured ports, handling errors gracefully."""
         for port in self.forward_ports:
+            # Safety check: don't forward to our own listen port (would cause loop)
+            if port == self.port:
+                if port not in self._forward_errors_logged:
+                    logger.warning(f"UDP: Skipping forward to own port {port} (would cause loop)")
+                    self._forward_errors_logged.add(port)
+                continue
+                
             try: 
                 self.sock.sendto(data, ('127.0.0.1', port))
+            except OSError as e:
+                # Log each port's error only once to avoid spam
+                if port not in self._forward_errors_logged:
+                    error_code = getattr(e, 'winerror', None) or getattr(e, 'errno', None)
+                    if error_code == 10054:
+                        logger.info(f"UDP: Forward to port {port} - target not listening (will retry silently)")
+                    else:
+                        logger.warning(f"UDP: Forward to port {port} failed: {e}")
+                    self._forward_errors_logged.add(port)
             except Exception as e:
-                logger.debug(f"UDP: Forward to port {port} failed: {e}")
+                if port not in self._forward_errors_logged:
+                    logger.debug(f"UDP: Forward to port {port} failed: {e}")
+                    self._forward_errors_logged.add(port)
 
     def _parse_packet(self, data):
         if len(data) < 12: 
@@ -373,4 +423,5 @@ class UDPHandler(QObject):
             'status_received': self._status_received,
             'last_packet_age': (time.time() - self._last_packet_time) if self._last_packet_time else None,
             'forward_ports': self.forward_ports,
+            'forward_errors': list(self._forward_errors_logged),
         }

@@ -118,6 +118,107 @@ QSO Predictor shows you the "view from the other end" — what the DX station is
 
 ## Version History
 
+# README Updates for v2.0.10
+
+## Instructions
+Apply these changes to your existing README.md
+
+---
+
+## 1. Update Version Badge
+
+**Find:**
+```markdown
+[![Version](https://img.shields.io/badge/version-2.0.9-blue.svg)]
+```
+
+**Replace with:**
+```markdown
+[![Version](https://img.shields.io/badge/version-2.0.10-blue.svg)]
+```
+
+---
+
+## 2. Update "What's New" Section
+
+**Replace existing "What's New" section with:**
+
+```markdown
+## 🆕 What's New in v2.0.10
+
+### Bug Fixes
+- **Fixed:** Windows UDP socket dying when forwarding to closed port (Error 10054)
+- **Fixed:** Self-forward detection prevents accidental configuration loops
+
+### Improvements  
+- Forward errors now logged once per port (no more log spam)
+- Forward port configuration shown in startup log for easier debugging
+- Better diagnostic information in logs
+
+### Note
+If using UDP forwarding (e.g., to GridTracker), the forward target no longer needs to be running before QSO Predictor starts.
+```
+
+---
+
+## 3. Add to Version History Section
+
+**Add this entry at the top of your Version History:**
+
+```markdown
+### v2.0.10 (January 2025)
+- **Fixed:** Windows UDP socket dying when forwarding to closed port (Error 10054)
+- **Fixed:** Self-forward detection prevents accidental loops
+- **Improved:** Forward errors logged once per port instead of spamming
+- **Improved:** Forward port configuration shown in startup log
+- **Thanks:** Brian KB1OPD for detailed bug report and logs
+
+### v2.0.9 (January 2025)
+- **New:** Centralized logging system for debugging
+- **New:** Help menu items: Enable Debug Logging, Open Log Folder
+- **New:** About dialog shows log file path
+- **Fixed:** Reduced log verbosity (smart "log first, then summarize" pattern)
+- **Technical:** 27 files converted from print() to logging framework
+```
+
+---
+
+## 4. Update Troubleshooting Section
+
+**Add to the Troubleshooting section:**
+
+```markdown
+### UDP Forwarding Issues (Windows)
+If you're forwarding UDP to another application (GridTracker, JTAlert, etc.):
+- The forward target no longer needs to be running first
+- Check the log for: "UDP: Forwarding enabled to ports: [...]"
+- If you see "Forward to port X - target not listening", that's normal when the target app isn't running
+```
+
+---
+
+## Commit Message for v2.0.10
+
+```
+v2.0.10: Fix Windows UDP forwarding error 10054
+
+BUG FIX:
+- Fixed Windows-specific issue where forwarding UDP packets to a closed
+  port would kill the entire UDP listener (WinError 10054)
+- Applied SIO_UDP_CONNRESET ioctl to disable ICMP error reporting
+- Added fallback to catch and ignore error 10054 if ioctl fails
+
+IMPROVEMENTS:
+- Self-forward detection prevents accidental loops (forward port = listen port)
+- Forward errors logged once per port to avoid log spam
+- Forward port configuration shown at startup for easier debugging
+
+Thanks to Brian KB1OPD for the detailed log that identified this issue.
+
+73 de WU2C
+```
+
+
 ### v2.0.8 (December 2025)
 - Fixed: Bootstrap timeout with large log files (background processing)
 - Added: Background scanner for incremental log file processing
