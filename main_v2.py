@@ -1,5 +1,12 @@
-# QSO Predictor v2.0.8
+# QSO Predictor v2.1.0
 # Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.1.0 Changes:
+# - Added: Target View as undockable panel (Dashboard + Band Map)
+# - Added: Local Intelligence as undockable panel (right side, full height)
+# - Added: View menu with panel toggles and Reset Layout option
+# - Fixed: Right dock (Local Intel) no longer pushes down band map (setCorner fix)
+# - Changed: Decode table uses less vertical space by default
 #
 # v2.0.8 Changes:
 # - Added: Background scanner for incremental log file processing
@@ -57,7 +64,7 @@ setup_logging(console=True, file=True)
 
 logger = logging.getLogger(__name__)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QTableView, QLabel, QHeaderView, QSplitter, 
+                             QTableView, QLabel, QHeaderView, QDockWidget,
                              QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu, QToolBar, QPushButton, QCheckBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
@@ -372,6 +379,7 @@ class TargetDashboard(QFrame):
         """
         self.lbl_rec.setText(html_text)
 
+
 # --- MODEL: DECODE TABLE ---
 class DecodeTableModel(QAbstractTableModel):
     def __init__(self, headers, config):
@@ -628,13 +636,25 @@ class MainWindow(QMainWindow):
     update_check_signal = pyqtSignal(str, bool)  # (version_or_status, was_manual)
 
     def init_ui(self):
+        # --- v2.1.0: DOCK LAYOUT ---
+        # Central widget: Decode Table (with info bar and toolbar)
+        # Bottom dock: Target View (Dashboard + Band Map) - can undock
+        # Right dock: Local Intelligence - can undock, spans full height
+        #
+        # setCorner: Right dock owns the corners, so it spans full height
+        # and the bottom dock (Target View) only spans left of it.
+        # This prevents Local Intel from pushing down the band map.
+        
+        self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+        self.setCorner(Qt.Corner.TopRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+        
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
         main_layout.setContentsMargins(0,0,0,0)
         main_layout.setSpacing(0)
         
-        # 1. Info Bar (now clickable for updates)
+        # 1. Info Bar (clickable for updates)
         self.info_bar = ClickableLabel("Waiting for WSJT-X...")
         self.info_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.info_bar.setFixedHeight(25) 
@@ -708,10 +728,7 @@ class MainWindow(QMainWindow):
         
         self.addToolBar(toolbar)
         
-        # --- SPLITTER START ---
-        self.splitter = QSplitter(Qt.Orientation.Vertical)
-        
-        # 1. TOP: Table View
+        # --- DECODE TABLE (Central Widget) ---
         cols = ["UTC", "dB", "DT", "Freq", "Call", "Grid", "Message", "Prob %", "Path"]
         self.model = DecodeTableModel(cols, self.config)
         self.table_view = QTableView()
@@ -745,49 +762,45 @@ class MainWindow(QMainWindow):
         self.table_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table_view.horizontalHeader().setStretchLastSection(True)
-        
-        # --- FIX: ENABLE SORTING ---
-        # Note: setSortingEnabled causes re-sort on every data change
-        # We'll handle sorting manually on header click only
         self.table_view.setSortingEnabled(True)
         self.table_view.horizontalHeader().setSortIndicatorShown(True)
-        # Prevent constant re-sorting by using a proxy model approach later
-        # For now, this works but may re-sort on updates
-        
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.clicked.connect(self.on_row_click)
         
         # --- v2.0.3: Restore column widths ---
         self._restore_column_widths()
         
-        self.splitter.addWidget(self.table_view)
+        # Table is the central content
+        main_layout.addWidget(self.table_view)
         
-        # 2. BOTTOM: Container for Dashboard + Map
-        bottom_container = QWidget()
-        bottom_layout = QVBoxLayout(bottom_container)
-        bottom_layout.setContentsMargins(0,0,0,0)
-        bottom_layout.setSpacing(0)
+        # --- TARGET VIEW DOCK (Dashboard + Band Map) ---
+        self.target_dock = QDockWidget("Target View", self)
+        self.target_dock.setObjectName("target_dock")
+        
+        # Container for Dashboard + Band Map
+        target_container = QWidget()
+        target_container.setMinimumHeight(350)  # Ensure band map gets enough space
+        target_layout = QVBoxLayout(target_container)
+        target_layout.setContentsMargins(0, 0, 0, 0)
+        target_layout.setSpacing(0)
         
         # Dashboard
         self.dashboard = TargetDashboard()
         self.dashboard.sync_requested.connect(self.sync_to_jtdx)  # v2.0.6
-        bottom_layout.addWidget(self.dashboard)
+        target_layout.addWidget(self.dashboard)
         
         # Band Map
         self.band_map = BandMapWidget()
         self.band_map.recommendation_changed.connect(self.on_recommendation)
-        bottom_layout.addWidget(self.band_map)
+        target_layout.addWidget(self.band_map)
         
-        self.splitter.addWidget(bottom_container)
-        self.splitter.setStretchFactor(0, 3)
-        self.splitter.setStretchFactor(1, 1)
-        
-        # --- v2.0.6: Restore splitter position ---
-        splitter_state = self.config.get('WINDOW', 'splitter_state')
-        if splitter_state:
-            self.splitter.restoreState(QByteArray.fromHex(splitter_state.encode()))
-        
-        main_layout.addWidget(self.splitter)
+        self.target_dock.setWidget(target_container)
+        self.target_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable |
+            QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.target_dock)
         
         # Menu
         menu = self.menuBar()
@@ -819,6 +832,22 @@ class MainWindow(QMainWindow):
         sync_jtdx_action.setShortcut(QKeySequence("Ctrl+Y"))
         sync_jtdx_action.triggered.connect(self.sync_to_jtdx)
         edit_menu.addAction(sync_jtdx_action)
+        
+        # --- v2.1.0: VIEW MENU ---
+        view_menu = menu.addMenu("View")
+        
+        # Panel visibility toggles - both docks work the same way
+        view_menu.addAction(self.target_dock.toggleViewAction())
+        # Insights dock toggle will be added after Local Intelligence setup
+        self._view_menu = view_menu  # Store reference for adding insights toggle later
+        
+        view_menu.addSeparator()
+        
+        # Reset Layout action
+        reset_layout_action = QAction("Reset Layout", self)
+        reset_layout_action.setToolTip("Restore default window layout")
+        reset_layout_action.triggered.connect(self._reset_layout)
+        view_menu.addAction(reset_layout_action)
         
         # --- TOOLS MENU ---
         tools_menu = menu.addMenu("Tools")
@@ -895,7 +924,14 @@ class MainWindow(QMainWindow):
             try:
                 self.local_intel.setup(self)
                 
-                # --- v2.0.6: Restore dock widget positions (must be after dock is created) ---
+                # v2.1.0: Add insights panel toggle to View menu
+                if self.local_intel.insights_dock and hasattr(self, '_view_menu'):
+                    # Insert before the separator (position 2, after decode and target toggles)
+                    actions = self._view_menu.actions()
+                    if len(actions) >= 2:
+                        self._view_menu.insertAction(actions[2], self.local_intel.insights_dock.toggleViewAction())
+                
+                # --- v2.1.0: Restore dock widget positions (must be after all docks are created) ---
                 dock_state = self.config.get('WINDOW', 'dock_state')
                 if dock_state:
                     self.restoreState(QByteArray.fromHex(dock_state.encode()))
@@ -921,6 +957,28 @@ class MainWindow(QMainWindow):
         for i in range(self.model.columnCount()):
             widths.append(str(self.table_view.columnWidth(i)))
         self.config.save_setting('WINDOW', 'column_widths', ','.join(widths))
+    
+    # --- v2.1.0: Reset Layout functionality ---
+    def _reset_layout(self):
+        """Reset dock widgets to their default positions.
+        
+        Shows all panels, un-floats them, and restores default positions.
+        """
+        # Show and re-dock Target View
+        self.target_dock.show()
+        self.target_dock.setFloating(False)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.target_dock)
+        
+        # Show and re-dock Local Intelligence if present
+        if self.local_intel and self.local_intel.insights_dock:
+            self.local_intel.insights_dock.show()
+            self.local_intel.insights_dock.setFloating(False)
+            self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.local_intel.insights_dock)
+        
+        # Clear saved dock state so next restart also uses defaults
+        self.config.save_setting('WINDOW', 'dock_state', '')
+        
+        logger.info("Layout reset to defaults")
     
     # --- v2.0.3: Auto-clear setting handler ---
     def _on_auto_clear_changed(self, state):
@@ -1611,11 +1669,7 @@ class MainWindow(QMainWindow):
         geo = self.saveGeometry().toHex().data().decode()
         self.config.save_setting('WINDOW', 'geometry', geo)
         
-        # --- v2.0.6: Save splitter position ---
-        splitter_state = self.splitter.saveState().toHex().data().decode()
-        self.config.save_setting('WINDOW', 'splitter_state', splitter_state)
-        
-        # --- v2.0.6: Save dock widget positions (Local Intelligence panel) ---
+        # --- v2.1.0: Save dock widget positions ---
         dock_state = self.saveState().toHex().data().decode()
         self.config.save_setting('WINDOW', 'dock_state', dock_state)
         
