@@ -521,11 +521,13 @@ class DecodeTableModel(QAbstractTableModel):
                     return QColor("#7A5500")  # Visible gold/amber background for hunted
             
             if self.target_call and row_item.get('call') == self.target_call:
-                return QColor("#004444") 
+                return QColor("#004444")  # Teal for selected target
             
-            # Default alternating row colors
-            if index.row() % 2 == 1:
-                return QColor("#1a1a1a")  # Slightly lighter for odd rows
+            # Default alternating row colors (visible contrast)
+            if index.row() % 2 == 0:
+                return QColor("#141414")  # Dark for even rows
+            else:
+                return QColor("#1c1c1c")  # Lighter for odd rows
 
         return None
 
