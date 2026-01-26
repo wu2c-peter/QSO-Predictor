@@ -501,8 +501,7 @@ class DecodeTableModel(QAbstractTableModel):
             if self.hunt_manager and call:
                 is_hunted = self.hunt_manager.is_hunted(call)
                 if is_hunted:
-                    logger.info(f"HIGHLIGHTING hunted call: {call}")
-                    return QColor("#3D2B00")  # Dark gold background for hunted
+                    return QColor("#7A5500")  # Visible gold/amber background for hunted
             
             if self.target_call and row_item.get('call') == self.target_call:
                 return QColor("#004444") 
@@ -861,11 +860,10 @@ class MainWindow(QMainWindow):
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self._show_table_context_menu)
         
-        self.table_view.setAlternatingRowColors(True)
+        self.table_view.setAlternatingRowColors(False)  # Let model control backgrounds
         self.table_view.setStyleSheet("""
             QTableView { 
                 background-color: #121212; 
-                alternate-background-color: #1a1a1a;
                 gridline-color: #333; 
                 color: #EEE;
                 outline: 0; 
