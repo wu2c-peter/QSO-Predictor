@@ -490,15 +490,18 @@ class DecodeTableModel(QAbstractTableModel):
             
             # v2.1.0: Hunt Mode - highlight hunted stations with gold background
             call = row_item.get('call', '')
+            
+            # Debug: Log hunt_manager status once
+            if not hasattr(self, '_hunt_debug_done'):
+                self._hunt_debug_done = True
+                logger.info(f"Hunt highlight debug: hunt_manager={self.hunt_manager is not None}")
+                if self.hunt_manager:
+                    logger.info(f"Hunt list contents: {self.hunt_manager.get_list()}")
+            
             if self.hunt_manager and call:
                 is_hunted = self.hunt_manager.is_hunted(call)
-                # Debug: log first few checks
-                if not hasattr(self, '_hunt_debug_count'):
-                    self._hunt_debug_count = 0
-                if self._hunt_debug_count < 5:
-                    logger.info(f"Hunt check: call={call}, hunt_list={self.hunt_manager.get_list()}, is_hunted={is_hunted}")
-                    self._hunt_debug_count += 1
                 if is_hunted:
+                    logger.info(f"HIGHLIGHTING hunted call: {call}")
                     return QColor("#3D2B00")  # Dark gold background for hunted
             
             if self.target_call and row_item.get('call') == self.target_call:
@@ -837,6 +840,7 @@ class MainWindow(QMainWindow):
         # v2.1.0: Give model access to hunt manager for highlighting
         if self.hunt_manager:
             self.model.hunt_manager = self.hunt_manager
+            logger.info(f"Hunt Mode: Assigned hunt_manager to model (list={self.hunt_manager.get_list()})")
             # Refresh table when hunt list changes (e.g., via dialog)
             def refresh_hunt_highlighting():
                 """Force full table repaint when hunt list changes."""
@@ -847,6 +851,8 @@ class MainWindow(QMainWindow):
                         [Qt.ItemDataRole.BackgroundRole]
                     )
             self.hunt_manager.hunt_list_changed.connect(refresh_hunt_highlighting)
+        else:
+            logger.warning("Hunt Mode: hunt_manager is None, highlighting disabled")
         
         self.table_view = QTableView()
         self.table_view.setModel(self.model)
