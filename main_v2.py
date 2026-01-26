@@ -13,6 +13,7 @@
 #   - "Working nearby" alerts when hunted station works your region
 #   - Country/DXCC support with autocomplete (type "Japan" to hunt all JA stations)
 # - Added: Click-to-clipboard - click band map or Rec frequency to copy to clipboard
+# - Added: Auto-clear on QSY - clear target when changing bands (Brian's request)
 # - Fixed: Right dock (Local Intel) no longer pushes down band map (setCorner fix)
 # - Changed: Decode table uses less vertical space by default
 #
@@ -796,6 +797,14 @@ class MainWindow(QMainWindow):
         self.chk_auto_clear.stateChanged.connect(self._on_auto_clear_changed)
         toolbar.addWidget(self.chk_auto_clear)
         
+        # v2.1.0: Auto-clear on band change checkbox (Brian's request)
+        self.chk_auto_clear_band = QCheckBox("Auto-clear on QSY")
+        self.chk_auto_clear_band.setToolTip("Automatically clear target when you change bands")
+        auto_clear_band = self.config.get('BEHAVIOR', 'auto_clear_on_band', fallback='false') == 'true'
+        self.chk_auto_clear_band.setChecked(auto_clear_band)
+        self.chk_auto_clear_band.stateChanged.connect(self._on_auto_clear_band_changed)
+        toolbar.addWidget(self.chk_auto_clear_band)
+        
         toolbar.addSeparator()
         
         # Spacer to push items to the left
@@ -1082,6 +1091,28 @@ class MainWindow(QMainWindow):
         """Handle auto-clear checkbox state change."""
         enabled = 'true' if state == Qt.CheckState.Checked.value else 'false'
         self.config.save_setting('BEHAVIOR', 'auto_clear_on_log', enabled)
+    
+    # --- v2.1.0: Auto-clear on band change handler (Brian's request) ---
+    def _on_auto_clear_band_changed(self, state):
+        """Handle auto-clear on band change checkbox state change."""
+        enabled = 'true' if state == Qt.CheckState.Checked.value else 'false'
+        self.config.save_setting('BEHAVIOR', 'auto_clear_on_band', enabled)
+    
+    def _freq_to_band(self, freq):
+        """Convert frequency in Hz to band string."""
+        f = freq / 1_000_000
+        if 1.8 <= f <= 2.0: return "160m"
+        if 3.5 <= f <= 4.0: return "80m"
+        if 5.3 <= f <= 5.4: return "60m"
+        if 7.0 <= f <= 7.3: return "40m"
+        if 10.1 <= f <= 10.15: return "30m"
+        if 14.0 <= f <= 14.35: return "20m"
+        if 18.068 <= f <= 18.168: return "17m"
+        if 21.0 <= f <= 21.45: return "15m"
+        if 24.89 <= f <= 24.99: return "12m"
+        if 28.0 <= f <= 29.7: return "10m"
+        if 50.0 <= f <= 54.0: return "6m"
+        return "?"
 
     def setup_connections(self):
         self.udp.new_decode.connect(self.handle_decode)
@@ -1264,7 +1295,20 @@ class MainWindow(QMainWindow):
         self._last_status_time = now
         
         dial = status.get('dial_freq', 0)
-        if dial > 0: self.analyzer.set_dial_freq(dial)
+        if dial > 0:
+            # v2.1.0: Check for band change before updating (Brian's request)
+            old_band = getattr(self, '_current_band', None)
+            new_band = self._freq_to_band(dial)
+            
+            if old_band and new_band != old_band:
+                # Band changed!
+                logger.info(f"Band change detected: {old_band} -> {new_band}")
+                if self.chk_auto_clear_band.isChecked() and self.current_target_call:
+                    logger.info(f"Auto-clearing target due to band change")
+                    self.clear_target()
+            
+            self._current_band = new_band
+            self.analyzer.set_dial_freq(dial)
         
         # Update Band Map (Yellow Line)
         cur_tx = status.get('tx_df', 0)
