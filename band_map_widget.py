@@ -9,7 +9,7 @@
 import logging
 import numpy as np
 import time
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QWidget, QApplication, QToolTip
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRectF
 
@@ -23,6 +23,10 @@ class BandMapWidget(QWidget):
         self.setMinimumHeight(260) 
         self.setStyleSheet("background-color: #101010;")
         self.bandwidth = 3000
+        
+        # v2.1.0: Cursor indicates click-to-copy functionality
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setToolTip("Click to set frequency and copy to clipboard")
         
         # Data Containers
         self.active_signals = []   # Local decodes (what WE hear)
@@ -262,7 +266,7 @@ class BandMapWidget(QWidget):
         self.update()  # PERFORMANCE FIX: was repaint()
 
     def mousePressEvent(self, event):
-        """Handle click to manually set frequency."""
+        """Handle click to manually set frequency and copy to clipboard."""
         if event.button() == Qt.MouseButton.LeftButton:
             # Calculate frequency from click position
             x = event.position().x()
@@ -276,6 +280,13 @@ class BandMapWidget(QWidget):
             self.best_offset = freq
             self.manual_override = True
             self.manual_override_time = time.time()
+            
+            # Copy to clipboard
+            clipboard = QApplication.clipboard()
+            clipboard.setText(str(freq))
+            
+            # Show tooltip feedback
+            QToolTip.showText(event.globalPosition().toPoint(), f"Copied: {freq} Hz", self)
             
             # Emit signal so dashboard updates
             self.recommendation_changed.emit(freq)

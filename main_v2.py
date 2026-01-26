@@ -5,12 +5,14 @@
 # - Added: Target View as undockable panel (Dashboard + Band Map)
 # - Added: Local Intelligence as undockable panel (right side, full height)
 # - Added: View menu with panel toggles and Reset Layout option
-# - Added: Hunt Mode - track stations/prefixes, alert when active (suggested by Warren KC0GU)
+# - Added: Hunt Mode - track stations/prefixes/countries, alert when active (suggested by Warren KC0GU)
 #   - Hunt List dialog (Tools → Hunt List, Ctrl+H)
 #   - Right-click context menu to add/remove from hunt list
 #   - Gold highlighting for hunted stations in decode table
 #   - System tray alerts when hunted station active
 #   - "Working nearby" alerts when hunted station works your region
+#   - Country/DXCC support with autocomplete (type "Japan" to hunt all JA stations)
+# - Added: Click-to-clipboard - click band map or Rec frequency to copy to clipboard
 # - Fixed: Right dock (Local Intel) no longer pushes down band map (setCorner fix)
 # - Changed: Decode table uses less vertical space by default
 #
@@ -297,9 +299,11 @@ class TargetDashboard(QFrame):
         layout.addWidget(path_comp_container)
 
         layout.addSpacing(10)
-        self.lbl_rec = QLabel()
+        # v2.1.0: Use ClickableCopyLabel so user can click to copy frequency
+        self.lbl_rec = ClickableCopyLabel()
         self.lbl_rec.setObjectName("rec")
         self.lbl_rec.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.lbl_rec.setToolTip("Click to copy Rec frequency to clipboard")
         self.update_rec("----", "----") 
         layout.addWidget(self.lbl_rec)
 
@@ -393,6 +397,10 @@ class TargetDashboard(QFrame):
         </html>
         """
         self.lbl_rec.setText(html_text)
+        
+        # v2.1.0: Set copy value for click-to-clipboard
+        if str(rec_freq) != "----":
+            self.lbl_rec.set_copy_value(rec_freq)
 
 
 # --- MODEL: DECODE TABLE ---
@@ -554,6 +562,29 @@ class ClickableLabel(QLabel):
         if self.update_url:
             webbrowser.open(self.update_url)
         self.clicked.emit()
+
+
+# --- v2.1.0: CLICKABLE LABEL THAT COPIES VALUE TO CLIPBOARD ---
+class ClickableCopyLabel(QLabel):
+    """Label that copies a value to clipboard when clicked."""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._copy_value = ""
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setToolTip("Click to copy to clipboard")
+    
+    def set_copy_value(self, value):
+        """Set the value that will be copied to clipboard on click."""
+        self._copy_value = str(value)
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._copy_value:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(self._copy_value)
+            # Brief tooltip feedback
+            from PyQt6.QtWidgets import QToolTip
+            QToolTip.showText(event.globalPosition().toPoint(), f"Copied: {self._copy_value}", self)
 
 
 # --- MAIN APPLICATION WINDOW ---
