@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 
 class QSOAnalyzer(QObject):
     cache_updated = pyqtSignal()
-    status_message = pyqtSignal(str) 
+    status_message = pyqtSignal(str)
+    spot_received = pyqtSignal(dict)  # v2.1.0: Passthrough for hunt mode
 
     def __init__(self, config):
         super().__init__()
@@ -101,6 +102,9 @@ class QSOAnalyzer(QObject):
                         if grid_key not in self.grid_cache:
                             self.grid_cache[grid_key] = []
                         self.grid_cache[grid_key].append(spot)
+            
+            # v2.1.0: Emit for hunt mode checking (outside lock)
+            self.spot_received.emit(spot)
                         
         except Exception: pass
 

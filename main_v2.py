@@ -5,6 +5,12 @@
 # - Added: Target View as undockable panel (Dashboard + Band Map)
 # - Added: Local Intelligence as undockable panel (right side, full height)
 # - Added: View menu with panel toggles and Reset Layout option
+# - Added: Hunt Mode - track stations/prefixes, alert when active (suggested by Warren KC0GU)
+#   - Hunt List dialog (Tools → Hunt List, Ctrl+H)
+#   - Right-click context menu to add/remove from hunt list
+#   - Gold highlighting for hunted stations in decode table
+#   - System tray alerts when hunted station active
+#   - "Working nearby" alerts when hunted station works your region
 # - Fixed: Right dock (Local Intel) no longer pushes down band map (setCorner fix)
 # - Changed: Decode table uses less vertical space by default
 #
@@ -69,6 +75,15 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QSystemTrayIcon, QMenu, QToolBar, QPushButton, QCheckBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
 from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon, QCursor
+
+# v2.1.0: Hunt Mode imports
+try:
+    from hunt_manager import HuntManager
+    from hunt_dialog import HuntListDialog
+    HUNT_MODE_AVAILABLE = True
+except ImportError as e:
+    HUNT_MODE_AVAILABLE = False
+    logger.warning(f"Hunt Mode not available: {e}")
 
 
 def get_version():
@@ -388,6 +403,7 @@ class DecodeTableModel(QAbstractTableModel):
         self._data = []
         self.config = config
         self.target_call = None
+        self.hunt_manager = None  # v2.1.0: Set by MainWindow after init
 
     def set_target_call(self, callsign):
         self.target_call = callsign
@@ -454,6 +470,11 @@ class DecodeTableModel(QAbstractTableModel):
             path = str(row_item.get('path', ''))
             if "CONNECTED" in path:
                 return QColor("#004040")  # Teal background for connected
+            
+            # v2.1.0: Hunt Mode - highlight hunted stations with gold background
+            if self.hunt_manager and self.hunt_manager.is_hunted(row_item.get('call', '')):
+                return QColor("#3D2B00")  # Dark gold background for hunted
+            
             if self.target_call and row_item.get('call') == self.target_call:
                 return QColor("#004444") 
 
@@ -571,6 +592,11 @@ class MainWindow(QMainWindow):
         self.local_intel = None
         if LOCAL_INTEL_AVAILABLE:
             self._init_local_intelligence()
+        
+        # --- v2.1.0: HUNT MODE ---
+        self.hunt_manager = None
+        if HUNT_MODE_AVAILABLE:
+            self._init_hunt_mode()
             
         self.init_ui()
         self.setup_connections()
@@ -631,6 +657,23 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Failed to initialize Local Intelligence: {e}")
             self.local_intel = None
+    
+    def _init_hunt_mode(self):
+        """Initialize Hunt Mode v2.1.0 features."""
+        try:
+            self.hunt_manager = HuntManager(config_manager=self.config)
+            
+            # Set user's grid for "working nearby" detection
+            my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
+            self.hunt_manager.set_my_grid(my_grid)
+            
+            # Connect hunt alerts to notification handler
+            self.hunt_manager.hunt_alert.connect(self._on_hunt_alert)
+            
+            logger.info(f"Hunt Mode initialized with {len(self.hunt_manager.get_list())} items")
+        except Exception as e:
+            logger.error(f"Failed to initialize Hunt Mode: {e}")
+            self.hunt_manager = None
 
     solar_update_signal = pyqtSignal(dict)
     update_check_signal = pyqtSignal(str, bool)  # (version_or_status, was_manual)
@@ -731,8 +774,17 @@ class MainWindow(QMainWindow):
         # --- DECODE TABLE (Central Widget) ---
         cols = ["UTC", "dB", "DT", "Freq", "Call", "Grid", "Message", "Prob %", "Path"]
         self.model = DecodeTableModel(cols, self.config)
+        
+        # v2.1.0: Give model access to hunt manager for highlighting
+        if self.hunt_manager:
+            self.model.hunt_manager = self.hunt_manager
+        
         self.table_view = QTableView()
         self.table_view.setModel(self.model)
+        
+        # v2.1.0: Enable context menu for hunt mode
+        self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table_view.customContextMenuRequested.connect(self._show_table_context_menu)
         
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setStyleSheet("""
@@ -851,6 +903,15 @@ class MainWindow(QMainWindow):
         
         # --- TOOLS MENU ---
         tools_menu = menu.addMenu("Tools")
+        
+        # v2.1.0: Hunt Mode
+        if self.hunt_manager:
+            hunt_list_action = QAction("Hunt List...", self)
+            hunt_list_action.setShortcut(QKeySequence("Ctrl+H"))
+            hunt_list_action.setToolTip("Manage stations you're hunting")
+            hunt_list_action.triggered.connect(self._show_hunt_list_dialog)
+            tools_menu.addAction(hunt_list_action)
+            tools_menu.addSeparator()
         
         # Add Local Intelligence menu items if available
         if self.local_intel:
@@ -996,6 +1057,10 @@ class MainWindow(QMainWindow):
         # Reconnect cache_updated to lightweight path refresh (not full analysis)
         self.analyzer.cache_updated.connect(self.refresh_paths)
         self.analyzer.status_message.connect(self.update_status_msg)
+        
+        # v2.1.0: Hunt Mode - check MQTT spots against hunt list
+        if self.hunt_manager:
+            self.analyzer.spot_received.connect(self._check_hunt_spot)
     
     # --- v2.0.3: Clear Target functionality (suggested by KC0GU) ---
     def clear_target(self):
@@ -1653,6 +1718,94 @@ class MainWindow(QMainWindow):
         if self.solar:
             data = self.solar.get_solar_data()
             self.solar_update_signal.emit(data)
+    
+    # --- v2.1.0: HUNT MODE METHODS ---
+    
+    def _show_hunt_list_dialog(self):
+        """Show the Hunt List management dialog."""
+        if not self.hunt_manager:
+            return
+        dialog = HuntListDialog(self.hunt_manager, self)
+        dialog.exec()
+        # Refresh table to update highlighting
+        self.model.layoutChanged.emit()
+    
+    def _show_table_context_menu(self, pos):
+        """Show context menu for decode table with Hunt Mode options."""
+        index = self.table_view.indexAt(pos)
+        if not index.isValid():
+            return
+        
+        # Get the callsign from the clicked row
+        row_data = self.model._data[index.row()]
+        callsign = row_data.get('call', '')
+        
+        if not callsign:
+            return
+        
+        menu = QMenu(self)
+        
+        # Hunt Mode actions
+        if self.hunt_manager:
+            if self.hunt_manager.is_hunted(callsign):
+                remove_action = menu.addAction(f"Remove {callsign} from Hunt List")
+                remove_action.triggered.connect(lambda: self._remove_from_hunt(callsign))
+            else:
+                add_action = menu.addAction(f"Add {callsign} to Hunt List")
+                add_action.triggered.connect(lambda: self._add_to_hunt(callsign))
+            
+            menu.addSeparator()
+        
+        # Set as Target action
+        target_action = menu.addAction(f"Set {callsign} as Target")
+        target_action.triggered.connect(lambda: self.on_row_click(index))
+        
+        menu.exec(self.table_view.viewport().mapToGlobal(pos))
+    
+    def _add_to_hunt(self, callsign):
+        """Add callsign to hunt list from context menu."""
+        if self.hunt_manager and self.hunt_manager.add(callsign):
+            self.model.layoutChanged.emit()  # Refresh highlighting
+            self.tray_icon.showMessage(
+                "Hunt Mode",
+                f"Added {callsign} to hunt list",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+    
+    def _remove_from_hunt(self, callsign):
+        """Remove callsign from hunt list from context menu."""
+        if self.hunt_manager and self.hunt_manager.remove(callsign):
+            self.model.layoutChanged.emit()  # Refresh highlighting
+    
+    def _check_hunt_spot(self, spot):
+        """Check incoming MQTT spot against hunt list."""
+        if not self.hunt_manager or self.hunt_manager.is_empty():
+            return
+        
+        # Check spot against hunt list (handles cooldown internally)
+        self.hunt_manager.check_spot(spot, time.time())
+    
+    def _on_hunt_alert(self, call, band, alert_type, details):
+        """Handle hunt alert - show notification to user."""
+        if alert_type == 'working_nearby':
+            # High priority - they're working your region!
+            title = f"🎯 {call} Working Nearby!"
+            message = f"{call} on {band}: {details}"
+            icon = QSystemTrayIcon.MessageIcon.Warning
+            duration = 5000
+        else:
+            # Normal - they're just active
+            title = f"📡 {call} Active"
+            message = f"{call} spotted on {band}"
+            icon = QSystemTrayIcon.MessageIcon.Information
+            duration = 3000
+        
+        # System tray notification
+        self.tray_icon.showMessage(title, message, icon, duration)
+        
+        # Also update status bar briefly
+        self.update_status_msg(f"Hunt: {call} {alert_type} on {band}")
 
     def closeEvent(self, event):
         # --- LOCAL INTELLIGENCE: Clean shutdown ---
