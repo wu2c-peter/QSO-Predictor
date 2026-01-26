@@ -75,9 +75,10 @@ logger = logging.getLogger(__name__)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QTableView, QLabel, QHeaderView, QDockWidget,
                              QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, 
-                             QSystemTrayIcon, QMenu, QToolBar, QPushButton, QCheckBox)
+                             QSystemTrayIcon, QMenu, QToolBar, QPushButton, QCheckBox,
+                             QStyledItemDelegate)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
-from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon, QCursor
+from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon, QCursor, QBrush
 
 # v2.1.0: Hunt Mode imports
 try:
@@ -406,6 +407,22 @@ class TargetDashboard(QFrame):
             self.lbl_rec.set_copy_value(rec_freq)
 
 
+# --- DELEGATE: Custom painting for hunt highlighting ---
+class HuntHighlightDelegate(QStyledItemDelegate):
+    """Custom delegate to paint background colors from model data.
+    
+    Qt stylesheets override model BackgroundRole, so we need a delegate
+    to respect the model's background colors for hunt highlighting.
+    """
+    def paint(self, painter, option, index):
+        # Get background color from model
+        bg_color = index.data(Qt.ItemDataRole.BackgroundRole)
+        if bg_color and isinstance(bg_color, QColor):
+            painter.fillRect(option.rect, QBrush(bg_color))
+        # Call default painting for text, selection, etc.
+        super().paint(painter, option, index)
+
+
 # --- MODEL: DECODE TABLE ---
 class DecodeTableModel(QAbstractTableModel):
     def __init__(self, headers, config):
@@ -505,6 +522,10 @@ class DecodeTableModel(QAbstractTableModel):
             
             if self.target_call and row_item.get('call') == self.target_call:
                 return QColor("#004444") 
+            
+            # Default alternating row colors
+            if index.row() % 2 == 1:
+                return QColor("#1a1a1a")  # Slightly lighter for odd rows
 
         return None
 
@@ -855,6 +876,9 @@ class MainWindow(QMainWindow):
         
         self.table_view = QTableView()
         self.table_view.setModel(self.model)
+        
+        # v2.1.0: Custom delegate for hunt highlighting (bypasses stylesheet override)
+        self.table_view.setItemDelegate(HuntHighlightDelegate(self.table_view))
         
         # v2.1.0: Enable context menu for hunt mode
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
