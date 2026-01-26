@@ -419,6 +419,12 @@ class DecodeTableModel(QAbstractTableModel):
     def set_target_call(self, callsign):
         self.target_call = callsign
         self.layoutChanged.emit()
+    
+    def clear(self):
+        """Clear all decode data from the table."""
+        self.beginResetModel()
+        self._data = []
+        self.endResetModel()
 
     def rowCount(self, parent=QModelIndex()):
         return len(self._data)
@@ -486,6 +492,12 @@ class DecodeTableModel(QAbstractTableModel):
             call = row_item.get('call', '')
             if self.hunt_manager and call:
                 is_hunted = self.hunt_manager.is_hunted(call)
+                # Debug: log first few checks
+                if not hasattr(self, '_hunt_debug_count'):
+                    self._hunt_debug_count = 0
+                if self._hunt_debug_count < 5:
+                    logger.info(f"Hunt check: call={call}, hunt_list={self.hunt_manager.get_list()}, is_hunted={is_hunted}")
+                    self._hunt_debug_count += 1
                 if is_hunted:
                     return QColor("#3D2B00")  # Dark gold background for hunted
             
@@ -1319,11 +1331,12 @@ class MainWindow(QMainWindow):
                     # Band changed!
                     logger.info(f"Band change detected: {old_band} -> {new_band}")
                     chk_enabled = hasattr(self, 'chk_auto_clear_band') and self.chk_auto_clear_band.isChecked()
-                    has_target = bool(self.current_target_call)
                     logger.info(f"Auto-clear QSY: checkbox={chk_enabled}, target={self.current_target_call}")
-                    if chk_enabled and has_target:
-                        logger.info(f"Auto-clearing target due to band change")
-                        self.clear_target()
+                    if chk_enabled:
+                        logger.info(f"Auto-clearing decode table, band map, and target due to band change")
+                        self.model.clear()  # Clear decode table
+                        self.band_map.clear()  # Clear band map signals
+                        self.clear_target()  # Clear target selection
                 
                 self._current_band = new_band
             except Exception as e:

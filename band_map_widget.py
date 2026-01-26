@@ -184,6 +184,13 @@ class BandMapWidget(QWidget):
     def set_target_grid(self, grid):
         self.target_grid = (grid or "").strip().upper()
         self.update()  # PERFORMANCE FIX: was repaint()
+    
+    def clear(self):
+        """Clear all signal data (for band change)."""
+        self.active_signals = []
+        self.perspective_data = {'tier1': [], 'tier2': [], 'tier3': [], 'global': []}
+        self.score_map = np.zeros(self.bandwidth, dtype=float)
+        self.update()
 
     def update_signals(self, signals):
         """Update local decode signals (what we hear)."""
