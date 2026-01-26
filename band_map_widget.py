@@ -25,7 +25,7 @@ class BandMapWidget(QWidget):
         self.bandwidth = 3000
         
         # v2.1.0: Cursor indicates click-to-copy functionality
-        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("Click to set frequency and copy to clipboard")
         
         # Data Containers
