@@ -1297,17 +1297,23 @@ class MainWindow(QMainWindow):
         dial = status.get('dial_freq', 0)
         if dial > 0:
             # v2.1.0: Check for band change before updating (Brian's request)
-            old_band = getattr(self, '_current_band', None)
-            new_band = self._freq_to_band(dial)
+            try:
+                old_band = getattr(self, '_current_band', None)
+                new_band = self._freq_to_band(dial)
+                
+                if old_band and new_band != old_band:
+                    # Band changed!
+                    logger.info(f"Band change detected: {old_band} -> {new_band}")
+                    if (hasattr(self, 'chk_auto_clear_band') and 
+                        self.chk_auto_clear_band.isChecked() and 
+                        self.current_target_call):
+                        logger.info(f"Auto-clearing target due to band change")
+                        self.clear_target()
+                
+                self._current_band = new_band
+            except Exception as e:
+                logger.error(f"Error in band change detection: {e}")
             
-            if old_band and new_band != old_band:
-                # Band changed!
-                logger.info(f"Band change detected: {old_band} -> {new_band}")
-                if self.chk_auto_clear_band.isChecked() and self.current_target_call:
-                    logger.info(f"Auto-clearing target due to band change")
-                    self.clear_target()
-            
-            self._current_band = new_band
             self.analyzer.set_dial_freq(dial)
         
         # Update Band Map (Yellow Line)
