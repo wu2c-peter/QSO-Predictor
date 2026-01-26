@@ -822,6 +822,8 @@ class MainWindow(QMainWindow):
         # v2.1.0: Give model access to hunt manager for highlighting
         if self.hunt_manager:
             self.model.hunt_manager = self.hunt_manager
+            # Refresh table when hunt list changes (e.g., via dialog)
+            self.hunt_manager.hunt_list_changed.connect(self.model.layoutChanged.emit)
         
         self.table_view = QTableView()
         self.table_view.setModel(self.model)
