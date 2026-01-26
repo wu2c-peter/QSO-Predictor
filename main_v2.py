@@ -615,6 +615,9 @@ class MainWindow(QMainWindow):
         self._decode_count = 0
         self._decode_start_time = None
         
+        # --- v2.1.0: Shutdown flag for clean notification handling ---
+        self._closing = False
+        
         if SOLAR_AVAILABLE:
             self.solar = SolarClient()
             self.solar_update_signal.connect(self.update_solar_ui)
@@ -1821,6 +1824,10 @@ class MainWindow(QMainWindow):
     
     def _on_hunt_alert(self, call, band, alert_type, details):
         """Handle hunt alert - show notification to user."""
+        # Don't show notifications if we're closing
+        if getattr(self, '_closing', False):
+            return
+        
         if alert_type == 'working_nearby':
             # High priority - they're working your region!
             title = f"🎯 {call} Working Nearby!"
@@ -1841,6 +1848,9 @@ class MainWindow(QMainWindow):
         self.update_status_msg(f"Hunt: {call} {alert_type} on {band}")
 
     def closeEvent(self, event):
+        # --- v2.1.0: Flag to prevent notifications during shutdown ---
+        self._closing = True
+        
         # --- LOCAL INTELLIGENCE: Clean shutdown ---
         if self.local_intel:
             try:
@@ -1850,6 +1860,11 @@ class MainWindow(QMainWindow):
         
         self.analyzer.stop()
         self.udp.stop()
+        
+        # --- v2.1.0: Hide and cleanup tray icon to stop notifications ---
+        if hasattr(self, 'tray_icon') and self.tray_icon:
+            self.tray_icon.hide()
+            self.tray_icon.setVisible(False)
         
         # --- v2.0.3: Save window geometry ---
         geo = self.saveGeometry().toHex().data().decode()

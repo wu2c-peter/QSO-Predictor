@@ -201,6 +201,25 @@ class HuntListDialog(QDialog):
                 "Entry must be 30 characters or less.")
             return
         
+        # Warn about overly broad targets that would cause notification spam
+        broad_targets = [
+            "UNITED STATES", "USA", "GERMANY", "JAPAN", "RUSSIA", "CHINA",
+            "ENGLAND", "ITALY", "SPAIN", "FRANCE", "POLAND", "BRAZIL",
+            "K", "W", "N", "DL", "JA", "UA", "G", "I", "EA", "F"
+        ]
+        if text in broad_targets:
+            reply = QMessageBox.warning(
+                self, "High Traffic Warning",
+                f"'{text}' matches a very large number of stations.\n\n"
+                "This will generate many notifications and may be distracting.\n\n"
+                "Consider hunting specific callsigns, rare prefixes, or smaller countries instead.\n\n"
+                "Add anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        
         if self.hunt_manager.add(text):
             # Show with indicator if it's a country
             display_text = f"🌍 {text}" if is_country else text
