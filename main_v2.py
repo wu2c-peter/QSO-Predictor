@@ -744,6 +744,7 @@ class MainWindow(QMainWindow):
         
         # --- v2.0.3: TOOLBAR WITH CLEAR TARGET ---
         toolbar = QToolBar("Main Toolbar")
+        toolbar.setObjectName("main_toolbar")  # Required for saveState
         toolbar.setMovable(False)
         toolbar.setStyleSheet("""
             QToolBar { 

@@ -175,6 +175,7 @@ class LocalIntelligence(QObject):
             
             # Create dock widget
             self.insights_dock = QDockWidget("Local Intelligence", main_window)
+            self.insights_dock.setObjectName("local_intel_dock")  # Required for saveState
             self.insights_dock.setWidget(self.insights_panel)
             self.insights_dock.setAllowedAreas(
                 Qt.DockWidgetArea.LeftDockWidgetArea | 
