@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 DXCC_ENTITIES = {
     # North America
     "UNITED STATES": ["K", "W", "N", "AA", "AB", "AC", "AD", "AE", "AF", "AG", "AI", "AJ", "AK"],
+    "USA": ["K", "W", "N", "AA", "AB", "AC", "AD", "AE", "AF", "AG", "AI", "AJ", "AK"],  # Alias
     "CANADA": ["VE", "VA", "VO", "VY"],
     "MEXICO": ["XE", "XF"],
     "ALASKA": ["KL", "AL", "NL", "WL"],
@@ -276,6 +277,12 @@ class HuntManager(QObject):
                 prefixes = DXCC_ENTITIES[hunt_item]
                 for prefix in prefixes:
                     if call.startswith(prefix):
+                        # Log first match for debugging (once per call)
+                        if not hasattr(self, '_debug_logged'):
+                            self._debug_logged = set()
+                        if call not in self._debug_logged:
+                            logger.debug(f"Hunt match: {call} matches {hunt_item} via prefix {prefix}")
+                            self._debug_logged.add(call)
                         return True
                 continue
             

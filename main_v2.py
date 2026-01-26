@@ -483,8 +483,11 @@ class DecodeTableModel(QAbstractTableModel):
                 return QColor("#004040")  # Teal background for connected
             
             # v2.1.0: Hunt Mode - highlight hunted stations with gold background
-            if self.hunt_manager and self.hunt_manager.is_hunted(row_item.get('call', '')):
-                return QColor("#3D2B00")  # Dark gold background for hunted
+            call = row_item.get('call', '')
+            if self.hunt_manager and call:
+                is_hunted = self.hunt_manager.is_hunted(call)
+                if is_hunted:
+                    return QColor("#3D2B00")  # Dark gold background for hunted
             
             if self.target_call and row_item.get('call') == self.target_call:
                 return QColor("#004444") 
@@ -823,7 +826,15 @@ class MainWindow(QMainWindow):
         if self.hunt_manager:
             self.model.hunt_manager = self.hunt_manager
             # Refresh table when hunt list changes (e.g., via dialog)
-            self.hunt_manager.hunt_list_changed.connect(self.model.layoutChanged.emit)
+            def refresh_hunt_highlighting():
+                """Force full table repaint when hunt list changes."""
+                if self.model.rowCount() > 0:
+                    self.model.dataChanged.emit(
+                        self.model.index(0, 0),
+                        self.model.index(self.model.rowCount() - 1, self.model.columnCount() - 1),
+                        [Qt.ItemDataRole.BackgroundRole]
+                    )
+            self.hunt_manager.hunt_list_changed.connect(refresh_hunt_highlighting)
         
         self.table_view = QTableView()
         self.table_view.setModel(self.model)
@@ -1307,9 +1318,10 @@ class MainWindow(QMainWindow):
                 if old_band and new_band != old_band:
                     # Band changed!
                     logger.info(f"Band change detected: {old_band} -> {new_band}")
-                    if (hasattr(self, 'chk_auto_clear_band') and 
-                        self.chk_auto_clear_band.isChecked() and 
-                        self.current_target_call):
+                    chk_enabled = hasattr(self, 'chk_auto_clear_band') and self.chk_auto_clear_band.isChecked()
+                    has_target = bool(self.current_target_call)
+                    logger.info(f"Auto-clear QSY: checkbox={chk_enabled}, target={self.current_target_call}")
+                    if chk_enabled and has_target:
                         logger.info(f"Auto-clearing target due to band change")
                         self.clear_target()
                 
