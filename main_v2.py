@@ -178,6 +178,8 @@ except ImportError as e:
 class TargetDashboard(QFrame):
     # v2.0.6: Signal when user wants to sync target to JTDX
     sync_requested = pyqtSignal()
+    # v2.1.0: Signal for status bar messages (e.g., clipboard feedback)
+    status_message = pyqtSignal(str)
     
     def __init__(self):
         super().__init__()
@@ -303,7 +305,7 @@ class TargetDashboard(QFrame):
         self.lbl_rec = ClickableCopyLabel()
         self.lbl_rec.setObjectName("rec")
         self.lbl_rec.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_rec.setToolTip("Click to copy Rec frequency to clipboard")
+        self.lbl_rec.copied.connect(self.status_message.emit)  # Bubble up to main window
         self.update_rec("----", "----") 
         layout.addWidget(self.lbl_rec)
 
@@ -567,12 +569,12 @@ class ClickableLabel(QLabel):
 # --- v2.1.0: CLICKABLE LABEL THAT COPIES VALUE TO CLIPBOARD ---
 class ClickableCopyLabel(QLabel):
     """Label that copies a value to clipboard when clicked."""
+    copied = pyqtSignal(str)  # Emits the copied value for status bar feedback
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._copy_value = ""
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.setToolTip("Click to copy to clipboard")
     
     def set_copy_value(self, value):
         """Set the value that will be copied to clipboard on click."""
@@ -582,9 +584,7 @@ class ClickableCopyLabel(QLabel):
         if event.button() == Qt.MouseButton.LeftButton and self._copy_value:
             clipboard = QApplication.clipboard()
             clipboard.setText(self._copy_value)
-            # Brief tooltip feedback
-            from PyQt6.QtWidgets import QToolTip
-            QToolTip.showText(event.globalPosition().toPoint(), f"Copied: {self._copy_value}", self)
+            self.copied.emit(f"Copied to clipboard: {self._copy_value} Hz")
 
 
 # --- MAIN APPLICATION WINDOW ---
@@ -870,11 +870,13 @@ class MainWindow(QMainWindow):
         # Dashboard
         self.dashboard = TargetDashboard()
         self.dashboard.sync_requested.connect(self.sync_to_jtdx)  # v2.0.6
+        self.dashboard.status_message.connect(self.update_status_msg)  # v2.1.0: clipboard feedback
         target_layout.addWidget(self.dashboard)
         
         # Band Map
         self.band_map = BandMapWidget()
         self.band_map.recommendation_changed.connect(self.on_recommendation)
+        self.band_map.status_message.connect(self.update_status_msg)  # v2.1.0: clipboard feedback
         target_layout.addWidget(self.band_map)
         
         self.target_dock.setWidget(target_container)

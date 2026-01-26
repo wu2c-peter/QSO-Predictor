@@ -9,7 +9,7 @@
 import logging
 import numpy as np
 import time
-from PyQt6.QtWidgets import QWidget, QApplication, QToolTip
+from PyQt6.QtWidgets import QWidget, QApplication
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRectF
 
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class BandMapWidget(QWidget):
     recommendation_changed = pyqtSignal(int)
+    status_message = pyqtSignal(str)  # v2.1.0: For copy feedback
 
     def __init__(self):
         super().__init__()
@@ -26,7 +27,6 @@ class BandMapWidget(QWidget):
         
         # v2.1.0: Cursor indicates click-to-copy functionality
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Click to set frequency and copy to clipboard")
         
         # Data Containers
         self.active_signals = []   # Local decodes (what WE hear)
@@ -285,8 +285,8 @@ class BandMapWidget(QWidget):
             clipboard = QApplication.clipboard()
             clipboard.setText(str(freq))
             
-            # Show tooltip feedback
-            QToolTip.showText(event.globalPosition().toPoint(), f"Copied: {freq} Hz", self)
+            # Feedback via status bar signal
+            self.status_message.emit(f"Copied to clipboard: {freq} Hz")
             
             # Emit signal so dashboard updates
             self.recommendation_changed.emit(freq)
