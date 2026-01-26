@@ -500,10 +500,16 @@ class DecodeTableModel(QAbstractTableModel):
                     return QColor("#888888")  # Gray - no data available
 
         elif role == Qt.ItemDataRole.BackgroundRole:
-            # Highlight CONNECTED rows with a subtle background
+            # Highlight rows based on path status and hunt mode
             path = str(row_item.get('path', ''))
+            
+            # CONNECTED = highest priority (target hears you!)
             if "CONNECTED" in path:
-                return QColor("#004040")  # Teal background for connected
+                return QColor("#004040")  # Teal background
+            
+            # Path Open = propagation confirmed to region
+            if "Path Open" in path:
+                return QColor("#002800")  # Dark green background
             
             # v2.1.0: Hunt Mode - highlight hunted stations with gold background
             call = row_item.get('call', '')
@@ -900,7 +906,7 @@ class MainWindow(QMainWindow):
                 padding: 2px;
             }
             QTableView::item:selected { 
-                background-color: #004444; 
+                background-color: #1a3a5c; 
                 color: #FFFFFF; 
             }
             QHeaderView::section { 
