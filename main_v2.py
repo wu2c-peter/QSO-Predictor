@@ -59,6 +59,7 @@
 
 import ctypes
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -1057,10 +1058,10 @@ class MainWindow(QMainWindow):
         
         # Help Menu
         help_menu = menu.addMenu("Help")
-        wiki_action = QAction("Documentation (Wiki)", self)
-        wiki_action.setShortcut(QKeySequence("F1"))
-        wiki_action.triggered.connect(self.open_wiki)
-        help_menu.addAction(wiki_action)
+        guide_action = QAction("User Guide", self)
+        guide_action.setShortcut(QKeySequence("F1"))
+        guide_action.triggered.connect(self.open_user_guide)
+        help_menu.addAction(guide_action)
         
         # v2.0.9: Connection Help menu item
         connection_help_action = QAction("Connection Help...", self)
@@ -1894,9 +1895,9 @@ class MainWindow(QMainWindow):
             'rate': rate
         }
 
-    def open_wiki(self):
-        """Open the GitHub wiki in the default browser."""
-        webbrowser.open("https://github.com/wu2c-peter/qso-predictor/wiki")
+    def open_user_guide(self):
+        """Open the User Guide on GitHub (renders markdown nicely)."""
+        webbrowser.open("https://github.com/wu2c-peter/qso-predictor/blob/main/docs/USER_GUIDE.md")
     
     # v2.0.9: Debug logging menu handlers
     def _toggle_debug_logging(self, checked):
