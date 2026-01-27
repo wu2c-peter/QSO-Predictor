@@ -417,11 +417,10 @@ class QSOAnalyzer(QObject):
         
         Uses MQTT data we already have (sender_cache) instead of HTTP API.
         
-        Performs:
-        1. Reverse lookup from sender_cache: who hears this station?
-        2. Directional analysis to detect beaming
-        3. SNR comparison to peers
-        4. Frequency density check (using existing data)
+        BEAMING DETECTION uses differential analysis:
+        - Compare this station's directional pattern to peer stations
+        - If they're MORE concentrated in one direction than peers → beaming
+        - This controls for propagation paths and reporter density
         
         Args:
             station: Single station dict from find_near_me_stations()
@@ -429,20 +428,7 @@ class QSOAnalyzer(QObject):
             target_grid: Target station's grid (for bearing calculation)
             
         Returns:
-            {
-                'call': str,
-                'grid': str,
-                'snr': int,
-                'freq': int,
-                'is_beaming': bool,
-                'beam_direction': str,  # e.g., "EU", "toward target"
-                'beam_confidence': int,  # percentage
-                'snr_vs_peers': int,  # dB above/below peer average
-                'has_power_advantage': bool,
-                'freq_density': int,
-                'freq_clear': bool,
-                'insights': [str, ...]  # Human-readable insights
-            }
+            dict with analysis results and insights
         """
         from psk_reporter_api import calculate_bearing, classify_beam_pattern
         
@@ -469,52 +455,92 @@ class QSOAnalyzer(QObject):
         }
         
         try:
-            # 1. Reverse lookup from MQTT cache: who hears this station?
             recent_limit = time.time() - 300  # Last 5 minutes
             
+            # 1. Get spots for THIS station
             with self.lock:
-                spots = []
+                my_spots = []
                 if call in self.sender_cache:
-                    spots = [s for s in self.sender_cache[call] if s.get('time', 0) > recent_limit]
+                    my_spots = [s for s in self.sender_cache[call] if s.get('time', 0) > recent_limit]
             
-            logger.info(f"Phase 2: {call} has {len(spots)} recent spots in cache")
+            logger.info(f"Phase 2: {call} has {len(my_spots)} recent spots in cache")
             
-            if len(spots) < 3:
-                # Not enough data for directional analysis
-                result['insights'].append(f"ℹ️ Only {len(spots)} recent spot(s) — need 3+ for analysis")
-                # Still do peer comparison and freq density
+            # 2. Get spots for ALL peer stations (for baseline comparison)
+            peer_spots_by_call = {}
+            with self.lock:
+                for peer in all_near_me:
+                    peer_call = peer.get('call', '').upper()
+                    if peer_call and peer_call != call and peer_call in self.sender_cache:
+                        peer_spots = [s for s in self.sender_cache[peer_call] if s.get('time', 0) > recent_limit]
+                        if len(peer_spots) >= 3:
+                            peer_spots_by_call[peer_call] = peer_spots
+            
+            logger.info(f"Phase 2: Found {len(peer_spots_by_call)} peer station(s) with 3+ spots for comparison")
+            
+            if len(my_spots) < 3:
+                result['insights'].append(f"ℹ️ Only {len(my_spots)} recent spot(s) — need 3+ for beaming analysis")
             else:
-                # 2. Directional analysis - calculate bearings to all receivers
-                bearings = []
-                for spot in spots:
-                    receiver_grid = spot.get('grid', '')
-                    if receiver_grid and len(receiver_grid) >= 4 and grid and len(grid) >= 4:
-                        bearing = calculate_bearing(grid, receiver_grid)
-                        if bearing is not None:
-                            bearings.append(bearing)
+                # 3. Calculate THIS station's sector distribution
+                my_sectors = self._calculate_sector_distribution(my_spots, grid)
+                my_concentration = self._get_max_concentration(my_sectors)
                 
-                logger.debug(f"Phase 2: {call} bearings: {bearings}")
+                # Log this station's pattern
+                sector_names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+                my_sector_str = ', '.join([f"{sector_names[i]}:{my_sectors[i]}" for i in range(8) if my_sectors[i] > 0])
+                logger.info(f"Phase 2 {call} sectors: {my_sector_str} (max 3-sector concentration: {my_concentration}%)")
                 
-                if len(bearings) >= 3:
-                    is_beaming, direction, confidence = classify_beam_pattern(bearings)
-                    result['is_beaming'] = is_beaming
-                    result['beam_direction'] = direction
-                    result['beam_confidence'] = confidence
+                # 4. Calculate PEER baseline (what's the "normal" pattern from this area?)
+                if peer_spots_by_call:
+                    peer_concentrations = []
+                    for peer_call, peer_spots in peer_spots_by_call.items():
+                        peer_grid = next((p.get('grid', '') for p in all_near_me if p.get('call', '').upper() == peer_call), '')
+                        if peer_grid:
+                            peer_sectors = self._calculate_sector_distribution(peer_spots, peer_grid)
+                            peer_conc = self._get_max_concentration(peer_sectors)
+                            peer_concentrations.append(peer_conc)
+                            
+                            peer_sector_str = ', '.join([f"{sector_names[i]}:{peer_sectors[i]}" for i in range(8) if peer_sectors[i] > 0])
+                            logger.info(f"Phase 2 {peer_call} sectors: {peer_sector_str} (concentration: {peer_conc}%)")
                     
-                    if is_beaming:
-                        # Check if beaming toward target
-                        if target_grid and len(target_grid) >= 2:
-                            target_bearing = calculate_bearing(grid, target_grid)
-                            if target_bearing is not None:
-                                target_region = self._bearing_to_region_simple(target_bearing)
-                                if direction == target_region:
-                                    result['insights'].append(f"📡 Beaming toward target area ({confidence}% of spots in {direction})")
-                                else:
-                                    result['insights'].append(f"📡 Beaming toward {direction} ({confidence}% of spots)")
+                    if peer_concentrations:
+                        avg_peer_concentration = sum(peer_concentrations) / len(peer_concentrations)
+                        concentration_diff = my_concentration - avg_peer_concentration
+                        
+                        logger.info(f"Phase 2 DIFFERENTIAL: {call}={my_concentration}% vs peers avg={avg_peer_concentration:.0f}% → diff={concentration_diff:+.0f}%")
+                        
+                        # If this station is 20%+ MORE concentrated than peers → likely beaming
+                        if concentration_diff >= 20 and my_concentration >= 70:
+                            result['is_beaming'] = True
+                            # Find dominant direction
+                            max_sector = my_sectors.index(max(my_sectors))
+                            result['beam_direction'] = self._bearing_to_region_simple(max_sector * 45 + 22.5)
+                            result['beam_confidence'] = my_concentration
+                            result['insights'].append(
+                                f"📡 Likely beaming — {my_concentration}% concentrated vs {avg_peer_concentration:.0f}% peer average"
+                            )
+                        elif concentration_diff <= -15:
+                            # This station is LESS concentrated than peers — omnidirectional
+                            result['insights'].append(
+                                f"📻 More omnidirectional than peers ({my_concentration}% vs {avg_peer_concentration:.0f}%)"
+                            )
                         else:
-                            result['insights'].append(f"📡 Beaming toward {direction} ({confidence}% of spots)")
+                            result['insights'].append(
+                                f"Similar pattern to nearby stations ({my_concentration}% vs {avg_peer_concentration:.0f}%)"
+                            )
+                    else:
+                        # No valid peer data, fall back to absolute threshold
+                        if my_concentration >= 80:
+                            result['insights'].append(f"⚠️ {my_concentration}% concentrated (no peers to compare)")
+                        else:
+                            result['insights'].append(f"Pattern looks normal ({my_concentration}% concentration)")
+                else:
+                    # No peers to compare - just report the raw numbers
+                    if my_concentration >= 80:
+                        result['insights'].append(f"⚠️ {my_concentration}% concentrated in one direction (no peers to compare)")
+                    else:
+                        result['insights'].append(f"Spread across directions ({my_concentration}% max concentration)")
             
-            # 3. SNR comparison to peers
+            # 5. SNR comparison to peers (unchanged)
             if len(all_near_me) >= 2:
                 peer_snrs = [s.get('snr', -99) for s in all_near_me if s.get('call', '').upper() != call]
                 if peer_snrs:
@@ -526,28 +552,57 @@ class QSOAnalyzer(QObject):
                         result['has_power_advantage'] = True
                         result['insights'].append(f"⚡ +{int(snr_diff)}dB above others nearby — likely power/antenna advantage")
             
-            # 4. Frequency density check (use our existing QRM data)
+            # 6. Frequency density check
             freq_density = self._get_freq_density(freq)
             result['freq_density'] = freq_density
             result['freq_clear'] = freq_density <= 3
             
-            # 5. Generate final insights based on findings
-            if not result['is_beaming'] and not result['has_power_advantage'] and len(spots) >= 3:
-                result['insights'].append("No beaming pattern detected, SNR within normal range")
-                
+            # 7. Final actionable insight
+            if not result['is_beaming'] and not result['has_power_advantage'] and len(my_spots) >= 3:
                 if result['freq_clear']:
                     result['insights'].append(f"💡 Their freq has light traffic — try {freq} Hz?")
             
             result['analysis_done'] = True
             
-        except ImportError as e:
-            result['error'] = f"Missing module: {e}"
-            logger.error(f"Phase 2 analysis import error: {e}")
         except Exception as e:
             result['error'] = str(e)
-            logger.error(f"Phase 2 analysis error: {e}")
+            logger.error(f"Phase 2 analysis error: {e}", exc_info=True)
         
         return result
+    
+    def _calculate_sector_distribution(self, spots: list, from_grid: str) -> List[int]:
+        """Calculate how spots are distributed across 8 compass sectors."""
+        from psk_reporter_api import calculate_bearing
+        
+        sectors = [0] * 8  # N, NE, E, SE, S, SW, W, NW
+        
+        for spot in spots:
+            receiver_grid = spot.get('grid', '')
+            if receiver_grid and len(receiver_grid) >= 4 and from_grid and len(from_grid) >= 4:
+                bearing = calculate_bearing(from_grid, receiver_grid)
+                if bearing is not None:
+                    sector = int(bearing / 45) % 8
+                    sectors[sector] += 1
+        
+        return sectors
+    
+    def _get_max_concentration(self, sectors: List[int]) -> int:
+        """Get the max concentration in any 3 adjacent sectors (135° arc)."""
+        total = sum(sectors)
+        if total == 0:
+            return 0
+        
+        max_conc = 0
+        for i in range(8):
+            # 3 adjacent sectors
+            left = (i - 1) % 8
+            right = (i + 1) % 8
+            concentrated = sectors[left] + sectors[i] + sectors[right]
+            conc_pct = int(100 * concentrated / total)
+            if conc_pct > max_conc:
+                max_conc = conc_pct
+        
+        return max_conc
     
     def _bearing_to_region_simple(self, bearing: float) -> str:
         """Simple bearing to region conversion."""
