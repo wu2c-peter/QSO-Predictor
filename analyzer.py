@@ -506,26 +506,49 @@ class QSOAnalyzer(QObject):
                         avg_peer_concentration = sum(peer_concentrations) / len(peer_concentrations)
                         concentration_diff = my_concentration - avg_peer_concentration
                         
-                        logger.info(f"Phase 2 DIFFERENTIAL: {call}={my_concentration}% vs peers avg={avg_peer_concentration:.0f}% → diff={concentration_diff:+.0f}%")
+                        logger.info(f"Phase 2 DIFFERENTIAL: {call}={my_concentration}% vs peers avg={avg_peer_concentration:.0f}% → diff={concentration_diff:+.0f}% (n={len(peer_concentrations)} peers)")
+                        
+                        peer_count = len(peer_concentrations)
+                        confidence_note = ""
+                        if peer_count == 1:
+                            confidence_note = " (low confidence: only 1 peer)"
+                        elif peer_count >= 4:
+                            confidence_note = f" (good confidence: {peer_count} peers)"
                         
                         # If this station is 20%+ MORE concentrated than peers → likely beaming
-                        if concentration_diff >= 20 and my_concentration >= 70:
+                        # Lower threshold with more peers (more significant)
+                        beam_threshold = 20 if peer_count <= 2 else 15
+                        
+                        if concentration_diff >= beam_threshold and my_concentration >= 70:
                             result['is_beaming'] = True
                             # Find dominant direction
                             max_sector = my_sectors.index(max(my_sectors))
                             result['beam_direction'] = self._bearing_to_region_simple(max_sector * 45 + 22.5)
                             result['beam_confidence'] = my_concentration
                             result['insights'].append(
-                                f"📡 Likely beaming — {my_concentration}% concentrated vs {avg_peer_concentration:.0f}% peer average"
+                                f"📡 Likely beaming — {my_concentration}% concentrated vs {avg_peer_concentration:.0f}% peer avg{confidence_note}"
                             )
                         elif concentration_diff <= -15:
                             # This station is LESS concentrated than peers — omnidirectional
                             result['insights'].append(
-                                f"📻 More omnidirectional than peers ({my_concentration}% vs {avg_peer_concentration:.0f}%)"
+                                f"📻 More omnidirectional than peers ({my_concentration}% vs {avg_peer_concentration:.0f}%){confidence_note}"
                             )
+                        elif my_concentration >= 85 and avg_peer_concentration >= 85:
+                            # BOTH are highly concentrated in same direction — ambiguous!
+                            max_sector = my_sectors.index(max(my_sectors))
+                            direction = self._bearing_to_region_simple(max_sector * 45 + 22.5)
+                            if peer_count >= 3:
+                                # With 3+ peers all showing same pattern, more likely propagation
+                                result['insights'].append(
+                                    f"📡 All {peer_count + 1} stations ~{my_concentration}% toward {direction} — likely propagation"
+                                )
+                            else:
+                                result['insights'].append(
+                                    f"🤷 Both stations ~{my_concentration}% toward {direction} — could be propagation OR both beaming"
+                                )
                         else:
                             result['insights'].append(
-                                f"Similar pattern to nearby stations ({my_concentration}% vs {avg_peer_concentration:.0f}%)"
+                                f"Similar pattern to nearby stations ({my_concentration}% vs {avg_peer_concentration:.0f}%){confidence_note}"
                             )
                     else:
                         # No valid peer data, fall back to absolute threshold
