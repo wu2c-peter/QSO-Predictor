@@ -1555,11 +1555,13 @@ class MainWindow(QMainWindow):
             
             # v2.1.0: Path Intelligence - find stations near me getting through
             my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
+            my_call = self.config.get('ANALYSIS', 'my_callsign', fallback='')
             if my_grid and self.local_intel:
                 near_me_data = self.analyzer.find_near_me_stations(
                     self.current_target_call,
                     self.current_target_grid,
-                    my_grid
+                    my_grid,
+                    my_call  # Exclude my own callsign from the list
                 )
                 self.local_intel.update_near_me(near_me_data)
             

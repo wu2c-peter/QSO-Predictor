@@ -199,7 +199,7 @@ class QSOAnalyzer(QObject):
             'global': global_spots
         }
 
-    def find_near_me_stations(self, target_call: str, target_grid: str, my_grid: str) -> dict:
+    def find_near_me_stations(self, target_call: str, target_grid: str, my_grid: str, my_call: str = '') -> dict:
         """
         Find stations near MY location that are being heard by the target region.
         
@@ -211,6 +211,7 @@ class QSOAnalyzer(QObject):
             target_call: Target station callsign
             target_grid: Target station grid (4-6 chars)
             my_grid: My grid locator (4-6 chars)
+            my_call: My callsign (to exclude from list - already shown in Path column)
         
         Returns:
             {
@@ -219,7 +220,7 @@ class QSOAnalyzer(QObject):
                         'call': 'W2XYZ',
                         'grid': 'FN31ab',
                         'snr': -12,
-                        'freq': 1847,
+                        'freq': 1847,  # Audio offset Hz
                         'distance': 'grid',  # 'grid' (same 4-char) or 'field' (same 2-char)
                         'heard_by': 'target' | 'proxy',  # Direct target or nearby proxy
                         'heard_by_call': 'EA8ABC'
@@ -234,6 +235,7 @@ class QSOAnalyzer(QObject):
         target_call = (target_call or '').upper().strip()
         target_grid = (target_grid or '').upper().strip()
         my_grid = (my_grid or '').upper().strip()
+        my_call = (my_call or '').upper().strip()
         
         if not my_grid or len(my_grid) < 2:
             return {'stations': [], 'target_uploading': False, 'proxy_count': 0, 'my_grid': ''}
@@ -249,6 +251,8 @@ class QSOAnalyzer(QObject):
         proxy_reporters = set()
         
         with self.lock:
+            dial = self.current_dial_freq  # For converting RF to audio offset
+            
             # First check if target is directly uploading (has Tier 1 spots)
             if target_call and target_call in self.receiver_cache:
                 target_spots = [s for s in self.receiver_cache[target_call] 
@@ -264,6 +268,10 @@ class QSOAnalyzer(QObject):
                         if not sender_grid or len(sender_grid) < 2:
                             continue
                         
+                        # Skip my own callsign (already shown in Path column as CONNECTED)
+                        if my_call and sender_call == my_call:
+                            continue
+                        
                         if sender_call in seen_calls:
                             continue
                         
@@ -275,11 +283,15 @@ class QSOAnalyzer(QObject):
                             distance = 'field'  # Same 2-char field (~1000km)
                         
                         if distance:
+                            # Convert RF frequency to audio offset
+                            rf_freq = spot.get('freq', 0)
+                            audio_freq = rf_freq - dial if dial > 0 else rf_freq
+                            
                             near_me_stations.append({
                                 'call': sender_call,
                                 'grid': sender_grid,
                                 'snr': spot.get('snr', -99),
-                                'freq': spot.get('freq', 0),
+                                'freq': audio_freq,
                                 'distance': distance,
                                 'heard_by': 'target',
                                 'heard_by_call': target_call
@@ -301,6 +313,10 @@ class QSOAnalyzer(QObject):
                                 if not sender_grid or len(sender_grid) < 2:
                                     continue
                                 
+                                # Skip my own callsign
+                                if my_call and sender_call == my_call:
+                                    continue
+                                
                                 if sender_call in seen_calls:
                                     continue
                                 
@@ -312,11 +328,15 @@ class QSOAnalyzer(QObject):
                                     distance = 'field'
                                 
                                 if distance:
+                                    # Convert RF frequency to audio offset
+                                    rf_freq = spot.get('freq', 0)
+                                    audio_freq = rf_freq - dial if dial > 0 else rf_freq
+                                    
                                     near_me_stations.append({
                                         'call': sender_call,
                                         'grid': sender_grid,
                                         'snr': spot.get('snr', -99),
-                                        'freq': spot.get('freq', 0),
+                                        'freq': audio_freq,
                                         'distance': distance,
                                         'heard_by': 'proxy',
                                         'heard_by_call': receiver_call
@@ -338,6 +358,10 @@ class QSOAnalyzer(QObject):
                                     if not sender_grid or len(sender_grid) < 2:
                                         continue
                                     
+                                    # Skip my own callsign
+                                    if my_call and sender_call == my_call:
+                                        continue
+                                    
                                     if sender_call in seen_calls:
                                         continue
                                     
@@ -349,11 +373,15 @@ class QSOAnalyzer(QObject):
                                         distance = 'field'
                                     
                                     if distance:
+                                        # Convert RF frequency to audio offset
+                                        rf_freq = spot.get('freq', 0)
+                                        audio_freq = rf_freq - dial if dial > 0 else rf_freq
+                                        
                                         near_me_stations.append({
                                             'call': sender_call,
                                             'grid': sender_grid,
                                             'snr': spot.get('snr', -99),
-                                            'freq': spot.get('freq', 0),
+                                            'freq': audio_freq,
                                             'distance': distance,
                                             'heard_by': 'proxy',
                                             'heard_by_call': receiver_call
