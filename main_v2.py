@@ -958,7 +958,7 @@ class MainWindow(QMainWindow):
         # Container for Dashboard + Band Map
         target_container = QWidget()
         target_container.setMinimumHeight(280)  # Ensure band map gets enough space
-        target_container.setMaximumHeight(400)  # Don't let it push table off screen
+        # Note: No maximum height - setCorner() fix handles layout, user can resize freely
         target_layout = QVBoxLayout(target_container)
         target_layout.setContentsMargins(0, 0, 0, 0)
         target_layout.setSpacing(0)
