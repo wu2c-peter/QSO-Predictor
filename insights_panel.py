@@ -314,9 +314,10 @@ class NearMeWidget(QGroupBox):
         target_uploading = near_me_data.get('target_uploading', False)
         proxy_count = near_me_data.get('proxy_count', 0)
         
-        # Update source indicator - clarify WHO is hearing these stations
+        # Update source indicator - shows DATA QUALITY (where our info comes from)
+        # This is separate from whether stations from your area are being heard
         if target_uploading:
-            self.source_label.setText("✓ Target decoding these directly")
+            self.source_label.setText("✓ Target uploads to PSK Reporter")
             self.source_label.setStyleSheet("color: #88ff88; font-size: 10px;")
         elif proxy_count > 0:
             self.source_label.setText(f"▲ Heard by {proxy_count} station(s) near target")
