@@ -1553,11 +1553,24 @@ class MainWindow(QMainWindow):
             # Update band map with tiered perspective
             self.band_map.update_perspective(converted)
             
+            # v2.1.0: Path Intelligence - find stations near me getting through
+            my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
+            if my_grid and self.local_intel:
+                near_me_data = self.analyzer.find_near_me_stations(
+                    self.current_target_call,
+                    self.current_target_grid,
+                    my_grid
+                )
+                self.local_intel.update_near_me(near_me_data)
+            
         else:
             # No dial freq or no target - clear perspective
             self.band_map.update_perspective({
                 'tier1': [], 'tier2': [], 'tier3': [], 'global': []
             })
+            # v2.1.0: Clear near-me display
+            if self.local_intel:
+                self.local_intel.update_near_me(None)
 
 
 

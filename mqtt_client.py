@@ -136,7 +136,8 @@ class MQTTClient(QObject):
                 'receiver': data.get('rc', 'Unknown').upper(),
                 'freq': data.get('f', 0),
                 'snr': data.get('rp', -99),
-                'grid': data.get('rl', '').upper(),
+                'grid': data.get('rl', '').upper(),  # Receiver grid
+                'sender_grid': data.get('sl', '').upper(),  # Sender grid (v2.1.0: for near-me detection)
                 'time': spot_time  # Now guaranteed to be valid
             }
             

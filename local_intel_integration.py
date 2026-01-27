@@ -330,6 +330,25 @@ class LocalIntelligence(QObject):
         if self.insights_panel:
             self.insights_panel.set_path_status(status)
     
+    def update_near_me(self, near_me_data: dict):
+        """
+        Update Path Intelligence display with near-me station data.
+        
+        v2.1.0: Phase 1 of Path Intelligence feature.
+        
+        Args:
+            near_me_data: Dict from analyzer.find_near_me_stations() containing:
+                - stations: List of stations near user being heard by target
+                - target_uploading: Whether target directly reports to PSK Reporter
+                - proxy_count: Number of proxy stations used
+                - my_grid: User's grid
+        """
+        if not self._enabled:
+            return
+        
+        if self.insights_panel:
+            self.insights_panel.update_near_me(near_me_data)
+    
     def set_tx_status(self, enabled: bool, calling: str = ""):
         """
         Update TX status from JTDX/WSJT-X.

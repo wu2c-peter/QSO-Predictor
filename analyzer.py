@@ -199,6 +199,178 @@ class QSOAnalyzer(QObject):
             'global': global_spots
         }
 
+    def find_near_me_stations(self, target_call: str, target_grid: str, my_grid: str) -> dict:
+        """
+        Find stations near MY location that are being heard by the target region.
+        
+        Phase 1 of Path Intelligence: Answer "Is anyone from my area getting through?"
+        
+        Uses MQTT data we already have (Tier 1/2/3 spots) - no API calls needed.
+        
+        Args:
+            target_call: Target station callsign
+            target_grid: Target station grid (4-6 chars)
+            my_grid: My grid locator (4-6 chars)
+        
+        Returns:
+            {
+                'stations': [
+                    {
+                        'call': 'W2XYZ',
+                        'grid': 'FN31ab',
+                        'snr': -12,
+                        'freq': 1847,
+                        'distance': 'grid',  # 'grid' (same 4-char) or 'field' (same 2-char)
+                        'heard_by': 'target' | 'proxy',  # Direct target or nearby proxy
+                        'heard_by_call': 'EA8ABC'
+                    },
+                    ...
+                ],
+                'target_uploading': bool,  # Is target directly reporting to PSK Reporter?
+                'proxy_count': int,  # Number of proxy stations used (if target not uploading)
+                'my_grid': str  # Echo back for UI
+            }
+        """
+        target_call = (target_call or '').upper().strip()
+        target_grid = (target_grid or '').upper().strip()
+        my_grid = (my_grid or '').upper().strip()
+        
+        if not my_grid or len(my_grid) < 2:
+            return {'stations': [], 'target_uploading': False, 'proxy_count': 0, 'my_grid': ''}
+        
+        my_field = my_grid[:2]
+        my_grid4 = my_grid[:4] if len(my_grid) >= 4 else None
+        
+        recent_limit = time.time() - 60  # 60 seconds
+        
+        near_me_stations = []
+        seen_calls = set()  # Avoid duplicates
+        target_uploading = False
+        proxy_reporters = set()
+        
+        with self.lock:
+            # First check if target is directly uploading (has Tier 1 spots)
+            if target_call and target_call in self.receiver_cache:
+                target_spots = [s for s in self.receiver_cache[target_call] 
+                               if s['time'] > recent_limit]
+                if target_spots:
+                    target_uploading = True
+                    
+                    # Check each spot - is the SENDER near me?
+                    for spot in target_spots:
+                        sender_call = spot.get('sender', '')
+                        sender_grid = spot.get('sender_grid', '')
+                        
+                        if not sender_grid or len(sender_grid) < 2:
+                            continue
+                        
+                        if sender_call in seen_calls:
+                            continue
+                        
+                        # Check if sender is near my grid
+                        distance = None
+                        if my_grid4 and len(sender_grid) >= 4 and sender_grid[:4] == my_grid4:
+                            distance = 'grid'  # Same 4-char grid (~100km)
+                        elif sender_grid[:2] == my_field:
+                            distance = 'field'  # Same 2-char field (~1000km)
+                        
+                        if distance:
+                            near_me_stations.append({
+                                'call': sender_call,
+                                'grid': sender_grid,
+                                'snr': spot.get('snr', -99),
+                                'freq': spot.get('freq', 0),
+                                'distance': distance,
+                                'heard_by': 'target',
+                                'heard_by_call': target_call
+                            })
+                            seen_calls.add(sender_call)
+            
+            # If target not uploading (or has few spots), check proxy stations in their grid/field
+            if not target_uploading or len(near_me_stations) < 2:
+                # Get all spots from target's grid area (Tier 2/3)
+                if len(target_grid) >= 4:
+                    target_grid4 = target_grid[:4]
+                    if target_grid4 in self.grid_cache:
+                        for spot in self.grid_cache[target_grid4]:
+                            if spot['time'] > recent_limit:
+                                sender_call = spot.get('sender', '')
+                                sender_grid = spot.get('sender_grid', '')
+                                receiver_call = spot.get('receiver', '')
+                                
+                                if not sender_grid or len(sender_grid) < 2:
+                                    continue
+                                
+                                if sender_call in seen_calls:
+                                    continue
+                                
+                                # Check if sender is near my grid
+                                distance = None
+                                if my_grid4 and len(sender_grid) >= 4 and sender_grid[:4] == my_grid4:
+                                    distance = 'grid'
+                                elif sender_grid[:2] == my_field:
+                                    distance = 'field'
+                                
+                                if distance:
+                                    near_me_stations.append({
+                                        'call': sender_call,
+                                        'grid': sender_grid,
+                                        'snr': spot.get('snr', -99),
+                                        'freq': spot.get('freq', 0),
+                                        'distance': distance,
+                                        'heard_by': 'proxy',
+                                        'heard_by_call': receiver_call
+                                    })
+                                    seen_calls.add(sender_call)
+                                    proxy_reporters.add(receiver_call)
+                
+                # Also check same field (Tier 3) if still need more data
+                if len(target_grid) >= 2 and len(near_me_stations) < 3:
+                    target_field = target_grid[:2]
+                    for grid_key, spots in self.grid_cache.items():
+                        if grid_key[:2] == target_field:
+                            for spot in spots:
+                                if spot['time'] > recent_limit:
+                                    sender_call = spot.get('sender', '')
+                                    sender_grid = spot.get('sender_grid', '')
+                                    receiver_call = spot.get('receiver', '')
+                                    
+                                    if not sender_grid or len(sender_grid) < 2:
+                                        continue
+                                    
+                                    if sender_call in seen_calls:
+                                        continue
+                                    
+                                    # Check if sender is near my grid
+                                    distance = None
+                                    if my_grid4 and len(sender_grid) >= 4 and sender_grid[:4] == my_grid4:
+                                        distance = 'grid'
+                                    elif sender_grid[:2] == my_field:
+                                        distance = 'field'
+                                    
+                                    if distance:
+                                        near_me_stations.append({
+                                            'call': sender_call,
+                                            'grid': sender_grid,
+                                            'snr': spot.get('snr', -99),
+                                            'freq': spot.get('freq', 0),
+                                            'distance': distance,
+                                            'heard_by': 'proxy',
+                                            'heard_by_call': receiver_call
+                                        })
+                                        seen_calls.add(sender_call)
+                                        proxy_reporters.add(receiver_call)
+        
+        # Sort by distance (grid first) then by SNR (strongest first)
+        near_me_stations.sort(key=lambda x: (0 if x['distance'] == 'grid' else 1, -x['snr']))
+        
+        return {
+            'stations': near_me_stations,
+            'target_uploading': target_uploading,
+            'proxy_count': len(proxy_reporters),
+            'my_grid': my_grid
+        }
+
     def get_qrm_for_freq(self, target_freq_in):
         """Returns RECENT spots overlapping the target."""
         target_rf = int(target_freq_in)

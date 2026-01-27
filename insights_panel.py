@@ -136,6 +136,161 @@ class PileupStatusWidget(QGroupBox):
         self.trend_label.setText("—")
 
 
+class NearMeWidget(QGroupBox):
+    """
+    Display stations near the user that are being heard by the target.
+    
+    Phase 1 of Path Intelligence: "Is anyone from my area getting through?"
+    
+    v2.1.0
+    """
+    
+    # Signal to request Phase 2 analysis (future)
+    analyze_requested = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__("Path Intelligence", parent)
+        self._setup_ui()
+        self._near_me_data = None
+    
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(4)
+        
+        # Header row: "You → Target" path status
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel("Your Area → Target:"))
+        self.status_label = QLabel("—")
+        self.status_label.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
+        header_layout.addWidget(self.status_label)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+        
+        # Source indicator (target uploading or using proxies)
+        self.source_label = QLabel("")
+        self.source_label.setStyleSheet("color: #888888; font-size: 10px;")
+        layout.addWidget(self.source_label)
+        
+        # Station list (up to 3 near-me stations)
+        self.station_labels = []
+        for i in range(3):
+            station_label = QLabel("")
+            station_label.setStyleSheet("color: #cccccc; font-size: 11px; padding-left: 8px;")
+            station_label.setWordWrap(True)
+            layout.addWidget(station_label)
+            self.station_labels.append(station_label)
+        
+        # Insight/suggestion
+        self.insight_label = QLabel("")
+        self.insight_label.setStyleSheet("color: #88ccff; font-size: 11px;")
+        self.insight_label.setWordWrap(True)
+        layout.addWidget(self.insight_label)
+        
+        # Future: Analyze button for Phase 2
+        # self.analyze_button = QPushButton("🔍 Analyze Why")
+        # self.analyze_button.clicked.connect(self.analyze_requested.emit)
+        # self.analyze_button.hide()
+        # layout.addWidget(self.analyze_button)
+    
+    def update_display(self, near_me_data: Optional[Dict]):
+        """
+        Update display with near-me station data.
+        
+        Args:
+            near_me_data: Dict from analyzer.find_near_me_stations()
+                {
+                    'stations': [...],
+                    'target_uploading': bool,
+                    'proxy_count': int,
+                    'my_grid': str
+                }
+        """
+        self._near_me_data = near_me_data
+        
+        if not near_me_data or not near_me_data.get('my_grid'):
+            self.status_label.setText("—")
+            self.status_label.setStyleSheet("color: #888888;")
+            self.source_label.setText("Configure your grid in Settings")
+            for label in self.station_labels:
+                label.setText("")
+            self.insight_label.setText("")
+            return
+        
+        stations = near_me_data.get('stations', [])
+        target_uploading = near_me_data.get('target_uploading', False)
+        proxy_count = near_me_data.get('proxy_count', 0)
+        
+        # Update source indicator
+        if target_uploading:
+            self.source_label.setText("✓ Target uploading to PSK Reporter")
+            self.source_label.setStyleSheet("color: #88ff88; font-size: 10px;")
+        elif proxy_count > 0:
+            self.source_label.setText(f"⚠ Using {proxy_count} nearby proxy station(s)")
+            self.source_label.setStyleSheet("color: #ffcc00; font-size: 10px;")
+        else:
+            self.source_label.setText("No reporters in target area")
+            self.source_label.setStyleSheet("color: #888888; font-size: 10px;")
+        
+        # Update status based on station count
+        count = len(stations)
+        if count == 0:
+            self.status_label.setText("No stations heard")
+            self.status_label.setStyleSheet("color: #ff6666;")  # Red
+            self.insight_label.setText("💡 No path from your area currently")
+        elif count == 1:
+            self.status_label.setText("1 station heard")
+            self.status_label.setStyleSheet("color: #ffcc00;")  # Yellow - marginal
+            self.insight_label.setText("💡 Marginal path - worth trying")
+        else:
+            self.status_label.setText(f"{count} stations heard")
+            self.status_label.setStyleSheet("color: #00ff00;")  # Green - good
+            self.insight_label.setText("💡 Good path from your area!")
+        
+        # Clear station labels first
+        for label in self.station_labels:
+            label.setText("")
+        
+        # Populate station details (up to 3)
+        for i, station in enumerate(stations[:3]):
+            call = station.get('call', '?')
+            grid = station.get('grid', '?')
+            snr = station.get('snr', -99)
+            freq = station.get('freq', 0)
+            distance = station.get('distance', 'field')
+            heard_by = station.get('heard_by', 'proxy')
+            
+            # Format frequency as offset if small
+            if freq > 10000:
+                freq_str = f"{freq} Hz"
+            else:
+                freq_str = f"{freq} Hz"
+            
+            # Distance indicator
+            dist_icon = "📍" if distance == 'grid' else "🗺️"
+            
+            # Format: "📍 W2XYZ (FN31) → -12 dB @ 1847 Hz"
+            text = f"{dist_icon} {call} ({grid[:4] if len(grid) >= 4 else grid}) → {snr:+d} dB @ {freq_str}"
+            self.station_labels[i].setText(text)
+            
+            # Color based on SNR
+            if snr >= -10:
+                self.station_labels[i].setStyleSheet("color: #00ff00; font-size: 11px; padding-left: 8px;")
+            elif snr >= -18:
+                self.station_labels[i].setStyleSheet("color: #ffcc00; font-size: 11px; padding-left: 8px;")
+            else:
+                self.station_labels[i].setStyleSheet("color: #ff8888; font-size: 11px; padding-left: 8px;")
+    
+    def clear(self):
+        """Clear the display."""
+        self.status_label.setText("—")
+        self.status_label.setStyleSheet("color: #888888;")
+        self.source_label.setText("")
+        for label in self.station_labels:
+            label.setText("")
+        self.insight_label.setText("")
+        self._near_me_data = None
+
+
 class BehaviorWidget(QGroupBox):
     """Display target's picking behavior."""
     
@@ -624,6 +779,10 @@ class InsightsPanel(QWidget):
         self.pileup_widget = PileupStatusWidget()
         layout.addWidget(self.pileup_widget)
         
+        # v2.1.0: Path Intelligence - Near Me stations
+        self.near_me_widget = NearMeWidget()
+        layout.addWidget(self.near_me_widget)
+        
         # Behavior
         self.behavior_widget = BehaviorWidget()
         layout.addWidget(self.behavior_widget)
@@ -762,9 +921,21 @@ class InsightsPanel(QWidget):
         self._current_target = None
         self.target_label.setText("Target: —")
         self.pileup_widget.clear()
+        self.near_me_widget.clear()  # v2.1.0: Path Intelligence
         self.behavior_widget.clear()
         self.prediction_widget.clear()
         self.strategy_widget.clear()
+    
+    def update_near_me(self, near_me_data: Optional[Dict]):
+        """
+        Update Path Intelligence display with near-me station data.
+        
+        v2.1.0: Phase 1 of Path Intelligence.
+        
+        Args:
+            near_me_data: Dict from analyzer.find_near_me_stations()
+        """
+        self.near_me_widget.update_display(near_me_data)
     
     def show_model_status(self, status: str, is_stale: bool = False):
         """Update model status display."""
