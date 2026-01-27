@@ -157,9 +157,9 @@ class NearMeWidget(QGroupBox):
         layout = QVBoxLayout(self)
         layout.setSpacing(4)
         
-        # Header row: "You → Target" path status
+        # Header row: clarify that this shows what target is hearing FROM your area
         header_layout = QHBoxLayout()
-        header_layout.addWidget(QLabel("Your Area → Target:"))
+        header_layout.addWidget(QLabel("At target:"))
         self.status_label = QLabel("—")
         self.status_label.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
         header_layout.addWidget(self.status_label)
@@ -192,7 +192,7 @@ class NearMeWidget(QGroupBox):
         # self.analyze_button.hide()
         # layout.addWidget(self.analyze_button)
     
-    def update_display(self, near_me_data: Optional[Dict]):
+    def update_display(self, near_me_data: Optional[Dict], path_status: 'PathStatus' = None):
         """
         Update display with near-me station data.
         
@@ -204,6 +204,8 @@ class NearMeWidget(QGroupBox):
                     'proxy_count': int,
                     'my_grid': str
                 }
+            path_status: Current path status (CONNECTED, PATH_OPEN, NO_PATH, UNKNOWN)
+                         Used to customize insight text
         """
         self._near_me_data = near_me_data
         
@@ -220,12 +222,12 @@ class NearMeWidget(QGroupBox):
         target_uploading = near_me_data.get('target_uploading', False)
         proxy_count = near_me_data.get('proxy_count', 0)
         
-        # Update source indicator
+        # Update source indicator - clarify WHO is hearing these stations
         if target_uploading:
-            self.source_label.setText("✓ Target uploading to PSK Reporter")
+            self.source_label.setText("✓ Target decoding these directly")
             self.source_label.setStyleSheet("color: #88ff88; font-size: 10px;")
         elif proxy_count > 0:
-            self.source_label.setText(f"⚠ Using {proxy_count} nearby proxy station(s)")
+            self.source_label.setText(f"▲ Heard by {proxy_count} station(s) near target")
             self.source_label.setStyleSheet("color: #ffcc00; font-size: 10px;")
         else:
             self.source_label.setText("No reporters in target area")
@@ -234,17 +236,32 @@ class NearMeWidget(QGroupBox):
         # Update status based on station count
         count = len(stations)
         if count == 0:
-            self.status_label.setText("No stations heard")
+            self.status_label.setText("None from your area")
             self.status_label.setStyleSheet("color: #ff6666;")  # Red
-            self.insight_label.setText("💡 No path from your area currently")
-        elif count == 1:
-            self.status_label.setText("1 station heard")
-            self.status_label.setStyleSheet("color: #ffcc00;")  # Yellow - marginal
-            self.insight_label.setText("💡 Marginal path - worth trying")
-        else:
-            self.status_label.setText(f"{count} stations heard")
-            self.status_label.setStyleSheet("color: #00ff00;")  # Green - good
-            self.insight_label.setText("💡 Good path from your area!")
+            if proxy_count > 0 or target_uploading:
+                self.insight_label.setText("💡 No path from your area currently")
+            else:
+                self.insight_label.setText("💡 No data - target area not reporting")
+        elif count >= 1:
+            # We have near-me stations getting through
+            if count == 1:
+                self.status_label.setText("1 from your area heard")
+                self.status_label.setStyleSheet("color: #ffcc00;")  # Yellow - marginal
+            else:
+                self.status_label.setText(f"{count} from your area heard")
+                self.status_label.setStyleSheet("color: #00ff00;")  # Green - good
+            
+            # Customize insight based on path status
+            # If Path column says "No Path" but we see near-me stations, clarify!
+            if path_status == PathStatus.CONNECTED:
+                self.insight_label.setText("💡 Target hears you too!")
+            elif path_status == PathStatus.PATH_OPEN:
+                self.insight_label.setText("💡 Path confirmed - keep calling!")
+            elif path_status == PathStatus.NO_PATH:
+                # This is the key insight: others are getting through, you should too!
+                self.insight_label.setText("💡 Others getting through — you can too!")
+            else:
+                self.insight_label.setText("💡 Path is open! Keep calling")
         
         # Clear station labels first
         for label in self.station_labels:
@@ -935,7 +952,8 @@ class InsightsPanel(QWidget):
         Args:
             near_me_data: Dict from analyzer.find_near_me_stations()
         """
-        self.near_me_widget.update_display(near_me_data)
+        # Pass current path status so widget can give context-aware insights
+        self.near_me_widget.update_display(near_me_data, self._path_status)
     
     def show_model_status(self, status: str, is_stale: bool = False):
         """Update model status display."""
