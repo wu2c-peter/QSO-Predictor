@@ -1,237 +1,67 @@
 # QSO Predictor
 
 [![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
-[![License](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
-**Real-Time Tactical Assistant for FT8 & FT4**
+**Real-time tactical assistant for FT8/FT4 — see the band from the DX station's perspective.**
 
-QSO Predictor shows you the "view from the other end" — what the DX station is experiencing at their location, not just what you're hearing. Using PSK Reporter data and local intelligence, it helps you make smarter decisions about when and where to call.
+![QSO Predictor Screenshot](docs/screenshot.png)
 
----
+## What's New in v2.1.0
 
-## 🆕 What's New in v2.1.0
+### 🎯 Hunt Mode
+Track specific stations, prefixes, or DXCC entities you want to work:
+- Add targets via **Tools → Hunt List** (Ctrl+H) or right-click context menu
+- **System tray alerts** when hunt targets are spotted
+- **"Working Nearby" alerts** — high-priority notification when your target is working stations from your area
+- Gold highlighting in decode table
+- Supports callsigns (`3Y0K`), prefixes (`3Y`), and countries (`Japan`)
 
-### Hunt Mode 🎯
-Track your most-wanted stations with the new Hunt Mode feature:
-- **Hunt List** — Add callsigns, prefixes, grids, or DXCC entities (e.g., "ZL", "VU4", "JAPAN", "USA")
-- **Visual Highlighting** — Hunted stations appear with gold background in decode table
-- **MQTT Alerts** — System tray notifications when hunted stations are spotted
-- **Right-Click to Add** — Quickly add any station to your hunt list from the decode table
-- **DXCC Entities** — Hunt entire countries by name (100+ entities supported)
+### 📡 Path Intelligence
+Know if others from your area are getting through:
+- **Phase 1:** Shows nearby stations the target is hearing with SNR and frequency
+- **Phase 2:** Click **Analyze** to understand WHY they're succeeding:
+  - Beaming detection (compares directional patterns to peers)
+  - Power/antenna advantage detection (+6dB above peers)
+  - Frequency suggestions based on their clear spots
 
-### Row Highlighting by Path Status
-Instantly see propagation status with color-coded rows:
-- **Teal** — CONNECTED (target has decoded your signal!)
-- **Green** — Path Open (propagation to region confirmed)
-- **Gold** — Hunted station from your list
+### 🖥️ Undockable Panels
+Customize your layout for multi-monitor setups:
+- Drag panels to float, dock to edges, or rearrange
+- **View → Reset Layout** to restore defaults
+- Layout saved between sessions
 
-### Auto-Clear on QSY
-- New "Auto-clear on QSY" checkbox in toolbar
-- Automatically clears decode table, band map, and target when you change bands
-- Great for contest operation
-
-### Click-to-Clipboard (Band Map)
-- Click anywhere on the band map to copy that frequency to clipboard
-- Visual cursor feedback and toast notification
-
----
-
-## Downloads
-
-| Platform | Download |
-|----------|----------|
-| **Windows** | [QSO_Predictor_v2.1.0_Windows.zip](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
-| **macOS** | [QSO_Predictor_v2.1.0_macOS.dmg](https://github.com/wu2c-peter/qso-predictor/releases/latest) |
+### ✨ Other Improvements
+- **Click-to-clipboard:** Click band map or Rec frequency to copy Hz value
+- **Auto-clear on QSY:** Optionally clear target when changing bands
+- **Improved stability:** Fixed Windows UDP Error 10054 crashes
+- **Better error handling:** Graceful degradation when data unavailable
 
 ---
 
-## Features
+## The Problem
 
-### Target Perspective Engine
-- See what the DX station hears, not just what you hear
-- Geographic tiering shows signals by proximity to target
-- Real-time pileup visualization
+You're calling a DX station. No response. Is the band dead? Is your signal too weak? Or are you buried under a pileup you can't even hear?
 
-### Hunt Mode (v2.1.0) 🎯
-- Track specific callsigns, prefixes, grids, or countries
-- Visual highlighting and system tray alerts
-- Right-click context menu integration
-- Supports 100+ DXCC entities by name
+Traditional tools show the band from **your** perspective. QSO Predictor shows you **the DX station's** perspective.
 
-### Local Intelligence (v2.0)
-- Behavior prediction based on station patterns
-- Persona classification (Contest Op, Casual, DX Hunter, etc.)
-- Works offline using your WSJT-X/JTDX logs
+## The Solution
 
-### Smart Frequency Recommendations
-- Proven frequencies scored higher than empty gaps
-- Visual score graph across the band
-- Click-to-set with dwell timer
-
-### Path Status with Row Highlighting
-- **CONNECTED** — Target has decoded your signal (teal background)
-- **Path Open** — Nearby stations heard you (green background)
-- **No Path** — Propagation not confirmed
-
----
+Using real-time PSK Reporter data, QSO Predictor shows:
+- **What the target is hearing** — signals arriving at their location
+- **How crowded each frequency is** — at their end, not yours
+- **Whether your signal path is open** — before you call
+- **Who else from your area is getting through** — and why
 
 ## Quick Start
 
 ### Windows
-1. Download and extract the `.zip` file
-2. Run `QSO Predictor.exe`
-3. Windows SmartScreen may warn — click **"More info"** → **"Run anyway"**
+1. Download latest `.zip` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases)
+2. Extract and run `QSO Predictor.exe`
+3. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`
 
-### macOS
-1. Download and open the `.dmg` file
-2. Drag QSO Predictor to Applications
-3. App is signed and notarized — should open without warnings
-
-### Both Platforms
-4. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`
-5. Start decoding — select a target station to see their perspective
-
----
-
-## Hunt Mode Quick Start
-
-1. **Tools → Hunt List** to open the Hunt List dialog
-2. **Add targets:**
-   - Callsigns: `K5D`, `3Y0J`
-   - Prefixes: `VU4`, `ZL`
-   - Grids: `FN31`
-   - Countries: `JAPAN`, `USA`, `NEW ZEALAND`
-3. **Or right-click** any station in the decode table → "Add to Hunt List"
-4. Hunted stations show **gold background** and trigger **tray notifications**
-
-### Supported DXCC Entities
-USA, CANADA, JAPAN, GERMANY, ENGLAND, FRANCE, ITALY, SPAIN, AUSTRALIA, NEW ZEALAND, BRAZIL, ARGENTINA, SOUTH AFRICA, INDIA, CHINA, SOUTH KOREA, and 80+ more. Type the country name (case-insensitive) to hunt all prefixes for that entity.
-
----
-
-## Row Color Legend
-
-| Background | Meaning |
-|------------|---------|
-| **Teal** | CONNECTED — target heard you, CALL NOW! |
-| **Green** | Path Open — propagation confirmed to region |
-| **Gold** | Hunted station from your list |
-| **Blue** | Currently selected row |
-
----
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| **Ctrl+R** | Clear target selection |
-| **Ctrl+Y** | Sync target to WSJT-X/JTDX |
-| **Ctrl+S** | Open Settings |
-| **F1** | Open Documentation |
-| **F5** | Force refresh spots |
-
----
-
-## Workflow Features
-
-### Clear Target
-- **Button:** "Clear Target" in toolbar
-- **Shortcut:** Ctrl+R
-- Clears current target and resets all displays
-
-### Auto-Clear on QSO
-- **Checkbox:** "Auto-clear on QSO" in toolbar
-- Automatically clears target after logging a contact with that station
-
-### Auto-Clear on QSY (v2.1.0)
-- **Checkbox:** "Auto-clear on QSY" in toolbar
-- Clears decode table, band map, and target when you change bands
-
-### Sync to WSJT-X/JTDX
-- **Button:** "Sync to JTDX" in toolbar, or ⟳ next to target callsign
-- **Shortcut:** Ctrl+Y
-- Forces QSO Predictor to match JTDX's current DX call selection
-
----
-
-## Documentation
-
-- **[Wiki Home](https://github.com/wu2c-peter/qso-predictor/wiki)** — Overview and quick start
-- **[Quick Usage Guide](https://github.com/wu2c-peter/qso-predictor/wiki/Quick-Usage-Guide)** — Operational workflows
-- **[How It Works](https://github.com/wu2c-peter/qso-predictor/wiki/QSO-Predictor-How-and-Why-It-Works)** — Technical deep-dive
-- **[Help & Troubleshooting](https://github.com/wu2c-peter/qso-predictor/wiki/Help-and-Troubleshooting)** — Common problems
-
----
-
-## Version History
-
-### v2.1.0 (January 2025)
-- **New:** Hunt Mode — track callsigns, prefixes, grids, DXCC entities
-- **New:** Gold highlighting for hunted stations in decode table
-- **New:** System tray notifications for hunted stations (MQTT alerts)
-- **New:** Right-click context menu to add stations to hunt list
-- **New:** Auto-clear on QSY (band change clears table/map/target)
-- **New:** Path Open rows highlighted with green background
-- **New:** CONNECTED rows highlighted with teal background
-- **New:** Click-to-clipboard on band map
-- **Fixed:** Qt stylesheet override preventing row highlighting
-- **Thanks:** Warren KC0GU (Hunt Mode concept), Brian KB1OPD (Auto-clear on QSY)
-
-### v2.0.10 (January 2025)
-- **Fixed:** Windows UDP socket dying when forwarding to closed port (Error 10054)
-- **Fixed:** Self-forward detection prevents accidental loops
-- **Improved:** Forward errors logged once per port instead of spamming
-- **Thanks:** Brian KB1OPD for detailed bug report and logs
-
-### v2.0.9 (January 2025)
-- **New:** Centralized logging system for debugging
-- **New:** Help menu items: Enable Debug Logging, Open Log Folder
-- **Fixed:** Reduced log verbosity (smart "log first, then summarize" pattern)
-
-### v2.0.8 (December 2025)
-- Fixed: Bootstrap timeout with large log files (background processing)
-- Added: Background scanner for incremental log file processing
-- Added: Behavior distribution bar in Insights panel (L/M/R percentages)
-
-### v2.0.7 (December 2025)
-- Fixed: UI freeze when clicking stations (large ALL.TXT file scan)
-- Fixed: Rapid table refresh and re-sorting from UDP flooding
-- Changed: Station lookup uses cache-only (requires Bootstrap for history)
-
-### v2.0.6 (December 2025)
-- Fixed: Severe CPU usage on macOS (38% → 6% idle)
-- Fixed: Window layout persistence (splitters, dock widgets)
-- Added: Sync to WSJT-X/JTDX button and Ctrl+Y shortcut
-
-### v2.0.3 (December 2025)
-- Added: Clear Target button and Ctrl+R shortcut
-- Added: Auto-clear on QSO logged
-- Added: Window size/position and column width persistence
-
-### v2.0.0 (December 2025)
-- Major release: Local Intelligence system
-- Persona-based behavior prediction
-- Insights panel with pileup status
-- Purist mode (offline operation)
-
-### v1.3.0 (November 2025)
-- Smart frequency scoring
-- Score graph visualization
-- Click-to-set frequency
-
----
-
-## Requirements
-
-- Windows 10/11 or macOS 10.15+
-- WSJT-X or JTDX configured for UDP output
-- Internet connection (for PSK Reporter features)
-
----
-
-## Running from Source
-
+### macOS / Linux (from source)
 ```bash
 git clone https://github.com/wu2c-peter/qso-predictor.git
 cd qso-predictor
@@ -239,31 +69,127 @@ pip install -r requirements.txt
 python main_v2.py
 ```
 
----
+### First-Time Setup
+1. **File → Settings** — enter your callsign and grid
+2. **Tools → Bootstrap Behavior** — analyze your logs for behavior prediction (optional but recommended)
+
+## Features
+
+### Target Perspective Band Map
+See what the DX station hears, color-coded by data quality:
+- **Cyan** — Target is directly decoding these signals
+- **Blue tiers** — Nearby stations (proxy data)
+- **Count numbers** — Signal density (1-3 ideal, 6+ crowded)
+
+### Path Intelligence
+- **CONNECTED** — Target has decoded YOUR signal — call now!
+- **Path Open** — Others from your area getting through
+- **No Path** — Propagation not currently open
+- **Analyze button** — Deep dive into why others succeed
+
+### Local Intelligence
+Predicts DX station behavior from observed patterns:
+- **Loudest First** — favors strong signals
+- **Methodical** — works through pileup systematically  
+- **Random/Fair** — no clear preference
+
+### Hunt Mode
+Never miss a wanted station:
+- Track by callsign, prefix, or country
+- Desktop notifications when spotted
+- Special alerts when working your area
+
+### Smart Frequency Recommendations
+- **Green line** — Algorithm's recommended TX frequency
+- **Score graph** — Visual scoring across the band
+- **Solid vs dotted** — Confidence indicator (proven vs estimated)
+
+## Documentation
+
+📖 **[User Guide](docs/USER_GUIDE.md)** — Complete usage documentation
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| Ctrl+R | Clear target selection |
+| Ctrl+H | Open Hunt List |
+| Ctrl+S | Open Settings |
+| F1 | Open User Guide |
+| F5 | Force refresh |
+
+## Requirements
+
+- Windows 10/11, macOS, or Linux
+- Python 3.10+ (if running from source)
+- WSJT-X or JTDX
+- Internet connection (for PSK Reporter data)
+
+## Version History
+
+### v2.1.0 (January 2025)
+- **NEW:** Hunt Mode — track stations/prefixes/countries with alerts
+- **NEW:** Path Intelligence — see who from your area is getting through and why
+- **NEW:** Undockable panels — customize layout for multi-monitor
+- **NEW:** Click-to-clipboard for frequencies
+- **NEW:** Auto-clear on QSY option
+- **FIXED:** Windows UDP Error 10054 crashes
+- **FIXED:** Layout issues with right dock panel
+
+### v2.0.10 (December 2024)
+- **FIXED:** Critical Windows UDP Error 10054 causing crashes
+- Improved error handling for network disruptions
+
+### v2.0.9 (December 2024)
+- **NEW:** Debug logging toggle (Help menu)
+- **NEW:** Connection Help dialog
+- **NEW:** Open Log Folder menu item
+- Improved troubleshooting capabilities
+
+### v2.0.3 (December 2024)
+- **NEW:** Clear Target button and Ctrl+R shortcut
+- **NEW:** Auto-clear on QSO logged
+- **NEW:** Window/column size persistence
+- **FIXED:** QSO Logged message parsing
+
+### v2.0.0 (November 2024)
+- **NEW:** Local Intelligence — behavior prediction from log analysis
+- **NEW:** Insights Panel — pileup status, behavior, strategy recommendations
+- **NEW:** Multicast UDP support (JTAlert, N3FJP compatibility)
+- **NEW:** Persona-based prediction (Contest Op, Casual, DX Hunter, etc.)
+
+### v1.3.0
+- Smart frequency scoring (proven > empty)
+- Score graph visualization
+- Click-to-set frequency with dwell timer
+
+### v1.2.0
+- Geographic perspective engine (tiered by proximity)
+- Path status column
+- WSJT-X/JTDX double-click integration
+
+### v1.0.0
+- Initial release
+- Real-time MQTT streaming from PSK Reporter
+- Basic band map visualization
 
 ## Contributing
 
-Contributions welcome! Please open an issue or pull request.
+Contributions welcome! Please open an issue first to discuss proposed changes.
 
 ### Contributors
-- **Warren KC0GU** — Feature suggestions (Hunt Mode, Clear Target, Auto-clear, UI persistence, Sync button), bug reports
-- **Brian KB1OPD** — Bug reports (UDP forwarding, Auto-clear on QSY)
-- **Doug McDonald** — Bug reports (UI freeze with large logs)
-
----
+- **Warren KC0GU** — Hunt Mode concept, Clear Target workflow, UI persistence suggestions
+- **Brian KB1OPD** — Auto-clear on QSY, testing and feedback
+- **Doug McDonald, CaptainBucko, Bill K3CDY** — Beta testing and feedback
 
 ## License
 
-GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
+This project is licensed under the GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
 
----
+## Support
 
-## Links
-
-- [Releases](https://github.com/wu2c-peter/qso-predictor/releases)
-- [Discussions](https://github.com/wu2c-peter/qso-predictor/discussions)
-- [Issues](https://github.com/wu2c-peter/qso-predictor/issues)
-- [Wiki](https://github.com/wu2c-peter/qso-predictor/wiki)
+- **Issues:** [GitHub Issues](https://github.com/wu2c-peter/qso-predictor/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/wu2c-peter/qso-predictor/discussions)
 
 ---
 
