@@ -76,7 +76,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QTableView, QLabel, QHeaderView, QDockWidget,
                              QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu, QToolBar, QPushButton, QCheckBox,
-                             QStyledItemDelegate)
+                             QStyledItemDelegate, QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
 from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon, QCursor, QBrush
 
