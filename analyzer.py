@@ -36,6 +36,9 @@ class QSOAnalyzer(QObject):
         self.receiver_cache = {}
         # Keyed by grid[:4] (subsquare) -> list of spots (what stations in that grid hear)
         self.grid_cache = {}
+        # v2.1.0: Keyed by sender callsign -> list of spots (who hears that station)
+        # Used for Phase 2 Path Intelligence reverse lookups
+        self.sender_cache = {}
         
         self.running = True
         self.mqtt.start()
@@ -55,6 +58,7 @@ class QSOAnalyzer(QObject):
                 self.my_reception_cache.clear()
                 self.receiver_cache.clear()
                 self.grid_cache.clear()
+                self.sender_cache.clear()  # v2.1.0: Phase 2 reverse lookup cache
             
             self.mqtt.update_subscriptions(self.my_call, freq)
             self.cache_updated.emit()
@@ -103,6 +107,13 @@ class QSOAnalyzer(QObject):
                         if grid_key not in self.grid_cache:
                             self.grid_cache[grid_key] = []
                         self.grid_cache[grid_key].append(spot)
+                    
+                    # v2.1.0: Populate sender_cache for Phase 2 reverse lookups
+                    sender_call = spot.get('sender', '').upper()
+                    if sender_call:
+                        if sender_call not in self.sender_cache:
+                            self.sender_cache[sender_call] = []
+                        self.sender_cache[sender_call].append(spot)
             
             # v2.1.0: Emit for hunt mode checking (outside lock)
             self.spot_received.emit(spot)
@@ -404,8 +415,10 @@ class QSOAnalyzer(QObject):
         """
         Phase 2 Path Intelligence: Analyze WHY a near-me station is getting through.
         
+        Uses MQTT data we already have (sender_cache) instead of HTTP API.
+        
         Performs:
-        1. Reverse PSK Reporter lookup to find who hears them
+        1. Reverse lookup from sender_cache: who hears this station?
         2. Directional analysis to detect beaming
         3. SNR comparison to peers
         4. Frequency density check (using existing data)
@@ -431,9 +444,9 @@ class QSOAnalyzer(QObject):
                 'insights': [str, ...]  # Human-readable insights
             }
         """
-        from psk_reporter_api import get_api, calculate_bearing, classify_beam_pattern
+        from psk_reporter_api import calculate_bearing, classify_beam_pattern
         
-        call = station.get('call', '')
+        call = station.get('call', '').upper()
         grid = station.get('grid', '')
         snr = station.get('snr', -99)
         freq = station.get('freq', 0)
@@ -456,44 +469,54 @@ class QSOAnalyzer(QObject):
         }
         
         try:
-            # 1. Reverse lookup: who hears this station?
-            api = get_api()
-            spots = api.reverse_lookup(call)
+            # 1. Reverse lookup from MQTT cache: who hears this station?
+            recent_limit = time.time() - 300  # Last 5 minutes
             
-            if not spots:
-                result['error'] = "No reception data available"
-                result['insights'].append("⚠️ No recent reception reports found")
-                return result
+            with self.lock:
+                spots = []
+                if call in self.sender_cache:
+                    spots = [s for s in self.sender_cache[call] if s.get('time', 0) > recent_limit]
             
-            # 2. Directional analysis
-            bearings = []
-            for spot in spots:
-                bearing = calculate_bearing(grid, spot.receiver_grid)
-                if bearing is not None:
-                    bearings.append(bearing)
+            logger.info(f"Phase 2: {call} has {len(spots)} recent spots in cache")
             
-            if len(bearings) >= 3:
-                is_beaming, direction, confidence = classify_beam_pattern(bearings)
-                result['is_beaming'] = is_beaming
-                result['beam_direction'] = direction
-                result['beam_confidence'] = confidence
+            if len(spots) < 3:
+                # Not enough data for directional analysis
+                result['insights'].append(f"ℹ️ Only {len(spots)} recent spot(s) — need 3+ for analysis")
+                # Still do peer comparison and freq density
+            else:
+                # 2. Directional analysis - calculate bearings to all receivers
+                bearings = []
+                for spot in spots:
+                    receiver_grid = spot.get('grid', '')
+                    if receiver_grid and len(receiver_grid) >= 4 and grid and len(grid) >= 4:
+                        bearing = calculate_bearing(grid, receiver_grid)
+                        if bearing is not None:
+                            bearings.append(bearing)
                 
-                if is_beaming:
-                    # Check if beaming toward target
-                    if target_grid and len(target_grid) >= 2:
-                        target_bearing = calculate_bearing(grid, target_grid)
-                        if target_bearing is not None:
-                            target_region = self._bearing_to_region_simple(target_bearing)
-                            if direction == target_region:
-                                result['insights'].append(f"📡 Beaming toward target area ({confidence}% of spots in {direction})")
-                            else:
-                                result['insights'].append(f"📡 Beaming toward {direction} ({confidence}% of spots)")
-                    else:
-                        result['insights'].append(f"📡 Beaming toward {direction} ({confidence}% of spots)")
+                logger.debug(f"Phase 2: {call} bearings: {bearings}")
+                
+                if len(bearings) >= 3:
+                    is_beaming, direction, confidence = classify_beam_pattern(bearings)
+                    result['is_beaming'] = is_beaming
+                    result['beam_direction'] = direction
+                    result['beam_confidence'] = confidence
+                    
+                    if is_beaming:
+                        # Check if beaming toward target
+                        if target_grid and len(target_grid) >= 2:
+                            target_bearing = calculate_bearing(grid, target_grid)
+                            if target_bearing is not None:
+                                target_region = self._bearing_to_region_simple(target_bearing)
+                                if direction == target_region:
+                                    result['insights'].append(f"📡 Beaming toward target area ({confidence}% of spots in {direction})")
+                                else:
+                                    result['insights'].append(f"📡 Beaming toward {direction} ({confidence}% of spots)")
+                        else:
+                            result['insights'].append(f"📡 Beaming toward {direction} ({confidence}% of spots)")
             
             # 3. SNR comparison to peers
             if len(all_near_me) >= 2:
-                peer_snrs = [s.get('snr', -99) for s in all_near_me if s.get('call') != call]
+                peer_snrs = [s.get('snr', -99) for s in all_near_me if s.get('call', '').upper() != call]
                 if peer_snrs:
                     peer_avg = sum(peer_snrs) / len(peer_snrs)
                     snr_diff = snr - peer_avg
@@ -509,7 +532,7 @@ class QSOAnalyzer(QObject):
             result['freq_clear'] = freq_density <= 3
             
             # 5. Generate final insights based on findings
-            if not result['is_beaming'] and not result['has_power_advantage']:
+            if not result['is_beaming'] and not result['has_power_advantage'] and len(spots) >= 3:
                 result['insights'].append("No beaming pattern detected, SNR within normal range")
                 
                 if result['freq_clear']:

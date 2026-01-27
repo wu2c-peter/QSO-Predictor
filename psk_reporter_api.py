@@ -110,10 +110,16 @@ class PSKReporterAPI:
         try:
             params = {
                 'senderCallsign': call,
-                'flowStartSeconds': -900,  # Last 15 minutes
+                'flowStartSeconds': -3600,  # Last 1 hour (was 15 min)
                 'rronly': 1,  # Reception reports only
                 'noactive': 1,  # Don't need active reporters
                 'format': 'json'
+            }
+            
+            # Headers required by PSK Reporter
+            headers = {
+                'User-Agent': 'QSO-Predictor/2.1.0 (Amateur Radio Tool; +https://github.com/wu2c-peter/qso-predictor)',
+                'Accept': 'application/json'
             }
             
             logger.info(f"PSK Reporter lookup: {call}")
@@ -121,6 +127,7 @@ class PSKReporterAPI:
             response = requests.get(
                 self.BASE_URL,
                 params=params,
+                headers=headers,
                 timeout=10
             )
             
@@ -132,6 +139,15 @@ class PSKReporterAPI:
                 return None
             
             data = response.json()
+            
+            # DEBUG: Log the raw response structure
+            logger.info(f"PSK Reporter raw keys: {list(data.keys())}")
+            if 'receptionReport' in data:
+                reports = data['receptionReport']
+                logger.info(f"receptionReport type: {type(reports)}, count: {len(reports) if isinstance(reports, list) else 'not a list'}")
+            else:
+                # Try other common wrapper structures
+                logger.info(f"No 'receptionReport' key. Full response (truncated): {str(data)[:500]}")
             
             # Parse the response
             spots = self._parse_response(data)
@@ -156,10 +172,28 @@ class PSKReporterAPI:
         """Parse PSK Reporter JSON response into SpotRecords."""
         spots = []
         
-        # Handle the PSK Reporter response format
+        # Handle various PSK Reporter response formats
+        # Try direct 'receptionReport' first
         reception_reports = data.get('receptionReport', [])
+        
+        # Try nested under 'initialDataReception'
+        if not reception_reports and 'initialDataReception' in data:
+            inner = data['initialDataReception']
+            if isinstance(inner, dict):
+                reception_reports = inner.get('receptionReport', [])
+        
+        # Try nested under 'receptionReports' (plural)
+        if not reception_reports:
+            reception_reports = data.get('receptionReports', [])
+        
+        # Ensure it's a list
         if not isinstance(reception_reports, list):
-            reception_reports = [reception_reports]
+            if reception_reports:
+                reception_reports = [reception_reports]
+            else:
+                reception_reports = []
+        
+        logger.debug(f"Parsing {len(reception_reports)} reception reports")
         
         for report in reception_reports:
             try:
