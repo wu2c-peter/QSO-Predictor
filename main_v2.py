@@ -791,6 +791,11 @@ class MainWindow(QMainWindow):
         
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
+        
+        # v2.1.0: Size policy - allow central widget to shrink so bottom dock gets space
+        # This is critical on Windows where Qt is more aggressive about central widget expansion
+        main_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        
         main_layout = QVBoxLayout(main_widget)
         main_layout.setContentsMargins(0,0,0,0)
         main_layout.setSpacing(0)
