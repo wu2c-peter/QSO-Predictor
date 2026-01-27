@@ -141,17 +141,20 @@ class NearMeWidget(QGroupBox):
     Display stations near the user that are being heard by the target.
     
     Phase 1 of Path Intelligence: "Is anyone from my area getting through?"
+    Phase 2: "Why are THEY getting through?" (on-demand analysis)
     
     v2.1.0
     """
     
-    # Signal to request Phase 2 analysis (future)
-    analyze_requested = pyqtSignal()
+    # Signal to request Phase 2 analysis (emits list of stations)
+    analyze_requested = pyqtSignal(list)
     
     def __init__(self, parent=None):
         super().__init__("Path Intelligence", parent)
         self._setup_ui()
         self._near_me_data = None
+        self._analysis_results = {}  # call -> analysis result
+        self._analysis_in_progress = False
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -171,14 +174,24 @@ class NearMeWidget(QGroupBox):
         self.source_label.setStyleSheet("color: #888888; font-size: 10px;")
         layout.addWidget(self.source_label)
         
-        # Station list (up to 3 near-me stations)
+        # Station list with analysis sublabels (up to 3 near-me stations)
         self.station_labels = []
+        self.analysis_labels = []
+        
         for i in range(3):
             station_label = QLabel("")
             station_label.setStyleSheet("color: #cccccc; font-size: 11px; padding-left: 8px;")
             station_label.setWordWrap(True)
             layout.addWidget(station_label)
             self.station_labels.append(station_label)
+            
+            # Analysis result (hidden until Phase 2 runs)
+            analysis_label = QLabel("")
+            analysis_label.setStyleSheet("color: #aaaaaa; font-size: 10px; padding-left: 16px;")
+            analysis_label.setWordWrap(True)
+            analysis_label.hide()
+            layout.addWidget(analysis_label)
+            self.analysis_labels.append(analysis_label)
         
         # Insight/suggestion
         self.insight_label = QLabel("")
@@ -186,11 +199,86 @@ class NearMeWidget(QGroupBox):
         self.insight_label.setWordWrap(True)
         layout.addWidget(self.insight_label)
         
-        # Future: Analyze button for Phase 2
-        # self.analyze_button = QPushButton("🔍 Analyze Why")
-        # self.analyze_button.clicked.connect(self.analyze_requested.emit)
-        # self.analyze_button.hide()
-        # layout.addWidget(self.analyze_button)
+        # Phase 2: Analyze button
+        self.analyze_button = QPushButton("🔍 Analyze")
+        self.analyze_button.setToolTip("Check if nearby stations are beaming or have power advantage")
+        self.analyze_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2a4a6a;
+                color: #cccccc;
+                border: 1px solid #3a5a7a;
+                border-radius: 3px;
+                padding: 4px 8px;
+                font-size: 10px;
+            }
+            QPushButton:hover {
+                background-color: #3a5a8a;
+            }
+            QPushButton:disabled {
+                background-color: #333333;
+                color: #666666;
+            }
+        """)
+        self.analyze_button.clicked.connect(self._on_analyze_clicked)
+        self.analyze_button.hide()  # Hidden until we have stations
+        layout.addWidget(self.analyze_button)
+        
+        # Analysis status label
+        self.analysis_status = QLabel("")
+        self.analysis_status.setStyleSheet("color: #888888; font-size: 10px;")
+        self.analysis_status.hide()
+        layout.addWidget(self.analysis_status)
+    
+    def _on_analyze_clicked(self):
+        """Handle analyze button click."""
+        if self._near_me_data and self._near_me_data.get('stations'):
+            self._analysis_in_progress = True
+            self.analyze_button.setEnabled(False)
+            self.analyze_button.setText("Analyzing...")
+            self.analysis_status.setText("Fetching data from PSK Reporter...")
+            self.analysis_status.show()
+            
+            # Emit signal with stations to analyze
+            self.analyze_requested.emit(self._near_me_data['stations'])
+    
+    def update_analysis_results(self, results: list):
+        """
+        Update display with Phase 2 analysis results.
+        
+        Args:
+            results: List of analysis result dicts from analyzer.analyze_near_me_station()
+        """
+        self._analysis_in_progress = False
+        self.analyze_button.setEnabled(True)
+        self.analyze_button.setText("🔍 Analyze")
+        self.analysis_status.hide()
+        
+        # Store results by callsign
+        for result in results:
+            call = result.get('call', '')
+            if call:
+                self._analysis_results[call] = result
+        
+        # Update the display for each station
+        if not self._near_me_data:
+            return
+            
+        stations = self._near_me_data.get('stations', [])
+        
+        for i, station in enumerate(stations[:3]):
+            call = station.get('call', '')
+            if call in self._analysis_results:
+                result = self._analysis_results[call]
+                insights = result.get('insights', [])
+                
+                if insights:
+                    # Show the analysis insights
+                    insight_text = "\n".join(insights)
+                    self.analysis_labels[i].setText(insight_text)
+                    self.analysis_labels[i].show()
+                elif result.get('error'):
+                    self.analysis_labels[i].setText(f"⚠️ {result['error']}")
+                    self.analysis_labels[i].show()
     
     def update_display(self, near_me_data: Optional[Dict], path_status: 'PathStatus' = None):
         """
@@ -215,7 +303,11 @@ class NearMeWidget(QGroupBox):
             self.source_label.setText("Configure your grid in Settings")
             for label in self.station_labels:
                 label.setText("")
+            for label in self.analysis_labels:
+                label.setText("")
+                label.hide()
             self.insight_label.setText("")
+            self.analyze_button.hide()
             return
         
         stations = near_me_data.get('stations', [])
@@ -242,6 +334,8 @@ class NearMeWidget(QGroupBox):
                 self.insight_label.setText("💡 No path from your area currently")
             else:
                 self.insight_label.setText("💡 No data - target area not reporting")
+            # Hide analyze button when no stations
+            self.analyze_button.hide()
         elif count >= 1:
             # We have near-me stations getting through
             if count == 1:
@@ -262,10 +356,16 @@ class NearMeWidget(QGroupBox):
                 self.insight_label.setText("💡 Others getting through — you can too!")
             else:
                 self.insight_label.setText("💡 Path is open! Keep calling")
+            
+            # Show analyze button when we have stations to analyze
+            self.analyze_button.show()
         
-        # Clear station labels first
+        # Clear station labels and analysis labels first
         for label in self.station_labels:
             label.setText("")
+        for label in self.analysis_labels:
+            label.setText("")
+            label.hide()
         
         # Populate station details (up to 3)
         for i, station in enumerate(stations[:3]):
@@ -296,6 +396,14 @@ class NearMeWidget(QGroupBox):
                 self.station_labels[i].setStyleSheet("color: #ffcc00; font-size: 11px; padding-left: 8px;")
             else:
                 self.station_labels[i].setStyleSheet("color: #ff8888; font-size: 11px; padding-left: 8px;")
+            
+            # Show cached analysis if we have it for this station
+            if call in self._analysis_results:
+                result = self._analysis_results[call]
+                insights = result.get('insights', [])
+                if insights:
+                    self.analysis_labels[i].setText("\n".join(insights))
+                    self.analysis_labels[i].show()
     
     def clear(self):
         """Clear the display."""
@@ -304,8 +412,14 @@ class NearMeWidget(QGroupBox):
         self.source_label.setText("")
         for label in self.station_labels:
             label.setText("")
+        for label in self.analysis_labels:
+            label.setText("")
+            label.hide()
         self.insight_label.setText("")
         self._near_me_data = None
+        self._analysis_results.clear()
+        self.analyze_button.hide()
+        self.analysis_status.hide()
 
 
 class BehaviorWidget(QGroupBox):
@@ -687,6 +801,9 @@ class InsightsPanel(QWidget):
     # v2.0.6: Signal when user wants to sync target to JTDX
     sync_requested = pyqtSignal()
     
+    # v2.1.0: Signal when user wants Phase 2 path analysis (emits stations list)
+    path_analyze_requested = pyqtSignal(list)
+    
     def __init__(self, 
                  session_tracker: SessionTracker = None,
                  predictor: BayesianPredictor = None,
@@ -798,6 +915,7 @@ class InsightsPanel(QWidget):
         
         # v2.1.0: Path Intelligence - Near Me stations
         self.near_me_widget = NearMeWidget()
+        self.near_me_widget.analyze_requested.connect(self._on_path_analyze_requested)
         layout.addWidget(self.near_me_widget)
         
         # Behavior
@@ -954,6 +1072,29 @@ class InsightsPanel(QWidget):
         """
         # Pass current path status so widget can give context-aware insights
         self.near_me_widget.update_display(near_me_data, self._path_status)
+    
+    def _on_path_analyze_requested(self, stations: list):
+        """
+        Handle Phase 2 analysis request from NearMeWidget.
+        
+        v2.1.0: Forward to main window for processing.
+        
+        Args:
+            stations: List of station dicts to analyze
+        """
+        # Forward the request up to main_v2.py
+        self.path_analyze_requested.emit(stations)
+    
+    def update_path_analysis_results(self, results: list):
+        """
+        Update Path Intelligence display with Phase 2 analysis results.
+        
+        v2.1.0: Phase 2 of Path Intelligence.
+        
+        Args:
+            results: List of analysis result dicts from analyzer.analyze_near_me_station()
+        """
+        self.near_me_widget.update_analysis_results(results)
     
     def show_model_status(self, status: str, is_stale: bool = False):
         """Update model status display."""

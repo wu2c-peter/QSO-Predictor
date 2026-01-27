@@ -4,6 +4,7 @@
 import logging
 import threading
 import time
+from typing import List, Dict, Optional
 from PyQt6.QtCore import QObject, pyqtSignal
 from mqtt_client import MQTTClient
 
@@ -398,6 +399,169 @@ class QSOAnalyzer(QObject):
             'proxy_count': len(proxy_reporters),
             'my_grid': my_grid
         }
+
+    def analyze_near_me_station(self, station: dict, all_near_me: List[dict], target_grid: str) -> dict:
+        """
+        Phase 2 Path Intelligence: Analyze WHY a near-me station is getting through.
+        
+        Performs:
+        1. Reverse PSK Reporter lookup to find who hears them
+        2. Directional analysis to detect beaming
+        3. SNR comparison to peers
+        4. Frequency density check (using existing data)
+        
+        Args:
+            station: Single station dict from find_near_me_stations()
+            all_near_me: All near-me stations (for peer comparison)
+            target_grid: Target station's grid (for bearing calculation)
+            
+        Returns:
+            {
+                'call': str,
+                'grid': str,
+                'snr': int,
+                'freq': int,
+                'is_beaming': bool,
+                'beam_direction': str,  # e.g., "EU", "toward target"
+                'beam_confidence': int,  # percentage
+                'snr_vs_peers': int,  # dB above/below peer average
+                'has_power_advantage': bool,
+                'freq_density': int,
+                'freq_clear': bool,
+                'insights': [str, ...]  # Human-readable insights
+            }
+        """
+        from psk_reporter_api import get_api, calculate_bearing, classify_beam_pattern
+        
+        call = station.get('call', '')
+        grid = station.get('grid', '')
+        snr = station.get('snr', -99)
+        freq = station.get('freq', 0)
+        
+        result = {
+            'call': call,
+            'grid': grid,
+            'snr': snr,
+            'freq': freq,
+            'is_beaming': False,
+            'beam_direction': '',
+            'beam_confidence': 0,
+            'snr_vs_peers': 0,
+            'has_power_advantage': False,
+            'freq_density': 0,
+            'freq_clear': False,
+            'insights': [],
+            'analysis_done': False,
+            'error': None
+        }
+        
+        try:
+            # 1. Reverse lookup: who hears this station?
+            api = get_api()
+            spots = api.reverse_lookup(call)
+            
+            if not spots:
+                result['error'] = "No reception data available"
+                result['insights'].append("⚠️ No recent reception reports found")
+                return result
+            
+            # 2. Directional analysis
+            bearings = []
+            for spot in spots:
+                bearing = calculate_bearing(grid, spot.receiver_grid)
+                if bearing is not None:
+                    bearings.append(bearing)
+            
+            if len(bearings) >= 3:
+                is_beaming, direction, confidence = classify_beam_pattern(bearings)
+                result['is_beaming'] = is_beaming
+                result['beam_direction'] = direction
+                result['beam_confidence'] = confidence
+                
+                if is_beaming:
+                    # Check if beaming toward target
+                    if target_grid and len(target_grid) >= 2:
+                        target_bearing = calculate_bearing(grid, target_grid)
+                        if target_bearing is not None:
+                            target_region = self._bearing_to_region_simple(target_bearing)
+                            if direction == target_region:
+                                result['insights'].append(f"📡 Beaming toward target area ({confidence}% of spots in {direction})")
+                            else:
+                                result['insights'].append(f"📡 Beaming toward {direction} ({confidence}% of spots)")
+                    else:
+                        result['insights'].append(f"📡 Beaming toward {direction} ({confidence}% of spots)")
+            
+            # 3. SNR comparison to peers
+            if len(all_near_me) >= 2:
+                peer_snrs = [s.get('snr', -99) for s in all_near_me if s.get('call') != call]
+                if peer_snrs:
+                    peer_avg = sum(peer_snrs) / len(peer_snrs)
+                    snr_diff = snr - peer_avg
+                    result['snr_vs_peers'] = int(snr_diff)
+                    
+                    if snr_diff >= 6:
+                        result['has_power_advantage'] = True
+                        result['insights'].append(f"⚡ +{int(snr_diff)}dB above others nearby — likely power/antenna advantage")
+            
+            # 4. Frequency density check (use our existing QRM data)
+            freq_density = self._get_freq_density(freq)
+            result['freq_density'] = freq_density
+            result['freq_clear'] = freq_density <= 3
+            
+            # 5. Generate final insights based on findings
+            if not result['is_beaming'] and not result['has_power_advantage']:
+                result['insights'].append("No beaming pattern detected, SNR within normal range")
+                
+                if result['freq_clear']:
+                    result['insights'].append(f"💡 Their freq has light traffic — try {freq} Hz?")
+            
+            result['analysis_done'] = True
+            
+        except ImportError as e:
+            result['error'] = f"Missing module: {e}"
+            logger.error(f"Phase 2 analysis import error: {e}")
+        except Exception as e:
+            result['error'] = str(e)
+            logger.error(f"Phase 2 analysis error: {e}")
+        
+        return result
+    
+    def _bearing_to_region_simple(self, bearing: float) -> str:
+        """Simple bearing to region conversion."""
+        bearing = bearing % 360
+        if 20 <= bearing < 70:
+            return "EU"
+        elif 70 <= bearing < 120:
+            return "AF/ME"
+        elif 120 <= bearing < 180:
+            return "AS"
+        elif 180 <= bearing < 240:
+            return "OC"
+        elif 240 <= bearing < 300:
+            return "SA"
+        elif 300 <= bearing < 340:
+            return "CA"
+        else:
+            return "NA"
+    
+    def _get_freq_density(self, audio_freq: int) -> int:
+        """Get signal density at a frequency from cached data."""
+        with self.lock:
+            if self.current_dial_freq > 0:
+                rf_freq = self.current_dial_freq + audio_freq
+            else:
+                rf_freq = audio_freq
+            
+            count = 0
+            recent_limit = time.time() - 45
+            
+            for cached_freq, reports in self.band_cache.items():
+                if abs(cached_freq - rf_freq) < 60:  # 60Hz window
+                    for r in reports:
+                        if r.get('time', 0) > recent_limit:
+                            count += 1
+            
+            return count
 
     def get_qrm_for_freq(self, target_freq_in):
         """Returns RECENT spots overlapping the target."""

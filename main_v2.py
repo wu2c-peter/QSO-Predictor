@@ -1119,6 +1119,12 @@ class MainWindow(QMainWindow):
             try:
                 self.local_intel.setup(self)
                 
+                # v2.1.0: Connect Phase 2 Path Intelligence analysis request
+                if self.local_intel.insights_panel:
+                    self.local_intel.insights_panel.path_analyze_requested.connect(
+                        self._on_path_analyze_requested
+                    )
+                
                 # v2.1.0: Add insights panel toggle to View menu
                 if self.local_intel.insights_dock and hasattr(self, '_view_menu'):
                     # Insert before the separator (position 2, after decode and target toggles)
@@ -2009,6 +2015,48 @@ class MainWindow(QMainWindow):
         
         # Check spot against hunt list (handles cooldown internally)
         self.hunt_manager.check_spot(spot, time.time())
+    
+    def _on_path_analyze_requested(self, stations: list):
+        """
+        Handle Phase 2 Path Intelligence analysis request.
+        
+        v2.1.0: Called when user clicks "Analyze" button in Path Intelligence panel.
+        Performs reverse PSK Reporter lookups and directional analysis.
+        
+        Args:
+            stations: List of near-me station dicts to analyze
+        """
+        if not stations:
+            return
+        
+        # Get current target grid
+        target_call = self.current_target_call if hasattr(self, 'current_target_call') else ''
+        target_grid = self.current_target_grid if hasattr(self, 'current_target_grid') else ''
+        
+        logger.info(f"Path Intelligence Phase 2: Analyzing {len(stations)} station(s)")
+        
+        # Perform analysis for each station
+        results = []
+        for station in stations[:3]:  # Limit to 3 to avoid too many API calls
+            try:
+                result = self.analyzer.analyze_near_me_station(
+                    station=station,
+                    all_near_me=stations,
+                    target_grid=target_grid
+                )
+                results.append(result)
+                logger.debug(f"Analyzed {station.get('call', '?')}: {result.get('insights', [])}")
+            except Exception as e:
+                logger.error(f"Phase 2 analysis error for {station.get('call', '?')}: {e}")
+                results.append({
+                    'call': station.get('call', '?'),
+                    'error': str(e),
+                    'insights': [f"⚠️ Analysis failed: {e}"]
+                })
+        
+        # Send results back to insights panel
+        if self.local_intel and self.local_intel.insights_panel:
+            self.local_intel.insights_panel.update_path_analysis_results(results)
     
     def _on_hunt_alert(self, call, band, alert_type, details):
         """Handle hunt alert - show notification to user."""
