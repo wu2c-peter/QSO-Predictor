@@ -646,6 +646,23 @@ class MainWindow(QMainWindow):
         geo = self.config.get('WINDOW', 'geometry')
         if geo:
             self.restoreGeometry(QByteArray.fromHex(geo.encode()))
+            
+            # v2.1.0: Ensure window fits on screen (fix for Windows off-screen issue)
+            screen = QApplication.primaryScreen()
+            if screen:
+                available = screen.availableGeometry()
+                frame = self.frameGeometry()
+                
+                # If window extends beyond screen, resize to fit
+                if frame.bottom() > available.bottom():
+                    new_height = available.height() - 50  # Leave some margin
+                    if new_height < 600:
+                        new_height = 600  # Minimum usable height
+                    self.resize(self.width(), new_height)
+                    self.move(frame.x(), available.y() + 10)
+                
+                if frame.right() > available.right():
+                    self.move(available.x() + 10, self.y())
 
         self.analyzer = QSOAnalyzer(self.config)
         self.udp = UDPHandler(self.config)
@@ -885,6 +902,11 @@ class MainWindow(QMainWindow):
         self.table_view = QTableView()
         self.table_view.setModel(self.model)
         
+        # v2.1.0: Size policy - allow table to shrink to make room for dock widgets
+        from PyQt6.QtWidgets import QSizePolicy
+        self.table_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.table_view.setMinimumHeight(100)  # Ensure table never disappears completely
+        
         # v2.1.0: Custom delegate for hunt highlighting (bypasses stylesheet override)
         self.table_view.setItemDelegate(HuntHighlightDelegate(self.table_view))
         
@@ -936,7 +958,8 @@ class MainWindow(QMainWindow):
         
         # Container for Dashboard + Band Map
         target_container = QWidget()
-        target_container.setMinimumHeight(350)  # Ensure band map gets enough space
+        target_container.setMinimumHeight(280)  # Ensure band map gets enough space
+        target_container.setMaximumHeight(400)  # Don't let it push table off screen
         target_layout = QVBoxLayout(target_container)
         target_layout.setContentsMargins(0, 0, 0, 0)
         target_layout.setSpacing(0)
@@ -1131,6 +1154,7 @@ class MainWindow(QMainWindow):
         """Reset dock widgets to their default positions.
         
         Shows all panels, un-floats them, and restores default positions.
+        Also ensures window fits on screen.
         """
         # Show and re-dock Target View
         self.target_dock.show()
@@ -1143,8 +1167,23 @@ class MainWindow(QMainWindow):
             self.local_intel.insights_dock.setFloating(False)
             self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.local_intel.insights_dock)
         
+        # Ensure window fits on screen
+        screen = QApplication.primaryScreen()
+        if screen:
+            available = screen.availableGeometry()
+            # Reset to reasonable size that fits on screen
+            new_width = min(1200, available.width() - 100)
+            new_height = min(850, available.height() - 100)
+            self.resize(new_width, new_height)
+            # Center on screen
+            self.move(
+                available.x() + (available.width() - new_width) // 2,
+                available.y() + (available.height() - new_height) // 2
+            )
+        
         # Clear saved dock state so next restart also uses defaults
         self.config.save_setting('WINDOW', 'dock_state', '')
+        self.config.save_setting('WINDOW', 'geometry', '')  # Also clear saved geometry
         
         logger.info("Layout reset to defaults")
     
