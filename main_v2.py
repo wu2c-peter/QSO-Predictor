@@ -1130,6 +1130,12 @@ class MainWindow(QMainWindow):
                 dock_state = self.config.get('WINDOW', 'dock_state')
                 if dock_state:
                     self.restoreState(QByteArray.fromHex(dock_state.encode()))
+                    
+                    # v2.1.0: Re-apply corner ownership AFTER restoreState
+                    # On Windows, restoreState can override setCorner, causing bottom dock 
+                    # to span full width instead of right dock spanning full height
+                    self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+                    self.setCorner(Qt.Corner.TopRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
             except Exception as e:
                 logger.error(f"Failed to setup Local Intelligence panel: {e}")
     
@@ -1160,16 +1166,26 @@ class MainWindow(QMainWindow):
         Shows all panels, un-floats them, and restores default positions.
         Also ensures window fits on screen.
         """
-        # Show and re-dock Target View
-        self.target_dock.show()
-        self.target_dock.setFloating(False)
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.target_dock)
+        # v2.1.0: CRITICAL - Re-apply corner ownership BEFORE re-docking
+        # This makes right dock span full height, bottom dock only spans left of it
+        # Without this, Windows reverts to bottom dock spanning full width
+        self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+        self.setCorner(Qt.Corner.TopRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
         
-        # Show and re-dock Local Intelligence if present
+        # Remove docks first to reset their state completely
+        self.removeDockWidget(self.target_dock)
+        if self.local_intel and self.local_intel.insights_dock:
+            self.removeDockWidget(self.local_intel.insights_dock)
+        
+        # Re-add docks in correct order: RIGHT dock first (so it claims corners), then BOTTOM
         if self.local_intel and self.local_intel.insights_dock:
             self.local_intel.insights_dock.show()
             self.local_intel.insights_dock.setFloating(False)
             self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.local_intel.insights_dock)
+        
+        self.target_dock.show()
+        self.target_dock.setFloating(False)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.target_dock)
         
         # Ensure window fits on screen
         screen = QApplication.primaryScreen()
