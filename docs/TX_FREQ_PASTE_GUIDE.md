@@ -226,8 +226,91 @@ Both methods start with QSO Predictor's click-to-clipboard feature (v2.1.0+).
 
 ---
 
+## Mac Users: Hammerspoon (Experimental)
+
+**This should work but hasn't been fully tested!**
+
+[Hammerspoon](https://www.hammerspoon.org/) is a free, open-source automation tool for macOS — similar to AutoHotkey for Windows.
+
+### Step 1: Install Hammerspoon
+
+1. Download from https://www.hammerspoon.org/
+2. Move to Applications folder
+3. Launch it and grant Accessibility permissions when prompted
+
+### Step 2: Find Your Coordinates
+
+1. Open Hammerspoon Console (click menubar icon → Console)
+2. Position your WSJT-X/JTDX window where you normally keep it
+3. Hover mouse over the TX frequency field
+4. In the console, type: `hs.mouse.absolutePosition()` and press Enter
+5. Note the x and y values
+
+### Step 3: Create the Script
+
+Edit `~/.hammerspoon/init.lua` (create if it doesn't exist):
+
+```lua
+-- QSO Predictor Auto-Paste for Mac
+-- EXPERIMENTAL - may need tweaking!
+
+-- UPDATE THESE with your coordinates from Step 2
+local tx_field_x = 595
+local tx_field_y = 485
+
+-- Track clipboard changes
+local lastClipboard = ""
+
+hs.timer.doEvery(0.5, function()
+    local clipboard = hs.pasteboard.getContents()
+    if clipboard == lastClipboard then return end
+    lastClipboard = clipboard
+    
+    -- Check if it's a valid frequency (300-3000 Hz)
+    if not clipboard then return end
+    local freq = tonumber(clipboard)
+    if not freq or freq < 300 or freq > 3000 then return end
+    
+    -- Find WSJT-X or JTDX
+    local app = hs.application.find("WSJT-X") or hs.application.find("JTDX")
+    if not app then return end
+    
+    -- Activate and click on TX field
+    app:activate()
+    hs.timer.doAfter(0.1, function()
+        local win = app:mainWindow()
+        if not win then return end
+        local frame = win:frame()
+        local clickPoint = {x = frame.x + tx_field_x, y = frame.y + tx_field_y}
+        
+        hs.mouse.absolutePosition(clickPoint)
+        hs.eventtap.leftClick(clickPoint)
+        
+        hs.timer.doAfter(0.05, function()
+            hs.eventtap.keyStroke({"cmd"}, "a")  -- Select all
+            hs.eventtap.keyStrokes(tostring(freq))  -- Type frequency
+            hs.eventtap.keyStroke({}, "return")  -- Confirm
+        end)
+    end)
+end)
+```
+
+### Step 4: Reload
+
+Click the Hammerspoon menubar icon → "Reload Config"
+
+### Notes
+
+- The coordinates are relative to the window position, so keep your WSJT-X/JTDX window in a consistent spot
+- If it doesn't work, try increasing the delay values (0.1, 0.05)
+- This polls the clipboard every 0.5 seconds rather than triggering on change — slightly less elegant than the Windows version but works
+
+**Feedback welcome!** If you get this working (or find issues), let us know in the GitHub Discussions.
+
+---
+
 ## Need Help?
 
-If you can't get it working, post your Window Spy screenshot and we can help figure out the correct coordinates for your setup.
+Post in the QSO Predictor discussions and we can help debug your setup.
 
 73!

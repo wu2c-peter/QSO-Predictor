@@ -347,13 +347,15 @@ You can set up one-click frequency transfer using AutoHotkey (free):
 **Quick setup:**
 
 1. Install AutoHotkey v2.0 from https://www.autohotkey.com/
-2. Create a file `QSOPredictor_AutoPaste.ahk`:
+2. Use Window Spy to find your TX field coordinates (Client x,y)
+3. Create a file `QSOPredictor_AutoPaste.ahk`:
 
 ```autohotkey
 #Requires AutoHotkey v2.0
 
-WSJTX_CONTROL := "Qt6514QSpinBox1"  ; Find yours with Window Spy
-JTDX_CONTROL := "Qt5QSpinBox1"
+; UPDATE THESE with your Window Spy coordinates!
+TX_X := 595
+TX_Y := 485
 
 OnClipboardChange ClipboardChanged
 
@@ -364,15 +366,15 @@ ClipboardChanged(dataType) {
     if !RegExMatch(freq, "^\d{3,4}$") || freq < 300 || freq > 3000
         return
     if WinExist("WSJT-X")
-        PasteTo("WSJT-X", WSJTX_CONTROL, freq)
+        PasteTo("WSJT-X", freq)
     else if WinExist("JTDX")
-        PasteTo("JTDX", JTDX_CONTROL, freq)
+        PasteTo("JTDX", freq)
 }
 
-PasteTo(win, ctrl, freq) {
+PasteTo(win, freq) {
     WinActivate win
     WinWaitActive win,, 2
-    ControlFocus ctrl, win
+    Click TX_X, TX_Y
     Sleep 50
     Send "^a"
     Send freq
@@ -380,9 +382,9 @@ PasteTo(win, ctrl, freq) {
 }
 ```
 
-3. Double-click to run. Done!
+4. Double-click to run. Done!
 
-**Note:** Use Window Spy (included with AutoHotkey) to find the correct control name for your version.
+📖 **Full guide with Mac support:** See [docs/TX_FREQ_PASTE_GUIDE.md](docs/TX_FREQ_PASTE_GUIDE.md)
 
 ### Keyboard Shortcuts
 
