@@ -334,6 +334,55 @@ When a hunt target is spotted:
 6. **Watch the pattern evolve** — classification improves with each QSO you witness
 7. **Use Path Intelligence** — if others from your area are getting through, you can too
 8. **Analyze before giving up** — the Analyze button might reveal why others succeed
+9. **Work one cycle ahead** — select target early, let recommendation stabilize, enter frequency before next cycle starts
+
+### Windows Power Users: Auto-Paste to WSJT-X/JTDX
+
+You can set up one-click frequency transfer using AutoHotkey (free):
+
+**The workflow:**
+1. Click band map in QSO Predictor
+2. Frequency automatically appears in WSJT-X/JTDX — no typing!
+
+**Quick setup:**
+
+1. Install AutoHotkey v2.0 from https://www.autohotkey.com/
+2. Create a file `QSOPredictor_AutoPaste.ahk`:
+
+```autohotkey
+#Requires AutoHotkey v2.0
+
+WSJTX_CONTROL := "Qt6514QSpinBox1"  ; Find yours with Window Spy
+JTDX_CONTROL := "Qt5QSpinBox1"
+
+OnClipboardChange ClipboardChanged
+
+ClipboardChanged(dataType) {
+    if dataType != 1 || !WinActive("QSO Predictor")
+        return
+    freq := A_Clipboard
+    if !RegExMatch(freq, "^\d{3,4}$") || freq < 300 || freq > 3000
+        return
+    if WinExist("WSJT-X")
+        PasteTo("WSJT-X", WSJTX_CONTROL, freq)
+    else if WinExist("JTDX")
+        PasteTo("JTDX", JTDX_CONTROL, freq)
+}
+
+PasteTo(win, ctrl, freq) {
+    WinActivate win
+    WinWaitActive win,, 2
+    ControlFocus ctrl, win
+    Sleep 50
+    Send "^a"
+    Send freq
+    Send "{Enter}"
+}
+```
+
+3. Double-click to run. Done!
+
+**Note:** Use Window Spy (included with AutoHotkey) to find the correct control name for your version.
 
 ### Keyboard Shortcuts
 
@@ -412,6 +461,29 @@ In JTDX: Settings → Reporting → Secondary UDP Server → port 2238
 JTDX → 239.0.0.2:2237 → All apps receive
 ```
 Configure all apps to use multicast address.
+
+### VPN Breaking Multicast (Multi-Computer Setups)
+
+If you're using multicast UDP across multiple computers and have VPN software installed:
+
+**Symptoms:**
+- Was working, suddenly stops
+- No data received even though settings look correct
+- MQTT connects fine but UDP shows "No messages received"
+
+**Why it happens:**
+- VPNs create a virtual network interface that intercepts traffic
+- Multicast only works on local network — can't route through VPN tunnels
+- Even when VPN is "disconnected", the software may still interfere
+
+**Solutions:**
+
+1. **Fully quit VPN software** — don't just disconnect, completely exit the app
+2. **Restart QSO Predictor** after quitting VPN
+3. **Configure split tunneling** — most VPNs let you exclude local network traffic or specific apps
+4. **Whitelist local subnet** — exclude `192.168.x.x` or your local network range
+
+**Affected VPN software:** Malwarebytes VPN, NordVPN, ExpressVPN, and most others.
 
 ### Band Map Empty
 
