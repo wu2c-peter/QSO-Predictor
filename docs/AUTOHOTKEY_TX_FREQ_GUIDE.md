@@ -14,7 +14,7 @@ No hotkeys needed — the script detects when you copy a frequency from QSO Pred
 
 ---
 
-## Quick Start (Recommended Method)
+## Quick Start
 
 ### Step 1: Install AutoHotkey
 
@@ -22,12 +22,17 @@ No hotkeys needed — the script detects when you copy a frequency from QSO Pred
 2. Run the installer
 3. Choose "AutoHotkey v2" (recommended)
 
-### Step 2: Find Your Control Name
+### Step 2: Find Your TX Field Coordinates
 
-1. After installing AutoHotkey, search for **"Window Spy"** in your Start menu and open it
-2. Open WSJT-X or JTDX
-3. Hover your mouse over the **TX frequency input field** (the "Tx" box with Hz value)
-4. Note the **ClassNN** value (e.g., `Qt6514QSpinBox1`)
+Since WSJT-X and JTDX don't expose control names, we use click coordinates instead.
+
+1. Search for **"Window Spy"** in Start menu and open it
+2. Check **"Follow Mouse"** at the top
+3. Open WSJT-X or JTDX
+4. Hover your mouse directly over the **TX frequency input field** (the spinbox where you type Hz)
+5. Note the **Client** coordinates (e.g., `Client: 595, 485`)
+
+**Important:** Use the **Client** coordinates, not Screen coordinates. These are relative to the window.
 
 ### Step 3: Create the Auto-Paste Script
 
@@ -42,9 +47,13 @@ Create a file called `QSOPredictor_AutoPaste.ahk` with this content:
 ; the band map or Rec frequency in QSO Predictor
 ; =============================================================
 
-; IMPORTANT: Update these ClassNN values using Window Spy!
-WSJTX_CONTROL := "Qt6514QSpinBox1"   ; For WSJT-X 3.0
-JTDX_CONTROL := "Qt5QSpinBox1"       ; For JTDX
+; IMPORTANT: Update these coordinates using Window Spy!
+; Hover over the TX frequency field, note the CLIENT coordinates
+WSJTX_TX_X := 595    ; X coordinate for WSJT-X TX freq field
+WSJTX_TX_Y := 485    ; Y coordinate for WSJT-X TX freq field
+
+JTDX_TX_X := 595     ; X coordinate for JTDX TX freq field
+JTDX_TX_Y := 485     ; Y coordinate for JTDX TX freq field
 
 ; Monitor clipboard for changes
 OnClipboardChange ClipboardChanged
@@ -69,19 +78,21 @@ ClipboardChanged(dataType)
     
     ; Find and paste to WSJT-X or JTDX
     if WinExist("WSJT-X")
-        PasteToTxFreq("WSJT-X", WSJTX_CONTROL, freq)
+        PasteToTxFreq("WSJT-X", WSJTX_TX_X, WSJTX_TX_Y, freq)
     else if WinExist("JTDX")
-        PasteToTxFreq("JTDX", JTDX_CONTROL, freq)
+        PasteToTxFreq("JTDX", JTDX_TX_X, JTDX_TX_Y, freq)
 }
 
-PasteToTxFreq(windowTitle, controlClassNN, freq)
+PasteToTxFreq(windowTitle, clickX, clickY, freq)
 {
     try {
         WinActivate windowTitle
         WinWaitActive windowTitle,, 2
         
-        ControlFocus controlClassNN, windowTitle
+        ; Click on the TX frequency field
+        Click clickX, clickY
         Sleep 50
+        
         Send "^a"      ; Select all
         Sleep 20
         Send freq      ; Type the frequency
@@ -97,13 +108,22 @@ PasteToTxFreq(windowTitle, controlClassNN, freq)
 }
 ```
 
-### Step 4: Run It
+### Step 4: Update the Coordinates
+
+Edit the script and replace the X/Y values with your coordinates from Window Spy:
+
+```autohotkey
+WSJTX_TX_X := 595    ; ← Replace with YOUR Client X coordinate
+WSJTX_TX_Y := 485    ; ← Replace with YOUR Client Y coordinate
+```
+
+### Step 5: Run It
 
 1. Double-click `QSOPredictor_AutoPaste.ahk`
 2. You'll see a green "H" icon in your system tray
 3. Now just click the band map in QSO Predictor — frequency auto-pastes!
 
-### Step 5: Auto-Start (Optional)
+### Step 6: Auto-Start (Optional)
 
 To run automatically when Windows starts:
 1. Press Win+R, type `shell:startup`, press Enter
@@ -118,7 +138,7 @@ The script monitors your clipboard. When ALL of these conditions are met:
 2. You copy something to clipboard (clicking band map does this)
 3. The clipboard contains a valid frequency (300-3000 Hz)
 
-...it automatically activates WSJT-X/JTDX and pastes the frequency.
+...it automatically activates WSJT-X/JTDX, clicks on the TX frequency field, and types the frequency.
 
 **Safety:** It only triggers from QSO Predictor, so copying frequencies from other apps won't cause unexpected behavior.
 
@@ -126,28 +146,27 @@ The script monitors your clipboard. When ALL of these conditions are met:
 
 ## Alternative: Manual Hotkey Method
 
-If you prefer to control when the paste happens, use this hotkey-based script instead:
-
-### Combined Script (Ctrl+Shift+T for WSJT-X, Ctrl+Shift+J for JTDX)
+If you prefer to control when the paste happens:
 
 ```autohotkey
 #Requires AutoHotkey v2.0
 
-; IMPORTANT: Update these ClassNN values using Window Spy!
-WSJTX_CONTROL := "Qt6514QSpinBox1"
-JTDX_CONTROL := "Qt5QSpinBox1"
+; Update these coordinates using Window Spy!
+WSJTX_TX_X := 595
+WSJTX_TX_Y := 485
+JTDX_TX_X := 595
+JTDX_TX_Y := 485
 
 ; Ctrl+Shift+T = Paste to WSJT-X
-^+t::PasteToTxFreq("WSJT-X", WSJTX_CONTROL)
+^+t::PasteToTxFreq("WSJT-X", WSJTX_TX_X, WSJTX_TX_Y)
 
 ; Ctrl+Shift+J = Paste to JTDX  
-^+j::PasteToTxFreq("JTDX", JTDX_CONTROL)
+^+j::PasteToTxFreq("JTDX", JTDX_TX_X, JTDX_TX_Y)
 
-PasteToTxFreq(windowTitle, controlClassNN)
+PasteToTxFreq(windowTitle, clickX, clickY)
 {
     freq := A_Clipboard
     
-    ; Validate frequency format
     if !RegExMatch(freq, "^\d{3,4}$")
     {
         MsgBox "Clipboard doesn't contain a valid frequency: " freq
@@ -157,71 +176,42 @@ PasteToTxFreq(windowTitle, controlClassNN)
     try {
         WinActivate windowTitle
         WinWaitActive windowTitle,, 2
-        ControlFocus controlClassNN, windowTitle
+        Click clickX, clickY
         Sleep 50
         Send "^a"
         Sleep 20
         Send freq
         Send "{Enter}"
     } catch {
-        MsgBox "Could not find " windowTitle " or TX frequency control"
+        MsgBox "Could not find " windowTitle
     }
 }
 ```
 
 **Workflow with hotkeys:**
 1. Click band map in QSO Predictor → copies frequency
-2. Press Ctrl+Shift+T → pastes to WSJT-X
-3. (Or Ctrl+Shift+J for JTDX)
-
----
-
-## Finding Your Control Names (Window Spy)
-
-The ClassNN values vary by WSJT-X/JTDX version. Here's how to find yours:
-
-1. After installing AutoHotkey, search for **"Window Spy"** in Start menu
-2. Open WSJT-X or JTDX
-3. Hover mouse over the **TX frequency input field**
-4. Note the **ClassNN** value shown in Window Spy
-
-**Common ClassNN values:**
-
-| Program | Version | Likely ClassNN |
-|---------|---------|----------------|
-| WSJT-X | 3.0.x (Qt6) | `Qt6514QSpinBox1` or `Qt651514QSpinBox1` |
-| WSJT-X | 2.x (Qt5) | `Qt5QSpinBox1` |
-| JTDX | 2.x | `Qt5QSpinBox1` or `Qt515QSpinBox1` |
-
-Update the script with your actual ClassNN value.
+2. Press Ctrl+Shift+T → pastes to WSJT-X (or Ctrl+Shift+J for JTDX)
 
 ---
 
 ## Troubleshooting
 
-### "Could not find TX frequency control"
+### Clicking the wrong spot
 
-The ClassNN doesn't match your version. Re-run Window Spy and update the script.
+The coordinates are relative to the window's client area. If you resize or move the window significantly, the coordinates may need updating. Re-run Window Spy to get new coordinates.
 
-### Window not activating
-
-Make sure the window title in the script matches. `"WSJT-X"` will match `"WSJT-X   v3.0.0   by K1JT et al."`.
+**Tip:** Keep your WSJT-X/JTDX window the same size and position for consistent behavior.
 
 ### Frequency not being accepted
 
-Try increasing the delay in the script:
+Try increasing the delays:
 ```autohotkey
 Sleep 100  ; Increase from 50
 ```
 
-### Fallback: Coordinate-based clicking
+### Window not activating
 
-If control focus doesn't work, you can click by coordinates instead:
-
-```autohotkey
-; Replace the ControlFocus line with:
-Click 595, 485  ; Adjust coordinates using Window Spy
-```
+Make sure the window title matches. `"WSJT-X"` will match `"WSJT-X   v3.0.0   by K1JT et al."` and `"JTDX"` will match `"JTDX  by HF community"`.
 
 ---
 
@@ -229,15 +219,15 @@ Click 595, 485  ; Adjust coordinates using Window Spy
 
 | Method | Workflow |
 |--------|----------|
-| **Auto-paste (recommended)** | Click band map → frequency appears in WSJT-X automatically |
+| **Auto-paste (recommended)** | Click band map → frequency appears in WSJT-X/JTDX automatically |
 | **Hotkey** | Click band map → Press Ctrl+Shift+T → frequency appears |
 
-Both methods start with QSO Predictor's click-to-clipboard feature (new in v2.1.0).
+Both methods start with QSO Predictor's click-to-clipboard feature (v2.1.0+).
 
 ---
 
 ## Need Help?
 
-If you can't get it working, post your Window Spy output and we can help figure out the correct ClassNN for your setup.
+If you can't get it working, post your Window Spy screenshot and we can help figure out the correct coordinates for your setup.
 
 73!
