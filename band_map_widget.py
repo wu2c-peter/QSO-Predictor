@@ -5,11 +5,15 @@
 # - Timer reduced from 50ms to 250ms (20Hz -> 4Hz)
 # - Changed repaint() to update() for Qt batching
 # - Cached all paint objects (QColor, QFont, QPen, QBrush) to avoid per-frame allocation
+#
+# v2.1.1 Changes:
+# - Added: Hover tooltips showing callsign, SNR, tier for signals on band map
+# - Added: Frequency scale with Hz labels along bottom of each section
 
 import logging
 import numpy as np
 import time
-from PyQt6.QtWidgets import QWidget, QApplication
+from PyQt6.QtWidgets import QWidget, QApplication, QToolTip
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRectF
 
@@ -27,6 +31,11 @@ class BandMapWidget(QWidget):
         
         # v2.1.0: Cursor indicates click-to-copy functionality
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # v2.1.1: Enable mouse tracking for hover tooltips
+        self.setMouseTracking(True)
+        self._tooltip_bars = []  # List of (QRectF, spot_info_dict) for hit-testing
+        self._tier_names = {1: 'Target', 2: 'Grid', 3: 'Field', 4: 'Global'}
         
         # Data Containers
         self.active_signals = []   # Local decodes (what WE hear)
@@ -106,6 +115,7 @@ class BandMapWidget(QWidget):
             'text_orange': QColor("#FF8800"),
             'text_green': QColor("#00FF00"),
             'text_magenta': QColor("#FF00FF"),
+            'scale_label': QColor("#555"),  # v2.1.1: Frequency scale text
         }
         
         # Fonts
@@ -115,6 +125,7 @@ class BandMapWidget(QWidget):
             'small_bold': QFont("Segoe UI", 8, QFont.Weight.Bold),
             'medium': QFont("Segoe UI", 9),
             'medium_bold': QFont("Segoe UI", 9, QFont.Weight.Bold),
+            'scale': QFont("Segoe UI", 7),  # v2.1.1: Frequency scale labels
         }
         
         # Pens
@@ -126,6 +137,8 @@ class BandMapWidget(QWidget):
             'target': QPen(QColor("#FF00FF"), 2),
             'tx': QPen(QColor("#FFFF00"), 2, Qt.PenStyle.DotLine),
             'rec': QPen(QColor("#00FF00"), 2),
+            'scale_major': QPen(QColor("#555"), 1),    # v2.1.1: 500Hz tick marks
+            'scale_minor': QPen(QColor("#333"), 1),    # v2.1.1: 100Hz tick marks
             'score_solid_green': QPen(QColor(0, 255, 0), 2, Qt.PenStyle.SolidLine),
             'score_solid_yellow_green': QPen(QColor(180, 255, 0), 2, Qt.PenStyle.SolidLine),
             'score_solid_yellow': QPen(QColor(255, 255, 0), 2, Qt.PenStyle.SolidLine),
@@ -201,7 +214,8 @@ class BandMapWidget(QWidget):
                 snr = int(sig.get('snr', -20))
                 if freq > 0 and freq < self.bandwidth:
                     self.active_signals.append({
-                        'freq': freq, 'snr': snr, 'seen': now, 'decay': 1.0
+                        'freq': freq, 'snr': snr, 'seen': now, 'decay': 1.0,
+                        'call': sig.get('call', ''),  # v2.1.1: for tooltip display
                     })
             except: pass
 
@@ -215,6 +229,8 @@ class BandMapWidget(QWidget):
             'tier3': [...],  # Same field
             'global': [...]  # Background
         }
+        
+        Each spot may include 'sender' and 'sender_grid' for tooltip display (v2.1.1).
         """
         now = time.time()
         
@@ -231,6 +247,8 @@ class BandMapWidget(QWidget):
                         'freq': freq,
                         'snr': snr,
                         'receiver': receiver,
+                        'sender': spot.get('sender', ''),        # v2.1.1: for tooltip
+                        'sender_grid': spot.get('sender_grid', ''),  # v2.1.1: for tooltip
                         'seen': now,
                         'decay': 1.0,
                         'tier': spot.get('tier', 4)
@@ -299,6 +317,42 @@ class BandMapWidget(QWidget):
             self.recommendation_changed.emit(freq)
             
             self.update()  # PERFORMANCE FIX: was repaint()
+
+    def mouseMoveEvent(self, event):
+        """v2.1.1: Show tooltip when hovering over signal bars."""
+        pos = event.position()
+        
+        # Find the nearest bar under the cursor
+        best_bar = None
+        best_dist = float('inf')
+        
+        for rect, info in self._tooltip_bars:
+            if rect.contains(pos):
+                # Prefer the bar whose center is closest to cursor
+                center = rect.center()
+                dist = abs(pos.x() - center.x())
+                if dist < best_dist:
+                    best_dist = dist
+                    best_bar = info
+        
+        if best_bar:
+            sender = best_bar.get('sender', '?')
+            snr = best_bar.get('snr', 0)
+            freq = best_bar.get('freq', 0)
+            section = best_bar.get('section', 'perspective')
+            
+            if section == 'local':
+                tip = f"{sender}  {snr:+d} dB  @{freq} Hz"
+            else:
+                tier = best_bar.get('tier', 4)
+                tier_name = self._tier_names.get(tier, 'Global')
+                sender_grid = best_bar.get('sender_grid', '')
+                grid_str = f"  [{sender_grid}]" if sender_grid else ""
+                tip = f"{sender}{grid_str}  {snr:+d} dB  @{freq} Hz  ({tier_name})"
+            
+            QToolTip.showText(event.globalPosition().toPoint(), tip, self)
+        else:
+            QToolTip.hideText()
 
     def _cleanup_data(self):
         now = time.time()
@@ -561,6 +615,9 @@ class BandMapWidget(QWidget):
         w = self.width()
         h = self.height()
         
+        # v2.1.1: Clear tooltip hit-test list for this frame
+        self._tooltip_bars = []
+        
         # Layout: Top (40%) | Score Graph (15%) | Bottom (45%)
         top_h = int(h * 0.40)
         score_h = int(h * 0.15)
@@ -581,6 +638,10 @@ class BandMapWidget(QWidget):
         qp.setPen(self._pens['divider'])
         qp.drawLine(0, top_h, w, top_h)
         qp.drawLine(0, bottom_top, w, bottom_top)
+        
+        # v2.1.1: Frequency scale along bottom of perspective and local sections
+        self._draw_freq_scale(qp, w, top_h - 1, 'above')       # Perspective section
+        self._draw_freq_scale(qp, w, h - 1, 'above')            # Local section
 
         # 2. PLACEHOLDER TEXT if no target selected (top section)
         if not self.target_call:
@@ -668,9 +729,20 @@ class BandMapWidget(QWidget):
             norm = max(0, min(1, (snr + 24) / 44))
             bar_h = bottom_h * 0.9 * norm
             
+            rect = QRectF(x - (bar_width/2), h - bar_h, bar_width, bar_h)
             qp.setBrush(QBrush(col))
             qp.setPen(Qt.PenStyle.NoPen)
-            qp.drawRect(QRectF(x - (bar_width/2), h - bar_h, bar_width, bar_h))
+            qp.drawRect(rect)
+            
+            # v2.1.1: Register for tooltip (local signals show message callsign)
+            call = s.get('call', '')
+            if call and decay > 0.3:
+                self._tooltip_bars.append((rect, {
+                    'sender': call,
+                    'snr': snr,
+                    'freq': freq,
+                    'section': 'local',
+                }))
 
         # 7. VERTICAL OVERLAYS (span full height)
         # Target frequency marker
@@ -727,8 +799,20 @@ class BandMapWidget(QWidget):
         norm = max(0.1, min(1.0, (snr + 25) / 35))
         bar_h = section_h * 0.9 * norm
         
+        rect = QRectF(x - (bar_width/2), section_top, bar_width, bar_h)
         qp.setBrush(QBrush(color))
-        qp.drawRect(QRectF(x - (bar_width/2), section_top, bar_width, bar_h))
+        qp.drawRect(rect)
+        
+        # v2.1.1: Register for tooltip hit-testing (only if visible enough)
+        if decay > 0.3 and opacity_mult > 0.2:
+            self._tooltip_bars.append((rect, {
+                'sender': spot.get('sender', ''),
+                'snr': snr,
+                'freq': freq,
+                'tier': spot.get('tier', 4),
+                'sender_grid': spot.get('sender_grid', ''),
+                'section': 'perspective',
+            }))
 
     def _draw_score_graph(self, qp, w, section_h, section_top):
         """Draw the score visualization graph in the middle section."""
@@ -790,6 +874,42 @@ class BandMapWidget(QWidget):
             qp.setPen(self._colors['text_green'])
             x = int((self.best_offset / self.bandwidth) * w)
             qp.drawText(x + 8, section_top + section_h - 3, f"{int(score)}")
+
+    def _draw_freq_scale(self, qp, w, y_base, position='above'):
+        """v2.1.1: Draw frequency scale with Hz labels.
+        
+        Args:
+            qp: QPainter
+            w: widget width
+            y_base: Y coordinate for the scale baseline
+            position: 'above' draws ticks/labels above y_base
+        """
+        tick_major = 6   # 500Hz tick height
+        tick_minor = 3   # 100Hz tick height
+        
+        # Draw major ticks every 500Hz with labels
+        qp.setFont(self._fonts['scale'])
+        for freq in range(0, self.bandwidth + 1, 500):
+            x = int((freq / self.bandwidth) * w)
+            
+            if position == 'above':
+                qp.setPen(self._pens['scale_major'])
+                qp.drawLine(x, y_base - tick_major, x, y_base)
+                
+                # Label (skip 0 and 3000 to avoid edge clipping)
+                if 100 < freq < 2900:
+                    qp.setPen(self._colors['scale_label'])
+                    label = str(freq)
+                    qp.drawText(x - 12, y_base - tick_major - 2, label)
+        
+        # Draw minor ticks every 100Hz (skip ones that overlap with major)
+        for freq in range(100, self.bandwidth, 100):
+            if freq % 500 == 0:
+                continue
+            x = int((freq / self.bandwidth) * w)
+            if position == 'above':
+                qp.setPen(self._pens['scale_minor'])
+                qp.drawLine(x, y_base - tick_minor, x, y_base)
 
     def _draw_legend(self, qp):
         qp.setFont(self._fonts['medium'])

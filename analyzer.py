@@ -23,9 +23,15 @@ class QSOAnalyzer(QObject):
         # --- THREAD SAFETY LOCK ---
         self.lock = threading.Lock() 
         
+        # Diagnostic: track spot processing health
+        self._spot_error_logged = False
+        self._spots_processed = 0
+        
         self.mqtt = MQTTClient()
         self.mqtt.spot_received.connect(self.handle_live_spot)
         self.mqtt.status_message.connect(self.relay_status)
+        
+        logger.info(f"Analyzer initialized: my_call={self.my_call}")
         
         self.current_dial_freq = 0
         self.band_cache = {}      
@@ -117,8 +123,14 @@ class QSOAnalyzer(QObject):
             
             # v2.1.0: Emit for hunt mode checking (outside lock)
             self.spot_received.emit(spot)
+            
+            self._spots_processed += 1
                         
-        except Exception: pass
+        except Exception as e:
+            if not self._spot_error_logged:
+                logger.error(f"handle_live_spot FAILED: {e}", exc_info=True)
+                logger.error(f"Failing spot data: {spot}")
+                self._spot_error_logged = True
 
     def get_target_perspective(self, target_call, target_grid):
         """
@@ -204,12 +216,24 @@ class QSOAnalyzer(QObject):
                                 global_spots.append(spot_copy)
                                 seen_spots.add(spot_key)
         
-        return {
+        result = {
             'tier1': tier1,
             'tier2': tier2,
             'tier3': tier3,
             'global': global_spots
         }
+        
+        # Diagnostic: log perspective results when a target is selected
+        total = len(tier1) + len(tier2) + len(tier3) + len(global_spots)
+        if total == 0:
+            logger.debug(
+                f"get_target_perspective({target_call}, grid='{target_grid}'): "
+                f"EMPTY - dial={self.current_dial_freq}, "
+                f"receiver_cache has {len(self.receiver_cache)} calls, "
+                f"target_in_cache={target_call in self.receiver_cache}"
+            )
+        
+        return result
 
     def find_near_me_stations(self, target_call: str, target_grid: str, my_grid: str, my_call: str = '') -> dict:
         """
@@ -1049,6 +1073,21 @@ class QSOAnalyzer(QObject):
                 self.status_message.emit(
                     f"{dial_display}Tracking {len(unique_senders)} stations | {hearing_me_count} hear {self.my_call}"
                 )
+                
+                # Diagnostic: log cache health every ~30 seconds (every 15th cycle)
+                if not hasattr(self, '_maint_cycle'):
+                    self._maint_cycle = 0
+                self._maint_cycle += 1
+                if self._maint_cycle % 15 == 1:
+                    logger.info(
+                        f"Analyzer cache health: spots_processed={self._spots_processed}, "
+                        f"band_cache_freqs={len(self.band_cache)}, "
+                        f"receiver_cache_calls={len(self.receiver_cache)}, "
+                        f"grid_cache_grids={len(self.grid_cache)}, "
+                        f"unique_senders={len(unique_senders)}, "
+                        f"dial_freq={self.current_dial_freq}, "
+                        f"spot_errors={'YES' if self._spot_error_logged else 'none'}"
+                    )
                 
             except Exception as e:
                 # FIX v2.0.4: Log error but don't die - keep cleaning

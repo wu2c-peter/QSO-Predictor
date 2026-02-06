@@ -1,0 +1,2 @@
+zip -r current-state.zip . -x '.git/*' -x 'barton-repo.zip' -x 'venv/*' -x '__pycache__/*' -x '*.pyc' -x '.env*' -x 'node_modules/*' 
+

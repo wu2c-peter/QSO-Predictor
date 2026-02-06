@@ -1,5 +1,12 @@
-# QSO Predictor v2.1.0
+# QSO Predictor v2.1.1
 # Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.1.1 Changes:
+# - Added: Band map hover tooltips showing callsign, SNR, tier, grid (Brian's request)
+# - Added: Frequency scale with Hz labels on band map (Brian's request)
+# - Added: Resilient data source monitoring - status bar warns if UDP/MQTT data stops
+# - Added: Diagnostic logging in analyzer for debugging empty Target Perspective
+# - Fixed: Silent exception handler in analyzer.handle_live_spot now logs errors
 #
 # v2.1.0 Changes:
 # - Added: Target View as undockable panel (Dashboard + Band Map)
@@ -675,6 +682,7 @@ class MainWindow(QMainWindow):
         
         # --- UPDATE CHECK STATE ---
         self.update_available = None  # Will hold version string if update available
+        self._normal_status = ""     # v2.1.1: Last non-warning status message
         
         # --- UDP STATUS TRACKING ---
         self._decode_count = 0
@@ -722,6 +730,12 @@ class MainWindow(QMainWindow):
         
         # Check for updates on startup (non-blocking, silent)
         self.check_for_updates(manual=False)
+        
+        # v2.1.1: Periodic data health check (detects UDP/MQTT data loss)
+        self._data_health_timer = QTimer()
+        self._data_health_timer.timeout.connect(self._check_data_health)
+        self._data_health_timer.start(10000)  # Check every 10 seconds
+        self._last_health_warning = ""  # Track to avoid redundant status updates
         
         # Check for unconfigured callsign/grid on startup
         QTimer.singleShot(500, self._check_first_run_config)
@@ -1613,11 +1627,24 @@ class MainWindow(QMainWindow):
                             'freq': offset,
                             'snr': int(spot.get('snr', -10)),
                             'receiver': spot.get('receiver', ''),
+                            'sender': spot.get('sender', ''),          # v2.1.1: for tooltip
+                            'sender_grid': spot.get('sender_grid', ''),  # v2.1.1: for tooltip
                             'tier': spot.get('tier', 4)
                         })
             
             # Update band map with tiered perspective
             self.band_map.update_perspective(converted)
+            
+            # Diagnostic: log what we're sending to band map
+            total_converted = sum(len(v) for v in converted.values())
+            if total_converted == 0 and not hasattr(self, '_empty_perspective_logged'):
+                logger.warning(
+                    f"Perspective display EMPTY for target={self.current_target_call}, "
+                    f"grid='{self.current_target_grid}', dial={dial}"
+                )
+                self._empty_perspective_logged = True
+            elif total_converted > 0:
+                self._empty_perspective_logged = False  # Reset so we log if it goes empty again
             
             # v2.1.0: Path Intelligence - find stations near me getting through
             my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
@@ -1647,6 +1674,9 @@ class MainWindow(QMainWindow):
         self.dashboard.update_rec(freq, cur)
 
     def update_status_msg(self, msg):
+        # v2.1.1: Save non-warning messages so we can restore after health warnings clear
+        if msg and not msg.startswith("⚠"):
+            self._normal_status = msg
         self.str_status = msg
         self.update_header()
 
@@ -1770,6 +1800,37 @@ class MainWindow(QMainWindow):
                 if reply == QMessageBox.StandardButton.Yes:
                     webbrowser.open("https://github.com/wu2c-peter/qso-predictor/releases")
 
+    # --- v2.1.1: Periodic Data Health Check ---
+    def _check_data_health(self):
+        """Check if UDP and MQTT data sources are flowing.
+        
+        Called every 10 seconds. Shows/clears status bar warnings when data
+        sources go silent, without blocking the main thread.
+        """
+        warnings = []
+        
+        # Check UDP health
+        if hasattr(self, 'udp') and self.udp:
+            udp_ok, udp_msg = self.udp.check_data_health()
+            if not udp_ok and udp_msg:
+                warnings.append(udp_msg)
+        
+        # Check MQTT health
+        if hasattr(self, 'mqtt') and self.mqtt:
+            mqtt_ok, mqtt_msg = self.mqtt.check_data_health()
+            if not mqtt_ok and mqtt_msg:
+                warnings.append(mqtt_msg)
+        
+        # Update status bar if warning state changed
+        warning_text = "   |   ".join(warnings) if warnings else ""
+        if warning_text != self._last_health_warning:
+            self._last_health_warning = warning_text
+            if warning_text:
+                self.update_status_msg(warning_text)
+            else:
+                # Clear warning - restore normal status
+                self.update_status_msg(getattr(self, '_normal_status', ''))
+    
     # --- v2.0.9: Startup Health Check ---
     def _start_health_check_timer(self):
         """Start a timer to check if data is being received after startup.

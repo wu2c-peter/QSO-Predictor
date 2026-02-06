@@ -1,6 +1,10 @@
 # QSO Predictor
 # Copyright (C) 2025 Peter Hirst (WU2C)
 #
+# v2.1.1 Changes:
+# - Added: check_data_health() method for resilient data source monitoring
+# - Added: Timeout detection (30s threshold) with automatic warning/recovery
+#
 # v2.0.9 Changes:
 # - Added: Proper logging throughout (replacing print statements)
 # - Added: Periodic stats logging instead of per-packet logging
@@ -53,6 +57,10 @@ class UDPHandler(QObject):
         
         # Track last received time for diagnostics
         self._last_packet_time = None
+        
+        # v2.1.1: Timeout detection state
+        self._timeout_warned = False
+        self._timeout_threshold = 30  # seconds with no data before warning
         
         # Track forward errors to avoid log spam
         self._forward_errors_logged = set()
@@ -425,3 +433,33 @@ class UDPHandler(QObject):
             'forward_ports': self.forward_ports,
             'forward_errors': list(self._forward_errors_logged),
         }
+    
+    def check_data_health(self) -> tuple:
+        """v2.1.1: Check if UDP data is flowing. Returns (is_healthy, message).
+        
+        Called periodically by main window to detect data source failures.
+        Returns:
+            (True, "") if data is flowing or not yet started
+            (False, "warning message") if data has stopped
+        """
+        if not self.running:
+            return (True, "")  # Not started yet, don't warn
+        
+        if self._last_packet_time is None:
+            # Never received any data
+            if self.messages_received == 0:
+                # Might still be starting up - don't warn for first 30s
+                return (True, "")
+            return (True, "")
+        
+        age = time.time() - self._last_packet_time
+        if age > self._timeout_threshold:
+            if not self._timeout_warned:
+                self._timeout_warned = True
+                logger.warning(f"UDP: No data received for {age:.0f}s")
+            return (False, f"⚠ No data from WSJT-X/JTDX for {int(age)}s — is it running?")
+        else:
+            if self._timeout_warned:
+                self._timeout_warned = False
+                logger.info("UDP: Data flow resumed")
+            return (True, "")

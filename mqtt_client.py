@@ -1,6 +1,10 @@
 # QSO Predictor
 # Copyright (C) 2025 Peter Hirst (WU2C)
 #
+# v2.1.1 Changes:
+# - Added: check_data_health() method for resilient data source monitoring
+# - Added: Timeout detection (60s threshold) with automatic warning/recovery
+#
 # v2.0.9 Changes:
 # - Added: Proper logging throughout
 # - Added: Periodic spot rate logging (every 60s) instead of per-spot
@@ -41,6 +45,10 @@ class MQTTClient(QObject):
         self._last_spot_time = None
         self._last_stats_log_time = None
         self._stats_log_interval = 60  # Log spot rate every 60 seconds
+        
+        # v2.1.1: Timeout detection
+        self._timeout_warned = False
+        self._timeout_threshold = 60  # MQTT can be bursty, allow 60s before warning
         
         logger.debug(f"MQTT: Client initialized, broker={self.broker}:{self.port}")
 
@@ -193,3 +201,36 @@ class MQTTClient(QObject):
             'spots_received': self._spots_received,
             'last_spot_age': (time.time() - self._last_spot_time) if self._last_spot_time else None,
         }
+    
+    def check_data_health(self) -> tuple:
+        """v2.1.1: Check if MQTT spot data is flowing. Returns (is_healthy, message).
+        
+        Called periodically by main window to detect data source failures.
+        Returns:
+            (True, "") if data is flowing or not yet connected
+            (False, "warning message") if data has stopped
+        """
+        if not self.running:
+            return (True, "")
+        
+        # If never connected or no spots yet, don't warn
+        # (MQTT can take a moment to connect and receive first spot)
+        if self._last_spot_time is None:
+            return (True, "")
+        
+        age = time.time() - self._last_spot_time
+        if age > self._timeout_threshold:
+            if not self._timeout_warned:
+                self._timeout_warned = True
+                connected = self.client.is_connected() if self.client else False
+                logger.warning(f"MQTT: No spots received for {age:.0f}s (connected={connected})")
+            connected = self.client.is_connected() if self.client else False
+            if not connected:
+                return (False, "⚠ PSK Reporter disconnected — check internet")
+            else:
+                return (False, f"⚠ No MQTT spots for {int(age)}s — feed may be stalled")
+        else:
+            if self._timeout_warned:
+                self._timeout_warned = False
+                logger.info("MQTT: Spot flow resumed")
+            return (True, "")
