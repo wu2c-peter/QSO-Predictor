@@ -2188,6 +2188,19 @@ if __name__ == "__main__":
     
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    
+    # v2.1.1: Explicit QToolTip styling — prevents black-on-black on dark widgets (Windows)
+    app.setStyleSheet("""
+        QToolTip {
+            background-color: #2A2A2A;
+            color: #00FFFF;
+            border: 1px solid #555;
+            padding: 4px;
+            font-family: Consolas, monospace;
+            font-size: 9pt;
+        }
+    """)
+    
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

@@ -342,13 +342,13 @@ class BandMapWidget(QWidget):
             section = best_bar.get('section', 'perspective')
             
             if section == 'local':
-                tip = f"{sender}  {snr:+d} dB  @{freq} Hz"
+                tip = f"{sender}   {snr:+d} dB   @{freq} Hz"
             else:
                 tier = best_bar.get('tier', 4)
                 tier_name = self._tier_names.get(tier, 'Global')
                 sender_grid = best_bar.get('sender_grid', '')
                 grid_str = f"  [{sender_grid}]" if sender_grid else ""
-                tip = f"{sender}{grid_str}  {snr:+d} dB  @{freq} Hz  ({tier_name})"
+                tip = f"{sender}{grid_str}   {snr:+d} dB   @{freq} Hz   ({tier_name})"
             
             QToolTip.showText(event.globalPosition().toPoint(), tip, self)
         else:
