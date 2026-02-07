@@ -146,9 +146,13 @@ class MQTTClient(QObject):
                 'snr': data.get('rp', -99),
                 'grid': data.get('rl', '').upper(),  # Receiver grid
                 'sender_grid': data.get('sl', '').upper(),  # Sender grid (v2.1.0: for near-me detection)
-                'time': spot_time  # Now guaranteed to be valid
+                'time': time.time(),          # Receipt time for freshness filtering
+                'pskr_time': spot_time,       # Original PSK Reporter timestamp
             }
             
+            
+        
+
             self._spots_received += 1
             self._spots_since_last_log += 1
             self._last_spot_time = time.time()
