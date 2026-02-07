@@ -1,12 +1,27 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.1.1-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.1.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
 **Real-time tactical assistant for FT8/FT4 — see the band from the DX station's perspective.**
 
 ![QSO Predictor Screenshot](docs/screenshot.png)
+
+## What's New in v2.1.2
+
+### 🐛 Critical Fix: Target Perspective Data
+Fixed a timing issue where PSK Reporter spots were rejected as "stale" — the freshness filter was comparing against the original decode timestamp (3-5 minutes old by the time it reaches us) instead of receipt time. **This was the root cause of empty Target Perspective band maps** reported by Brian KB1OPD and others.
+
+### 🛡️ Grid Square Validation
+FT8 protocol tokens like `RR73` were being misidentified as Maidenhead grid squares (both match the pattern `[A-Z][A-Z][0-9][0-9]`). Fixed with two layers of defense:
+- Suffix check (`RR73`, `73`, signal reports) now runs **before** grid check
+- Grid validation tightened to Maidenhead range `[A-R]` (was `[A-Z]`)
+
+### 🔇 ICMP Log Spam Fix
+Windows ICMP "connection reset" errors from UDP forwarding to closed ports were flooding the log (1,697 identical lines in one session). Now logs once on first occurrence, with cumulative count shown in periodic stats.
+
+---
 
 ## What's New in v2.1.1
 
@@ -151,6 +166,11 @@ Never miss a wanted station:
 
 ## Version History
 
+### v2.1.2 (February 2026)
+- **FIXED:** Critical bug where Target Perspective never populated — PSK Reporter spots rejected as stale due to timestamp comparison using decode time instead of receipt time (reported by Brian KB1OPD)
+- **FIXED:** FT8 tokens (`RR73`) misidentified as Maidenhead grid squares, causing incorrect tiering
+- **FIXED:** ICMP "connection reset" log spam — rate-limited to single message with periodic count summary
+
 ### v2.1.1 (February 2026)
 - **NEW:** Band map hover tooltips — callsign, SNR, grid, tier (suggested by Brian KB1OPD)
 - **NEW:** Frequency scale with Hz labels on band map (suggested by Brian KB1OPD)
@@ -158,7 +178,7 @@ Never miss a wanted station:
 - **NEW:** Diagnostic logging in analyzer for troubleshooting empty Target Perspective
 - **FIXED:** Silent exception handler in analyzer that could cause empty band map with no error
 
-### v2.1.0 (January 2025)
+### v2.1.0 (January 2026)
 - **NEW:** Hunt Mode — track stations/prefixes/countries with alerts
 - **NEW:** Path Intelligence — see who from your area is getting through and why
 - **NEW:** Undockable panels — customize layout for multi-monitor
@@ -167,23 +187,23 @@ Never miss a wanted station:
 - **FIXED:** Windows UDP Error 10054 crashes
 - **FIXED:** Layout issues with right dock panel
 
-### v2.0.10 (December 2024)
+### v2.0.10 (December 2025)
 - **FIXED:** Critical Windows UDP Error 10054 causing crashes
 - Improved error handling for network disruptions
 
-### v2.0.9 (December 2024)
+### v2.0.9 (December 2025)
 - **NEW:** Debug logging toggle (Help menu)
 - **NEW:** Connection Help dialog
 - **NEW:** Open Log Folder menu item
 - Improved troubleshooting capabilities
 
-### v2.0.3 (December 2024)
+### v2.0.3 (December 2025)
 - **NEW:** Clear Target button and Ctrl+R shortcut
 - **NEW:** Auto-clear on QSO logged
 - **NEW:** Window/column size persistence
 - **FIXED:** QSO Logged message parsing
 
-### v2.0.0 (November 2024)
+### v2.0.0 (November 2025)
 - **NEW:** Local Intelligence — behavior prediction from log analysis
 - **NEW:** Insights Panel — pileup status, behavior, strategy recommendations
 - **NEW:** Multicast UDP support (JTAlert, N3FJP compatibility)
