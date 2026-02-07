@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.1.1-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -8,7 +8,31 @@
 
 ![QSO Predictor Screenshot](docs/screenshot.png)
 
-## What's New in v2.1.0
+## What's New in v2.1.1
+
+### 🔍 Band Map Tooltips
+Hover over any signal bar on the band map to see:
+- **Callsign**, SNR, audio frequency, and grid square
+- **Tier** (Target / Grid / Field / Global) for perspective signals
+- Works for both target perspective (top) and local decode (bottom) sections
+
+### 📏 Frequency Scale
+Hz labels along the band map sections — 500 Hz major ticks with labels, 100 Hz minor ticks. No more guessing where frequencies are.
+
+### ⚠️ Resilient Data Source Monitoring
+Status bar now warns you when data sources go silent:
+- **UDP:** Warning after 30 seconds with no data from WSJT-X/JTDX
+- **MQTT:** Warning after 60 seconds with no PSK Reporter spots
+- Warnings auto-clear when data resumes
+
+### 🔧 Diagnostic Logging
+Improved observability for troubleshooting:
+- Analyzer module now logs first error with full traceback (was silently swallowing all exceptions)
+- Periodic cache health stats for diagnosing empty Target Perspective issues
+
+---
+
+## Highlights from v2.1.0
 
 ### 🎯 Hunt Mode
 Track specific stations, prefixes, or DXCC entities you want to work:
@@ -127,6 +151,13 @@ Never miss a wanted station:
 
 ## Version History
 
+### v2.1.1 (February 2026)
+- **NEW:** Band map hover tooltips — callsign, SNR, grid, tier (suggested by Brian KB1OPD)
+- **NEW:** Frequency scale with Hz labels on band map (suggested by Brian KB1OPD)
+- **NEW:** Resilient data source monitoring — status bar warns if UDP/MQTT data stops
+- **NEW:** Diagnostic logging in analyzer for troubleshooting empty Target Perspective
+- **FIXED:** Silent exception handler in analyzer that could cause empty band map with no error
+
 ### v2.1.0 (January 2025)
 - **NEW:** Hunt Mode — track stations/prefixes/countries with alerts
 - **NEW:** Path Intelligence — see who from your area is getting through and why
@@ -179,7 +210,7 @@ Contributions welcome! Please open an issue first to discuss proposed changes.
 
 ### Contributors
 - **Warren KC0GU** — Hunt Mode concept, Clear Target workflow, UI persistence suggestions
-- **Brian KB1OPD** — Auto-clear on QSY, testing and feedback
+- **Brian KB1OPD** — Band map tooltips and frequency scale requests, auto-clear on QSY, testing and feedback
 - **Doug McDonald, CaptainBucko, Bill K3CDY** — Beta testing and feedback
 
 ## License
