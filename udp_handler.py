@@ -1,6 +1,10 @@
 # QSO Predictor
 # Copyright (C) 2025 Peter Hirst (WU2C)
 #
+# v2.1.3 Changes:
+# - Fixed: AP (a priori) decoding indicators (a1-a7) showing as callsigns
+#   in target list instead of actual call (reported by Brian KB1OPD)
+#
 # v2.1.1 Changes:
 # - Added: check_data_health() method for resilient data source monitoring
 # - Added: Timeout detection (30s threshold) with automatic warning/recovery
@@ -17,6 +21,7 @@
 
 import logging
 import platform
+import re
 import socket
 import struct
 import threading
@@ -322,7 +327,11 @@ class UDPHandler(QObject):
             message, idx = self._read_utf8(data, idx)
 
             # --- Parsing Logic ---
-            parts = message.strip().split()
+            # v2.1.3: Strip WSJT-X/JTDX AP (a priori) decoding indicators
+            # These appear as trailing " a1" through " a7" and confuse callsign extraction
+            # (Reported by Brian KB1OPD)
+            message_clean = re.sub(r'\s+a[1-7]$', '', message.strip())
+            parts = message_clean.split()
             grid = ""
             call = ""
 

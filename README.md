@@ -8,6 +8,10 @@
 
 ![QSO Predictor Screenshot](docs/screenshot.png)
 
+## v2.1.3
+Handles ap codes correctly (strips them instean of showing as callsign)
+ - thanks to Brian KB1OPD for bug report
+
 ## What's New in v2.1.2
 
 ### 🐛 Critical Fix: Target Perspective Data
