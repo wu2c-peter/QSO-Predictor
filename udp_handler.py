@@ -58,6 +58,9 @@ class UDPHandler(QObject):
         # Track last received time for diagnostics
         self._last_packet_time = None
         
+        # v2.1.2: Rate-limit ICMP connection reset logging
+        self._icmp_reset_count = 0
+        
         # v2.1.1: Timeout detection state
         self._timeout_warned = False
         self._timeout_threshold = 30  # seconds with no data before warning
@@ -152,8 +155,10 @@ class UDPHandler(QObject):
                     if error_code == 10054:
                         # WSAECONNRESET - "Connection reset by remote host"
                         # This happens on Windows when forwarding to a closed port
-                        # The SIO_UDP_CONNRESET ioctl should prevent this, but just in case...
-                        logger.debug("UDP: Ignoring Windows ICMP connection reset (forward target may be closed)")
+                        # v2.1.2: Rate-limit logging (was flooding Brian's log with 1697 entries)
+                        self._icmp_reset_count += 1
+                        if self._icmp_reset_count == 1:
+                            logger.debug("UDP: Windows ICMP connection reset (forward target may be closed) - suppressing repeats")
                         continue  # Don't break - keep listening!
                     else:
                         logger.warning(f"UDP: Socket error in listen loop: {e}")
@@ -167,7 +172,8 @@ class UDPHandler(QObject):
         if self._last_stats_log_time is None:
             self._last_stats_log_time = now
         elif now - self._last_stats_log_time >= self._stats_log_interval:
-            logger.debug(f"UDP: Stats - {self._decodes_received} decodes, {self._status_received} status updates total")
+            logger.debug(f"UDP: Stats - {self._decodes_received} decodes, {self._status_received} status updates total"
+                         + (f", {self._icmp_reset_count} ICMP resets suppressed" if self._icmp_reset_count else ""))
             self._last_stats_log_time = now
 
     def _forward_packet(self, data):
@@ -327,15 +333,21 @@ class UDPHandler(QObject):
                 return False
 
             def is_grid(s):
+                # v2.1.2: Validate Maidenhead grid [A-R][A-R][0-9][0-9]
+                # Previous check was too loose - accepted RR73 (FT8 ack) as grid
                 if len(s) != 4: return False
-                return s[0].isalpha() and s[1].isalpha() and s[2].isdigit() and s[3].isdigit()
+                return (s[0].upper() in 'ABCDEFGHIJKLMNOPQR' and
+                        s[1].upper() in 'ABCDEFGHIJKLMNOPQR' and
+                        s[2].isdigit() and s[3].isdigit())
 
             if len(parts) >= 3:
                 last = parts[-1]
-                if is_grid(last):
-                    grid = last
+                # v2.1.2: Check is_suffix FIRST to prevent FT8 tokens (RR73)
+                # from being misidentified as grid squares
+                if is_suffix(last):
                     call = parts[-2]
-                elif is_suffix(last):
+                elif is_grid(last):
+                    grid = last
                     call = parts[-2]
                 else:
                     call = last
