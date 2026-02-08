@@ -1,5 +1,10 @@
-# QSO Predictor v2.1.3
+# QSO Predictor v2.1.4
 # Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.1.4 Changes:
+# - Fixed: JTDX detection in auto-paste scripts (title bar contains "WSJT-X")
+# - Added: Auto-paste scripts click Enable TX after pasting callsign
+# - Added: Separate JTDX/WSJT-X coordinates in auto-paste scripts
 #
 # v2.1.3 Changes:
 # - Added: Click-to-copy target callsign (click target in either panel)

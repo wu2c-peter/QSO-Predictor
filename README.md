@@ -8,6 +8,11 @@
 
 ![QSO Predictor Screenshot](docs/screenshot.png)
 
+## v2.1.4
+- **Fixed: JTDX detection in auto-paste scripts** — JTDX's title bar contains "WSJT-X" (it's a fork), so scripts that check for WSJT-X first match JTDX and use wrong coordinates. Scripts now check JTDX first. Thanks to Brian KB1OPD for reporting.
+- **Auto-paste scripts: Enable TX** — after pasting a callsign into the DX Call field, the script now clicks the Enable TX button automatically. One click from QSO Predictor to calling.
+- **Auto-paste scripts: separate coordinates** — JTDX and WSJT-X have different field positions, scripts now have independent coordinate settings for each app
+
 ## v2.1.3
 - **Click-to-copy target callsign** — click the target in either panel to copy to clipboard, then paste into WSJT-X/JTDX (or use the auto-paste scripts in the User Guide)
 - **Local decode evidence** — path detection now uses your local decodes as proof, not just PSK Reporter. If you decode a station responding to you, that's "Heard by Target" immediately — no PSK Reporter lag
