@@ -356,58 +356,82 @@ You can set up one-click transfer of **frequencies** and **callsigns** using Aut
 
 ```autohotkey
 #Requires AutoHotkey v2.0
+; =============================================================
+; QSO Predictor Auto-Paste Script
+; Automatically pastes frequency OR callsign to WSJT-X/JTDX
+; when you click the band map or target callsign in QSO Predictor
+; =============================================================
 
-; UPDATE THESE with your Window Spy coordinates!
-; TX Frequency field (Hz offset box)
-TX_X := 595
-TX_Y := 485
-; DX Call field (text box under "DX Call")
-DX_X := 130
-DX_Y := 485
+; IMPORTANT: Update these coordinates using Window Spy!
+; Hover over each field, note the CLIENT coordinates
 
+; WSJT-X coordinates
+WSJTX_TX_X := 800    ; TX frequency field
+WSJTX_TX_Y := 630
+WSJTX_DX_X := 130    ; DX Call field
+WSJTX_DX_Y := 630
+
+; JTDX coordinates
+JTDX_TX_X := 800     ; TX frequency field
+JTDX_TX_Y := 630
+JTDX_DX_X := 130     ; DX Call field (text box under "DX Call")
+JTDX_DX_Y := 630
+
+; Monitor clipboard for changes
 OnClipboardChange ClipboardChanged
 
-ClipboardChanged(dataType) {
+ClipboardChanged(dataType)
+{
+    ; Only process text
     if dataType != 1
         return
+
     clip := Trim(A_Clipboard)
     if !clip
         return
 
     ; Frequency: 3-4 digits, 300-3000 Hz — no Enter needed
     if RegExMatch(clip, "^\d{3,4}$") && clip >= 300 && clip <= 3000 {
-        target := FindApp()
-        if target
-            PasteToField(target, clip, TX_X, TX_Y, false)
+        if WinExist("WSJT-X")
+            PasteToField("WSJT-X", WSJTX_TX_X, WSJTX_TX_Y, clip, false)
+        else if WinExist("JTDX")
+            PasteToField("JTDX", JTDX_TX_X, JTDX_TX_Y, clip, false)
         return
     }
 
     ; Callsign: 3-10 chars, has letter AND digit — Enter required to set
     if RegExMatch(clip, "^[A-Z0-9/]{3,10}$") && RegExMatch(clip, "[A-Z]") && RegExMatch(clip, "\d") {
-        target := FindApp()
-        if target
-            PasteToField(target, clip, DX_X, DX_Y, true)
+        if WinExist("WSJT-X")
+            PasteToField("WSJT-X", WSJTX_DX_X, WSJTX_DX_Y, clip, true)
+        else if WinExist("JTDX")
+            PasteToField("JTDX", JTDX_DX_X, JTDX_DX_Y, clip, true)
         return
     }
 }
 
-FindApp() {
-    if WinExist("JTDX")
-        return "JTDX"
-    if WinExist("WSJT-X")
-        return "WSJT-X"
-    return ""
-}
+PasteToField(windowTitle, clickX, clickY, text, pressEnter)
+{
+    try {
+        WinActivate windowTitle
+        WinWaitActive windowTitle,, 2
 
-PasteToField(win, text, x, y, pressEnter) {
-    WinActivate win
-    WinWaitActive win,, 2
-    Click x, y
-    Sleep 50
-    Send "^a"
-    Send text
-    if pressEnter
-        Send "{Enter}"
+        Click clickX, clickY
+        Sleep 50
+
+        Send "^a"
+        Sleep 20
+        Send text
+        if pressEnter
+            Send "{Enter}"
+
+        ; Confirmation tooltip
+        label := pressEnter ? "DX Call" : "TX Freq"
+        ToolTip label " → " text
+        SetTimer () => ToolTip(), -1500
+    } catch {
+        ToolTip "Could not paste to " windowTitle
+        SetTimer () => ToolTip(), -2000
+    }
 }
 ```
 
@@ -419,11 +443,22 @@ PasteToField(win, text, x, y, pressEnter) {
 2. Add to `~/.hammerspoon/init.lua`:
 
 ```lua
--- QSO Predictor auto-paste: frequencies and callsigns
+-- =============================================================
+-- QSO Predictor Auto-Paste Script (Hammerspoon)
+-- Automatically pastes frequency OR callsign to WSJT-X/JTDX
+-- when you click the band map or target callsign in QSO Predictor
+-- =============================================================
+
 -- UPDATE these coordinates using Hammerspoon console:
---   hs.mouse.absolutePosition()
-local TX_X, TX_Y = 595, 485   -- TX Freq field
-local DX_X, DX_Y = 130, 485   -- DX Call field
+--   hs.mouse.absolutePosition()  (then subtract window origin)
+
+-- WSJT-X coordinates
+local WSJTX_TX_X, WSJTX_TX_Y = 800, 630   -- TX frequency field
+local WSJTX_DX_X, WSJTX_DX_Y = 130, 630   -- DX Call field
+
+-- JTDX coordinates
+local JTDX_TX_X, JTDX_TX_Y = 800, 630     -- TX frequency field
+local JTDX_DX_X, JTDX_DX_Y = 130, 630     -- DX Call field
 
 local lastClip = ""
 
@@ -433,14 +468,12 @@ hs.timer.doEvery(0.5, function()
     lastClip = clip
     clip = clip:match("^%s*(.-)%s*$")  -- trim
 
-    local target = findApp()
-    if not target then return end
-
     -- Frequency: 3-4 digits, 300-3000 — no Enter needed
     if clip:match("^%d+$") and #clip >= 3 and #clip <= 4 then
         local freq = tonumber(clip)
         if freq >= 300 and freq <= 3000 then
-            pasteToField(target, clip, TX_X, TX_Y, false)
+            local app, tx, ty = findAppCoords("TX")
+            if app then pasteToField(app, clip, tx, ty, false) end
             return
         end
     end
@@ -450,16 +483,22 @@ hs.timer.doEvery(0.5, function()
        and clip:match("^[A-Z0-9/]+$")
        and clip:match("[A-Z]")
        and clip:match("%d") then
-        pasteToField(target, clip, DX_X, DX_Y, true)
+        local app, dx, dy = findAppCoords("DX")
+        if app then pasteToField(app, clip, dx, dy, true) end
     end
 end)
 
-function findApp()
-    for _, name in ipairs({"JTDX", "WSJT-X"}) do
-        local app = hs.application.find(name)
-        if app then return app end
+function findAppCoords(fieldType)
+    local app = hs.application.find("JTDX") or hs.application.find("WSJT-X")
+    if not app then return nil end
+    local name = app:name()
+    if fieldType == "TX" then
+        if name:find("JTDX") then return app, JTDX_TX_X, JTDX_TX_Y end
+        return app, WSJTX_TX_X, WSJTX_TX_Y
+    else
+        if name:find("JTDX") then return app, JTDX_DX_X, JTDX_DX_Y end
+        return app, WSJTX_DX_X, WSJTX_DX_Y
     end
-    return nil
 end
 
 function pasteToField(app, text, x, y, pressEnter)
@@ -475,6 +514,9 @@ function pasteToField(app, text, x, y, pressEnter)
             if pressEnter then
                 hs.eventtap.keyStroke({}, "return")
             end
+            -- Confirmation
+            local label = pressEnter and "DX Call" or "TX Freq"
+            hs.alert.show(label .. " → " .. text, 1.5)
         end)
     end)
 end
