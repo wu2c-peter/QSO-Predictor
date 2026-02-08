@@ -173,6 +173,10 @@ class LocalIntelligence(QObject):
             if hasattr(main_window, 'sync_to_jtdx'):
                 self.insights_panel.sync_requested.connect(main_window.sync_to_jtdx)
             
+            # v2.1.3: Connect clipboard feedback to status bar
+            if hasattr(main_window, 'update_status_msg'):
+                self.insights_panel.status_message.connect(main_window.update_status_msg)
+            
             # Create dock widget
             self.insights_dock = QDockWidget("Local Intelligence", main_window)
             self.insights_dock.setObjectName("local_intel_dock")  # Required for saveState

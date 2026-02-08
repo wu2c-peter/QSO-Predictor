@@ -1,5 +1,13 @@
-# QSO Predictor v2.1.1
+# QSO Predictor v2.1.3
 # Copyright (C) 2025 Peter Hirst (WU2C)
+#
+# v2.1.3 Changes:
+# - Added: Click-to-copy target callsign (click target in either panel)
+# - Added: Local decode evidence for path detection (works without PSK Reporter)
+# - Changed: Path status labels clarified (Heard by Target, Heard in Region, etc.)
+# - Changed: "Sync to JTDX" renamed to "Fetch Target" (clearer direction)
+# - Changed: Combined AutoHotkey/Hammerspoon scripts support frequency + callsign
+# - Fixed: AP decode codes (a1-a7) stripped from Call column
 #
 # v2.1.1 Changes:
 # - Added: Band map hover tooltips showing callsign, SNR, tier, grid (Brian's request)
@@ -49,6 +57,7 @@
 # - Fixed: Splitter position persistence (suggested by KC0GU)
 # - Fixed: VERSION file not bundled in macOS build
 # - Added: Sync to WSJT-X/JTDX button and Ctrl+Y shortcut (suggested by KC0GU)
+#          (renamed to "Fetch Target" in v2.1.3 for clarity)
 # - Added: Dock widget (Local Intelligence panel) position persistence
 #
 # v2.0.4 Changes:
@@ -205,6 +214,18 @@ class TargetDashboard(QFrame):
             QLabel#header { color: #888; font-size: 8pt; font-weight: bold; }
             QLabel#data { font-weight: bold; color: #FFF; }
             QLabel#target { color: #FF00FF; font-size: 16pt; font-weight: bold; padding-right: 5px; }
+            QPushButton#target {
+                color: #FF00FF;
+                font-size: 16pt;
+                font-weight: bold;
+                padding-right: 5px;
+                background: transparent;
+                border: none;
+                text-align: left;
+            }
+            QPushButton#target:hover {
+                color: #FF66FF;
+            }
             QLabel#rec { 
                 font-family: Consolas, monospace; 
                 font-weight: bold; 
@@ -234,14 +255,19 @@ class TargetDashboard(QFrame):
         layout.setContentsMargins(10, 5, 10, 5)
         layout.setSpacing(10)
         
-        self.lbl_target = QLabel("NO TARGET")
+        # v2.1.3: Target label is clickable — copies callsign to clipboard
+        self.lbl_target = QPushButton("NO TARGET")
         self.lbl_target.setObjectName("target")
+        self.lbl_target.setFlat(True)
+        self.lbl_target.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lbl_target.setToolTip("Click to copy callsign to clipboard")
+        self.lbl_target.clicked.connect(self._copy_target_to_clipboard)
         layout.addWidget(self.lbl_target)
         
-        # v2.0.6: Sync button next to target
+        # v2.0.6: Fetch button — pulls target from WSJT-X/JTDX
         self.btn_sync = QPushButton("⟳")
         self.btn_sync.setObjectName("sync")
-        self.btn_sync.setToolTip("Sync target to WSJT-X/JTDX (Ctrl+Y)")
+        self.btn_sync.setToolTip("Fetch target from WSJT-X/JTDX (Ctrl+Y)")
         self.btn_sync.setFixedSize(28, 28)
         self.btn_sync.clicked.connect(self.sync_requested.emit)
         layout.addWidget(self.btn_sync)
@@ -318,6 +344,19 @@ class TargetDashboard(QFrame):
         self.lbl_rec.copied.connect(self.status_message.emit)  # Bubble up to main window
         self.update_rec("----", "----") 
         layout.addWidget(self.lbl_rec)
+
+    def _copy_target_to_clipboard(self):
+        """Copy current target callsign to clipboard."""
+        text = self.lbl_target.text()
+        if text and text != "NO TARGET":
+            clipboard = QApplication.clipboard()
+            clipboard.setText(text)
+            # Brief visual feedback
+            original_text = text
+            self.lbl_target.setText(f"✓ Copied!")
+            self.status_message.emit(f"Copied to clipboard: {text}")
+            # Restore after 1 second
+            QTimer.singleShot(1000, lambda: self.lbl_target.setText(original_text))
 
     def update_data(self, data):
         if not data:
@@ -871,9 +910,9 @@ class MainWindow(QMainWindow):
         self.btn_clear_target.clicked.connect(self.clear_target)
         toolbar.addWidget(self.btn_clear_target)
         
-        # v2.0.6: Sync to JTDX button
-        self.btn_sync_jtdx = QPushButton("Sync to JTDX")
-        self.btn_sync_jtdx.setToolTip("Set target to match WSJT-X/JTDX selection (Ctrl+Y)")
+        # v2.0.6: Fetch target from JTDX (pulls THEIR selection into QSOP)
+        self.btn_sync_jtdx = QPushButton("← Fetch Target")
+        self.btn_sync_jtdx.setToolTip("Set QSOP target to match WSJT-X/JTDX selection (Ctrl+Y)")
         self.btn_sync_jtdx.clicked.connect(self.sync_to_jtdx)
         toolbar.addWidget(self.btn_sync_jtdx)
         
@@ -1032,8 +1071,8 @@ class MainWindow(QMainWindow):
         clear_target_action.triggered.connect(self.clear_target)
         edit_menu.addAction(clear_target_action)
         
-        # v2.0.6: Sync to JTDX action with Ctrl+Y shortcut
-        sync_jtdx_action = QAction("Sync to WSJT-X/JTDX", self)
+        # v2.0.6: Fetch target from logging app with Ctrl+Y shortcut
+        sync_jtdx_action = QAction("Fetch Target from WSJT-X/JTDX", self)
         sync_jtdx_action.setShortcut(QKeySequence("Ctrl+Y"))
         sync_jtdx_action.triggered.connect(self.sync_to_jtdx)
         edit_menu.addAction(sync_jtdx_action)
@@ -1329,11 +1368,11 @@ class MainWindow(QMainWindow):
                 logger.info(f"Auto-clear: Target cleared after logging {logged_call}")
                 self.clear_target()
 
-    # --- v2.0.6: Sync to JTDX (suggested by KC0GU) ---
+    # --- v2.0.6: Fetch target from JTDX (suggested by KC0GU) ---
     def sync_to_jtdx(self):
-        """Sync target to match WSJT-X/JTDX's current DX call.
+        """Fetch target from WSJT-X/JTDX into QSO Predictor.
         
-        When user has clicked a different station in QSO Predictor,
+        When user has selected a different station in QSO Predictor,
         double-clicking in JTDX won't re-send the UDP message (JTDX
         thinks it's already on that station). This button forces
         QSO Predictor to match JTDX's selection.

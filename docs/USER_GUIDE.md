@@ -336,65 +336,170 @@ When a hunt target is spotted:
 7. **Use Path Intelligence** — if others from your area are getting through, you can too
 8. **Analyze before giving up** — the Analyze button might reveal why others succeed
 9. **Work one cycle ahead** — select target early, let recommendation stabilize, enter frequency before next cycle starts
+10. **Click to copy callsign** — click the target callsign in either panel to copy to clipboard, then paste into WSJT-X/JTDX (or use the auto-paste scripts below)
 
 ### Windows Power Users: Auto-Paste to WSJT-X/JTDX
 
-You can set up one-click frequency transfer using AutoHotkey (free):
+You can set up one-click transfer of **frequencies** and **callsigns** using AutoHotkey (free):
 
 **The workflow:**
-1. Click band map in QSO Predictor
-2. Frequency automatically appears in WSJT-X/JTDX — no typing!
+1. Click band map → frequency auto-pastes to TX field
+2. Click target callsign → callsign auto-pastes to DX Call field
 
 **Quick setup:**
 
 1. Install AutoHotkey v2.0 from https://www.autohotkey.com/
-2. Use Window Spy to find your TX field coordinates (Client x,y)
+2. Use Window Spy to find your field coordinates (Client x,y) for both:
+   - TX Freq field (the Hz offset box)
+   - DX Call field (the text box under "DX Call")
 3. Create a file `QSOPredictor_AutoPaste.ahk`:
 
 ```autohotkey
 #Requires AutoHotkey v2.0
 
 ; UPDATE THESE with your Window Spy coordinates!
+; TX Frequency field (Hz offset box)
 TX_X := 595
 TX_Y := 485
+; DX Call field (text box under "DX Call")
+DX_X := 130
+DX_Y := 485
 
 OnClipboardChange ClipboardChanged
 
 ClipboardChanged(dataType) {
-    if dataType != 1 || !WinActive("QSO Predictor")
+    if dataType != 1
         return
-    freq := A_Clipboard
-    if !RegExMatch(freq, "^\d{3,4}$") || freq < 300 || freq > 3000
+    clip := Trim(A_Clipboard)
+    if !clip
         return
-    if WinExist("WSJT-X")
-        PasteTo("WSJT-X", freq)
-    else if WinExist("JTDX")
-        PasteTo("JTDX", freq)
+
+    ; Frequency: 3-4 digits, 300-3000 Hz
+    if RegExMatch(clip, "^\d{3,4}$") && clip >= 300 && clip <= 3000 {
+        target := FindApp()
+        if target
+            PasteToField(target, clip, TX_X, TX_Y)
+        return
+    }
+
+    ; Callsign: 3-10 chars, has letter AND digit, optional /suffix
+    if RegExMatch(clip, "^[A-Z0-9/]{3,10}$") && RegExMatch(clip, "[A-Z]") && RegExMatch(clip, "\d") {
+        target := FindApp()
+        if target
+            PasteToField(target, clip, DX_X, DX_Y)
+        return
+    }
 }
 
-PasteTo(win, freq) {
+FindApp() {
+    if WinExist("JTDX")
+        return "JTDX"
+    if WinExist("WSJT-X")
+        return "WSJT-X"
+    return ""
+}
+
+PasteToField(win, text, x, y) {
     WinActivate win
     WinWaitActive win,, 2
-    Click TX_X, TX_Y
+    Click x, y
     Sleep 50
     Send "^a"
-    Send freq
+    Send text
     Send "{Enter}"
 }
 ```
 
 4. Double-click to run. Done!
 
-📖 **Full guide with Mac support:** See [docs/TX_FREQ_PASTE_GUIDE.md](docs/TX_FREQ_PASTE_GUIDE.md)
+### Mac Power Users: Auto-Paste with Hammerspoon
+
+1. Install Hammerspoon from https://www.hammerspoon.org/
+2. Add to `~/.hammerspoon/init.lua`:
+
+```lua
+-- QSO Predictor auto-paste: frequencies and callsigns
+-- UPDATE these coordinates using Hammerspoon console:
+--   hs.mouse.absolutePosition()
+local TX_X, TX_Y = 595, 485   -- TX Freq field
+local DX_X, DX_Y = 130, 485   -- DX Call field
+
+local lastClip = ""
+
+hs.timer.doEvery(0.5, function()
+    local clip = hs.pasteboard.getContents()
+    if not clip or clip == lastClip then return end
+    lastClip = clip
+    clip = clip:match("^%s*(.-)%s*$")  -- trim
+
+    local target = findApp()
+    if not target then return end
+
+    -- Frequency: 3-4 digits, 300-3000
+    if clip:match("^%d+$") and #clip >= 3 and #clip <= 4 then
+        local freq = tonumber(clip)
+        if freq >= 300 and freq <= 3000 then
+            pasteToField(target, clip, TX_X, TX_Y)
+            return
+        end
+    end
+
+    -- Callsign: 3-10 chars, has letter AND digit
+    if #clip >= 3 and #clip <= 10
+       and clip:match("^[A-Z0-9/]+$")
+       and clip:match("[A-Z]")
+       and clip:match("%d") then
+        pasteToField(target, clip, DX_X, DX_Y)
+    end
+end)
+
+function findApp()
+    for _, name in ipairs({"JTDX", "WSJT-X"}) do
+        local app = hs.application.find(name)
+        if app then return app end
+    end
+    return nil
+end
+
+function pasteToField(app, text, x, y)
+    app:activate()
+    hs.timer.doAfter(0.3, function()
+        local win = app:mainWindow()
+        if not win then return end
+        local frame = win:frame()
+        hs.eventtap.leftClick({x = frame.x + x, y = frame.y + y})
+        hs.timer.doAfter(0.1, function()
+            hs.eventtap.keyStroke({"cmd"}, "a")
+            hs.eventtap.keyStrokes(text)
+            hs.eventtap.keyStroke({}, "return")
+        end)
+    end)
+end
+```
+
+3. Reload Hammerspoon config (⌘+R in console).
+
+> **Note:** Both scripts auto-detect whether JTDX or WSJT-X is running. If neither is open, clipboard changes are ignored. You can also skip the scripts entirely and just Ctrl+V / ⌘+V manually.
+
+📖 **Finding coordinates:** In AutoHotkey use Window Spy; in Hammerspoon use `hs.mouse.absolutePosition()` while hovering over each field.
 
 ### Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
 | Ctrl+R | Clear target selection |
+| Ctrl+Y | Fetch target from WSJT-X/JTDX |
 | Ctrl+H | Open Hunt List |
 | Ctrl+S | Open Settings |
 | F5 | Force refresh spots |
+
+### Click Actions
+
+| Click | What happens |
+|-------|-------------|
+| Click target callsign (either panel) | Copies callsign to clipboard |
+| Click band map | Copies recommended frequency to clipboard |
+| ⟳ button (either panel) | Fetches current target from WSJT-X/JTDX |
 
 ---
 

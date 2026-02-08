@@ -23,7 +23,7 @@ from typing import Optional, Dict
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QGroupBox, QProgressBar, QFrame, QPushButton,
-    QToolTip
+    QToolTip, QApplication
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QColor, QPalette
@@ -801,6 +801,8 @@ class InsightsPanel(QWidget):
     
     # v2.0.6: Signal when user wants to sync target to JTDX
     sync_requested = pyqtSignal()
+    # v2.1.3: Status bar messages (e.g., clipboard feedback)
+    status_message = pyqtSignal(str)
     
     # v2.1.0: Signal when user wants Phase 2 path analysis (emits stations list)
     path_analyze_requested = pyqtSignal(list)
@@ -869,19 +871,35 @@ class InsightsPanel(QWidget):
             }
         """)
         
-        # Target header with Sync button (v2.0.6)
+        # Target header with click-to-copy and Fetch button (v2.0.6, v2.1.3)
         target_header = QHBoxLayout()
         target_header.setSpacing(4)
         
-        self.target_label = QLabel("Target: —")
+        # v2.1.3: Target label is clickable — copies callsign to clipboard
+        self.target_label = QPushButton("Target: —")
         self.target_label.setFont(QFont("Consolas", 12, QFont.Weight.Bold))
-        self.target_label.setStyleSheet("color: #ffffff; background-color: #333333; padding: 4px; border-radius: 3px;")
-        self.target_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.target_label.setStyleSheet("""
+            QPushButton {
+                color: #ffffff;
+                background-color: #333333;
+                padding: 4px;
+                border-radius: 3px;
+                border: 1px solid #444;
+                text-align: center;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+                color: #FF66FF;
+            }
+        """)
+        self.target_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.target_label.setToolTip("Click to copy callsign to clipboard")
+        self.target_label.clicked.connect(self._copy_target_to_clipboard)
         target_header.addWidget(self.target_label, stretch=1)
         
-        # v2.0.6: Sync button - syncs QSO Predictor target to JTDX selection
+        # v2.0.6: Fetch button — pulls target from WSJT-X/JTDX into QSOP
         self.sync_button = QPushButton("⟳")
-        self.sync_button.setToolTip("Sync target to WSJT-X/JTDX (Ctrl+Y)")
+        self.sync_button.setToolTip("Fetch target from WSJT-X/JTDX (Ctrl+Y)")
         self.sync_button.setFixedSize(28, 28)
         self.sync_button.setStyleSheet("""
             QPushButton {
@@ -956,6 +974,17 @@ class InsightsPanel(QWidget):
         # v2.0.3: Reset failure tracking when predictor changes
         self._predictor_failed = False
         self._predictor_error_logged = False
+    
+    def _copy_target_to_clipboard(self):
+        """v2.1.3: Copy current target callsign to clipboard."""
+        if self._current_target:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(self._current_target)
+            # Brief visual feedback
+            original_text = self.target_label.text()
+            self.target_label.setText("✓ Copied!")
+            self.status_message.emit(f"Copied to clipboard: {self._current_target}")
+            QTimer.singleShot(1000, lambda: self.target_label.setText(original_text))
     
     def set_target(self, callsign: str, grid: str = None):
         """

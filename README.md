@@ -9,8 +9,12 @@
 ![QSO Predictor Screenshot](docs/screenshot.png)
 
 ## v2.1.3
+- **Click-to-copy target callsign** — click the target in either panel to copy to clipboard, then paste into WSJT-X/JTDX (or use the auto-paste scripts in the User Guide)
+- **Local decode evidence** — path detection now uses your local decodes as proof, not just PSK Reporter. If you decode a station responding to you, that's "Heard by Target" immediately — no PSK Reporter lag
+- **Path column relabeled** for clarity: Heard by Target, Heard in Region, Not Heard in Region, Not Transmitting, No Reporters in Region
+- **"Sync to JTDX" → "← Fetch Target"** — button renamed so direction is obvious (pulls JTDX's selection into QSO Predictor)
+- **Combined auto-paste scripts** — updated AutoHotkey/Hammerspoon scripts handle both frequency AND callsign clipboard copies
 - Handles AP codes correctly (strips them instead of showing as callsign) — thanks to Brian KB1OPD for bug report
-- **Path column relabeled** for clarity — see below
 
 ## What's New in v2.1.2
 
