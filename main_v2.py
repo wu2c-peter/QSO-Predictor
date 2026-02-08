@@ -362,21 +362,23 @@ class TargetDashboard(QFrame):
         # Path status
         path = str(data.get('path', '--'))
         self.val_path.setText(path)
-        if "CONNECTED" in path:
+        if "Heard by Target" in path:
             self.val_path.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
-        elif "Path Open" in path:
+        elif "Heard in Region" in path:
             self.val_path.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
-        elif "No Path" in path:
+        elif "Not Heard in Region" in path:
             self.val_path.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
-        elif "No Nearby" in path:
+        elif "Not Transmitting" in path:
             self.val_path.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
+        elif "No Reporters" in path:
+            self.val_path.setStyleSheet("color: #666666; font-weight: bold;")  # Dark gray
         else:
             self.val_path.setStyleSheet("color: #DDDDDD;")
         
         comp = str(data.get('competition', ''))
         self.val_comp.setText(comp)
         # Color-code competition status
-        if "CONNECTED" in comp:
+        if "Heard by Target" in comp:
             self.val_comp.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
         elif "PILEUP" in comp:
             self.val_comp.setStyleSheet("color: #FF5555; font-weight: bold;")  # Red
@@ -498,25 +500,27 @@ class DecodeTableModel(QAbstractTableModel):
                 except: pass
             if key == "path":
                 path = str(row_item.get('path', ''))
-                if "CONNECTED" in path:
+                if "Heard by Target" in path:
                     return QColor("#00FFFF")  # Cyan - target hears you!
-                elif "Path Open" in path:
+                elif "Heard in Region" in path:
                     return QColor("#00FF00")  # Green - path to region confirmed
-                elif "No Path" in path:
+                elif "Not Heard in Region" in path:
                     return QColor("#FFA500")  # Orange - reporters exist but don't hear you
-                elif "No Nearby Reporters" in path:
-                    return QColor("#888888")  # Gray - no data available
+                elif "Not Transmitting" in path:
+                    return QColor("#888888")  # Gray - not transmitting recently
+                elif "No Reporters" in path:
+                    return QColor("#666666")  # Dark gray - no data available
 
         elif role == Qt.ItemDataRole.BackgroundRole:
             # Highlight rows based on path status and hunt mode
             path = str(row_item.get('path', ''))
             
-            # CONNECTED = highest priority (target hears you!)
-            if "CONNECTED" in path:
+            # Heard by Target = highest priority (target hears you!)
+            if "Heard by Target" in path:
                 return QColor("#004040")  # Teal background
             
-            # Path Open = propagation confirmed to region
-            if "Path Open" in path:
+            # Heard in Region = propagation confirmed to region
+            if "Heard in Region" in path:
                 return QColor("#002800")  # Dark green background
             
             # v2.1.0: Hunt Mode - highlight hunted stations with gold background
@@ -744,59 +748,18 @@ class MainWindow(QMainWindow):
         #self._start_health_check_timer()
     
     def _check_first_run_config(self):
-        """v2.2.0: Check if first run and offer auto-configuration wizard."""
+        """Warn user if callsign/grid haven't been configured."""
         my_call = self.config.get('ANALYSIS', 'my_callsign', fallback='N0CALL')
         my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='FN00aa')
         
         if my_call == 'N0CALL' or my_grid == 'FN00aa':
-            try:
-                from setup_wizard import show_setup_wizard
-                
-                result = show_setup_wizard(parent=self, first_run=True)
-                
-                if result:
-                    # Apply detected configuration
-                    if result.get('callsign'):
-                        self.config.save_setting('ANALYSIS', 'my_callsign', result['callsign'])
-                    if result.get('grid'):
-                        self.config.save_setting('ANALYSIS', 'my_grid', result['grid'])
-                    if result.get('udp_ip'):
-                        self.config.save_setting('NETWORK', 'udp_ip', result['udp_ip'])
-                    if result.get('udp_port'):
-                        self.config.save_setting('NETWORK', 'udp_port', str(result['udp_port']))
-                    
-                    logger.info(f"Setup wizard applied: call={result.get('callsign')}, "
-                               f"grid={result.get('grid')}, "
-                               f"udp={result.get('udp_ip')}:{result.get('udp_port')}")
-                    
-                    # Notify user about restart for network changes
-                    QMessageBox.information(
-                        self, "Configuration Applied",
-                        f"Settings configured successfully!\n\n"
-                        f"  Callsign: {result.get('callsign', 'N0CALL')}\n"
-                        f"  Grid: {result.get('grid', '')}\n"
-                        f"  UDP: {result.get('udp_ip', '127.0.0.1')}:{result.get('udp_port', 2237)}\n\n"
-                        "Restart QSO Predictor for network changes to take effect."
-                    )
-                else:
-                    # User chose manual configuration
-                    QMessageBox.information(
-                        self,
-                        "Manual Setup",
-                        "You can configure QSO Predictor at any time via Edit → Settings.\n\n"
-                        "At minimum, set your callsign and grid, and ensure the UDP port "
-                        "matches your WSJT-X/JTDX configuration."
-                    )
-            except ImportError:
-                # setup_wizard.py not present — fall back to original message
-                logger.debug("setup_wizard module not available, using basic first-run message")
-                QMessageBox.information(
-                    self,
-                    "Welcome to QSO Predictor!",
-                    "Please configure your callsign and grid square "
-                    "for accurate predictions.\n\n"
-                    "Go to Edit → Settings to set them up."
-                )
+            QMessageBox.information(
+                self,
+                "Welcome to QSO Predictor!",
+                "Please configure your callsign and grid square "
+                "for accurate predictions.\n\n"
+                "Go to Edit → Settings to set them up."
+            )
 
     def _init_local_intelligence(self):
         """Initialize Local Intelligence v2.0 features."""
@@ -1110,13 +1073,6 @@ class MainWindow(QMainWindow):
             disabled_action = QAction("Local Intelligence (not available)", self)
             disabled_action.setEnabled(False)
             tools_menu.addAction(disabled_action)
-        
-        # v2.2.0: Auto-Detect Configuration
-        tools_menu.addSeparator()
-        auto_detect_action = QAction("Auto-Detect Configuration...", self)
-        auto_detect_action.setToolTip("Scan for WSJT-X/JTDX and auto-configure settings")
-        auto_detect_action.triggered.connect(self._on_auto_detect_config)
-        tools_menu.addAction(auto_detect_action)
         
         # Help Menu
         help_menu = menu.addMenu("Help")
@@ -1625,11 +1581,11 @@ class MainWindow(QMainWindow):
         
         path = str(row_data.get('path', ''))
         
-        if "CONNECTED" in path:
+        if "Heard by Target" in path:
             self.local_intel.set_path_status(PathStatus.CONNECTED)
-        elif "Path Open" in path:
+        elif "Heard in Region" in path:
             self.local_intel.set_path_status(PathStatus.PATH_OPEN)
-        elif "No Path" in path:
+        elif "Not Heard in Region" in path:
             self.local_intel.set_path_status(PathStatus.NO_PATH)
         else:
             self.local_intel.set_path_status(PathStatus.UNKNOWN)
@@ -1957,42 +1913,6 @@ class MainWindow(QMainWindow):
         # Handle "Open Settings" button (custom return code 2)
         if result == 2:
             self.open_settings()
-    
-    def _on_auto_detect_config(self):
-        """v2.2.0: Run auto-detect from the Tools menu and apply results."""
-        try:
-            from setup_wizard import show_setup_wizard
-        except ImportError:
-            QMessageBox.warning(
-                self, "Not Available",
-                "Auto-detect module not found (setup_wizard.py).\n"
-                "Please ensure it is in the application directory."
-            )
-            return
-        
-        result = show_setup_wizard(parent=self, first_run=False)
-        if result:
-            if result.get('callsign'):
-                self.config.save_setting('ANALYSIS', 'my_callsign', result['callsign'])
-            if result.get('grid'):
-                self.config.save_setting('ANALYSIS', 'my_grid', result['grid'])
-            if result.get('udp_ip'):
-                self.config.save_setting('NETWORK', 'udp_ip', result['udp_ip'])
-            if result.get('udp_port'):
-                self.config.save_setting('NETWORK', 'udp_port', str(result['udp_port']))
-            
-            logger.info(f"Auto-detect config applied: call={result.get('callsign')}, "
-                       f"grid={result.get('grid')}, "
-                       f"udp={result.get('udp_ip')}:{result.get('udp_port')}")
-            
-            QMessageBox.information(
-                self, "Configuration Applied",
-                f"Settings updated:\n\n"
-                f"  Callsign: {result.get('callsign', '')}\n"
-                f"  Grid: {result.get('grid', '')}\n"
-                f"  UDP: {result.get('udp_ip', '127.0.0.1')}:{result.get('udp_port', 2237)}\n\n"
-                "Restart QSO Predictor for network changes to take effect."
-            )
     
     def _show_connection_help(self):
         """Manually show the connection help dialog (from Help menu)."""

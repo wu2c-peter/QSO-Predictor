@@ -304,7 +304,7 @@ class QSOAnalyzer(QObject):
                         if not sender_grid or len(sender_grid) < 2:
                             continue
                         
-                        # Skip my own callsign (already shown in Path column as CONNECTED)
+                        # Skip my own callsign (already shown in Path column as "Heard by Target")
                         if my_call and sender_call == my_call:
                             continue
                         
@@ -742,7 +742,7 @@ class QSOAnalyzer(QObject):
                            This is expensive - only use for selected target (dashboard).
         
         Sets:
-            'path': Path status for table column (CONNECTED, Path Open, or blank)
+            'path': Path status for table column (Heard by Target, Heard in Region, etc.)
             'prob': Success probability percentage
             'competition': Full competition analysis (only when use_perspective=True)
         """
@@ -791,7 +791,7 @@ class QSOAnalyzer(QObject):
             if my_rep['receiver'] == target_call:
                 geo_bonus = 100
                 direct_hit = True
-                path_str = "CONNECTED"
+                path_str = "Heard by Target"
                 break
         
         # Check for path open (nearby station heard us)
@@ -804,11 +804,11 @@ class QSOAnalyzer(QObject):
                 if len(r_grid) >= 4:
                     if target_minor and r_grid[:4] == target_minor:
                         geo_bonus = 25 
-                        path_str = "Path Open"
+                        path_str = "Heard in Region"
                         break
                     elif r_grid[:2] == target_major:
                         geo_bonus = 15
-                        path_str = "Path Open"
+                        path_str = "Heard in Region"
         
         # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
@@ -816,11 +816,11 @@ class QSOAnalyzer(QObject):
             
             if has_nearby_reporters:
                 if have_any_spots:
-                    path_str = "No Path"  # We're TXing (spotted elsewhere), just not reaching target
+                    path_str = "Not Heard in Region"  # We're TXing (spotted elsewhere), just not reaching target
                 else:
-                    path_str = "No Path or No TX"  # Could be not TXing OR no path
+                    path_str = "Not Transmitting"  # No spots anywhere — likely not TXing
             else:
-                path_str = "No Nearby Reporters"
+                path_str = "No Reporters in Region"
         
         # SNR-based probability adjustment (when no path data)
         if not direct_hit and geo_bonus == 0:
@@ -899,7 +899,7 @@ class QSOAnalyzer(QObject):
             
             # Override with path status if connected
             if direct_hit:
-                comp_str = "CONNECTED"
+                comp_str = "Heard by Target"
             
             decode_data['competition'] = comp_str
             geo_bonus -= qrm_penalty  # Factor competition into probability
@@ -919,11 +919,11 @@ class QSOAnalyzer(QObject):
         Use this for bulk updates when my_reception_cache changes.
         
         Path values:
-            CONNECTED - target heard me
-            Path Open - station in same grid/field heard me
-            No Path - reporters near target exist, I'm spotted elsewhere, but not there
-            No Path or No TX - reporters near target exist, but I have no spots anywhere
-            No Nearby Reporters - no reporters in target's region
+            Heard by Target - target heard me
+            Heard in Region - station in same grid/field heard me
+            Not Heard in Region - reporters near target exist, I'm spotted elsewhere, but not there
+            Not Transmitting - reporters near target exist, but I have no spots anywhere
+            No Reporters in Region - no reporters in target's region
         """
         target_call = decode_data.get('call', '')
         target_grid = decode_data.get('grid', '')
@@ -955,7 +955,7 @@ class QSOAnalyzer(QObject):
         # Check for direct connection (target heard us)
         for my_rep in my_reception_snapshot:
             if my_rep['receiver'] == target_call:
-                path_str = "CONNECTED"
+                path_str = "Heard by Target"
                 break
         
         # Check for path open (nearby station heard us)
@@ -967,10 +967,10 @@ class QSOAnalyzer(QObject):
                 r_grid = my_rep.get('grid', "")
                 if len(r_grid) >= 4:
                     if target_minor and r_grid[:4] == target_minor:
-                        path_str = "Path Open"
+                        path_str = "Heard in Region"
                         break
                     elif r_grid[:2] == target_major:
-                        path_str = "Path Open"
+                        path_str = "Heard in Region"
         
         # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
@@ -978,11 +978,11 @@ class QSOAnalyzer(QObject):
             
             if has_nearby_reporters:
                 if have_any_spots:
-                    path_str = "No Path"  # We're TXing (spotted elsewhere), just not reaching target
+                    path_str = "Not Heard in Region"  # We're TXing (spotted elsewhere), just not reaching target
                 else:
-                    path_str = "No Path or No TX"  # Could be not TXing OR no path
+                    path_str = "Not Transmitting"  # No spots anywhere — likely not TXing
             else:
-                path_str = "No Nearby Reporters"
+                path_str = "No Reporters in Region"
         
         decode_data['path'] = path_str
 
