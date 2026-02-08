@@ -374,19 +374,19 @@ ClipboardChanged(dataType) {
     if !clip
         return
 
-    ; Frequency: 3-4 digits, 300-3000 Hz
+    ; Frequency: 3-4 digits, 300-3000 Hz — no Enter needed
     if RegExMatch(clip, "^\d{3,4}$") && clip >= 300 && clip <= 3000 {
         target := FindApp()
         if target
-            PasteToField(target, clip, TX_X, TX_Y)
+            PasteToField(target, clip, TX_X, TX_Y, false)
         return
     }
 
-    ; Callsign: 3-10 chars, has letter AND digit, optional /suffix
+    ; Callsign: 3-10 chars, has letter AND digit — Enter required to set
     if RegExMatch(clip, "^[A-Z0-9/]{3,10}$") && RegExMatch(clip, "[A-Z]") && RegExMatch(clip, "\d") {
         target := FindApp()
         if target
-            PasteToField(target, clip, DX_X, DX_Y)
+            PasteToField(target, clip, DX_X, DX_Y, true)
         return
     }
 }
@@ -399,14 +399,15 @@ FindApp() {
     return ""
 }
 
-PasteToField(win, text, x, y) {
+PasteToField(win, text, x, y, pressEnter) {
     WinActivate win
     WinWaitActive win,, 2
     Click x, y
     Sleep 50
     Send "^a"
     Send text
-    Send "{Enter}"
+    if pressEnter
+        Send "{Enter}"
 }
 ```
 
@@ -435,21 +436,21 @@ hs.timer.doEvery(0.5, function()
     local target = findApp()
     if not target then return end
 
-    -- Frequency: 3-4 digits, 300-3000
+    -- Frequency: 3-4 digits, 300-3000 — no Enter needed
     if clip:match("^%d+$") and #clip >= 3 and #clip <= 4 then
         local freq = tonumber(clip)
         if freq >= 300 and freq <= 3000 then
-            pasteToField(target, clip, TX_X, TX_Y)
+            pasteToField(target, clip, TX_X, TX_Y, false)
             return
         end
     end
 
-    -- Callsign: 3-10 chars, has letter AND digit
+    -- Callsign: 3-10 chars, has letter AND digit — Enter required
     if #clip >= 3 and #clip <= 10
        and clip:match("^[A-Z0-9/]+$")
        and clip:match("[A-Z]")
        and clip:match("%d") then
-        pasteToField(target, clip, DX_X, DX_Y)
+        pasteToField(target, clip, DX_X, DX_Y, true)
     end
 end)
 
@@ -461,7 +462,7 @@ function findApp()
     return nil
 end
 
-function pasteToField(app, text, x, y)
+function pasteToField(app, text, x, y, pressEnter)
     app:activate()
     hs.timer.doAfter(0.3, function()
         local win = app:mainWindow()
@@ -471,7 +472,9 @@ function pasteToField(app, text, x, y)
         hs.timer.doAfter(0.1, function()
             hs.eventtap.keyStroke({"cmd"}, "a")
             hs.eventtap.keyStrokes(text)
-            hs.eventtap.keyStroke({}, "return")
+            if pressEnter then
+                hs.eventtap.keyStroke({}, "return")
+            end
         end)
     end)
 end
