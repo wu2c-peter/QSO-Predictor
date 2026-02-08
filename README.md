@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.1.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -8,30 +8,11 @@
 
 ![QSO Predictor Screenshot](docs/screenshot.png)
 
-## What's New in v2.2.0
-
-### 🔍 Auto-Detect Setup Wizard
-QSO Predictor can now **automatically detect** your WSJT-X/JTDX installation and configure itself:
-- **Reads your existing config** — callsign, grid, UDP port, multicast settings
-- **Detects port conflicts** — identifies what's using which UDP port
-- **Detects running apps** — JTAlert, GridTracker, N3FJP, and others
-- **Smart recommendations** — suggests the right network setup for your situation
-- **Fallback search** — if configs aren't in standard locations, searches common directories for the distinctive "WSJT-X" and "JTDX" filenames
-
-**Three ways to use it:**
-1. **Automatically on first run** — replaces the old "go configure" message with a guided wizard
-2. **Tools → Auto-Detect Configuration** — re-run anytime
-3. **Settings → Network → 🔍 Auto-Detect** — populates fields for review before saving
-
-Cross-platform: Windows, macOS, and Linux. No new dependencies.
-
----
-
 ## v2.1.3
-Handles ap codes correctly (strips them instead of showing as callsign)
- - thanks to Brian KB1OPD for bug report
+- Handles AP codes correctly (strips them instead of showing as callsign) — thanks to Brian KB1OPD for bug report
+- **Path column relabeled** for clarity — see below
 
-## v2.1.2
+## What's New in v2.1.2
 
 ### 🐛 Critical Fix: Target Perspective Data
 Fixed a timing issue where PSK Reporter spots were rejected as "stale" — the freshness filter was comparing against the original decode timestamp (3-5 minutes old by the time it reaches us) instead of receipt time. **This was the root cause of empty Target Perspective band maps** reported by Brian KB1OPD and others.
@@ -132,9 +113,8 @@ python main_v2.py
 ```
 
 ### First-Time Setup
-1. **Launch QSO Predictor** — if WSJT-X/JTDX is installed, the **Setup Wizard** auto-detects your callsign, grid, and UDP settings
-2. **Review and apply** — or choose "Configure Manually" to do it yourself via File → Settings
-3. **Tools → Bootstrap Behavior** — analyze your logs for behavior prediction (optional but recommended)
+1. **File → Settings** — enter your callsign and grid
+2. **Tools → Bootstrap Behavior** — analyze your logs for behavior prediction (optional but recommended)
 
 ## Features
 
@@ -144,10 +124,13 @@ See what the DX station hears, color-coded by data quality:
 - **Blue tiers** — Nearby stations (proxy data)
 - **Count numbers** — Signal density (1-3 ideal, 6+ crowded)
 
-### Path Intelligence
-- **CONNECTED** — Target has decoded YOUR signal — call now!
-- **Path Open** — Others from your area getting through
-- **No Path** — Propagation not currently open
+### Path Status
+Your signal's reach, at a glance:
+- **Heard by Target** — Target has decoded YOUR signal — call now!
+- **Heard in Region** — Stations near the target heard you — path confirmed
+- **Not Heard in Region** — Reporters exist but haven't heard you yet
+- **Not Transmitting** — You haven't transmitted recently
+- **No Reporters in Region** — No PSK Reporter data from that area
 - **Analyze button** — Deep dive into why others succeed
 
 ### Local Intelligence
@@ -189,16 +172,6 @@ Never miss a wanted station:
 - Internet connection (for PSK Reporter data)
 
 ## Version History
-
-### v2.2.0 (February 2026)
-- **NEW:** Auto-Detect Setup Wizard — reads WSJT-X/JTDX configs, detects port conflicts and running apps, recommends optimal configuration
-- **NEW:** First-run wizard replaces basic "go configure" message
-- **NEW:** Tools → Auto-Detect Configuration menu item
-- **NEW:** Auto-Detect button on Settings → Network tab
-- **NEW:** Fallback config search for non-standard install locations
-
-### v2.1.3 (February 2026)
-- **FIXED:** AP decoding codes (a1-a7) appearing in Call column instead of being stripped (reported by Brian KB1OPD)
 
 ### v2.1.2 (February 2026)
 - **FIXED:** Critical bug where Target Perspective never populated — PSK Reporter spots rejected as stale due to timestamp comparison using decode time instead of receipt time (reported by Brian KB1OPD)

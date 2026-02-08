@@ -1,6 +1,6 @@
 # QSO Predictor User Guide
 
-**Version 2.2.0**  
+**Version 2.1.0**  
 **By Peter Hirst (WU2C)**
 
 > 📋 **See [README](https://github.com/wu2c-peter/qso-predictor/blob/main/README.md) for What's New, Version History, and Installation**
@@ -60,9 +60,6 @@ python main_v2.py
 
 ### Configure WSJT-X / JTDX
 
-> 💡 **v2.2.0:** QSO Predictor can auto-detect these settings from your WSJT-X/JTDX installation — see [Quick Start](#3-quick-start).
-
-If configuring manually:
 1. Open Settings → Reporting
 2. Set UDP Server: `127.0.0.1`
 3. Set Port: `2237` (or `2238` if 2237 is in use)
@@ -74,30 +71,10 @@ If configuring manually:
 
 ### First-Time Setup
 
-On first launch, QSO Predictor offers to **auto-detect your configuration:**
-
-1. **The Setup Wizard appears** — it scans for WSJT-X and JTDX installations
-2. **Review what was found** — callsign, grid, UDP port, running apps
-3. **Click "Apply Configuration"** — or "Configure Manually" to skip
-
-The wizard checks:
-- **Standard config paths** for WSJT-X/JTDX on your platform
-- **Fallback search** if configs aren't where expected (the names "WSJT-X" and "JTDX" are distinctive enough to search safely)
-- **Port conflicts** — which UDP ports are already in use and by what
-- **Running apps** — JTAlert, GridTracker, N3FJP, etc.
-
-If auto-detect doesn't find your setup (e.g., remote network config):
-1. **File → Settings** → Station tab: enter callsign and grid
-2. **File → Settings** → Network tab: set UDP IP and port to match WSJT-X/JTDX
-
-You can re-run auto-detect anytime via **Tools → Auto-Detect Configuration** or the **🔍 Auto-Detect** button on the Settings → Network tab.
-
-### Configure WSJT-X / JTDX (if not already set)
-
-1. Open Settings → Reporting
-2. Set UDP Server: `127.0.0.1`
-3. Set Port: `2237` (or `2238` if 2237 is in use)
-4. Check "Accept UDP Requests"
+1. **Launch QSO Predictor** and wait for connection
+2. **Set your callsign:** File → Settings → My Callsign
+3. **Set your grid:** File → Settings → My Grid (4 or 6 char)
+4. **Start WSJT-X/JTDX** — decodes should appear automatically
 
 ### Basic Workflow
 
@@ -170,14 +147,15 @@ What your radio is receiving, color-coded by signal strength:
 
 ### The Path Column
 
-The decode table's **Path** column shows propagation status:
+The decode table's **Path** column shows whether your signal is reaching each station's area:
 
 | Status | Color | Meaning |
 |--------|-------|---------|
-| **CONNECTED** | Cyan | Target has decoded YOUR signal — call them! |
-| **Path Open** | Green | Stations near target heard you — path confirmed |
-| **No Path** | Orange | Reporters exist but haven't heard you |
-| **No Nearby Reporters** | Gray | No data from that region |
+| **Heard by Target** | Cyan | Target has decoded YOUR signal — call them! |
+| **Heard in Region** | Green | Stations near target heard you — path confirmed |
+| **Not Heard in Region** | Orange | Reporters exist but haven't heard you yet |
+| **Not Transmitting** | Gray | You haven't transmitted recently |
+| **No Reporters in Region** | Dark gray | No PSK Reporter data from that area |
 
 ### Click-to-Set Frequency
 
@@ -349,7 +327,7 @@ When a hunt target is spotted:
 
 ### Pro Tips
 
-1. **CONNECTED is gold** — if Path shows CONNECTED, call immediately
+1. **"Heard by Target" is gold** — if Path shows this, call immediately
 2. **Count numbers matter** — frequencies showing 1-3 are ideal, 6+ means saturation
 3. **Solid vs dotted** — trust solid-line scores more than dotted
 4. **Click to explore** — click the band map to read specific frequencies
@@ -422,44 +400,6 @@ PasteTo(win, freq) {
 
 ## 9. Settings
 
-### Auto-Detect Configuration (v2.2.0)
-
-QSO Predictor can automatically discover your settings from installed ham radio software.
-
-**Three ways to access:**
-
-| Method | When to Use |
-|--------|-------------|
-| **First-run wizard** | Appears automatically on first launch |
-| **Tools → Auto-Detect Configuration** | Re-run anytime, saves directly to config |
-| **Settings → Network → 🔍 Auto-Detect** | Populates fields for review before saving |
-
-**What it detects:**
-
-| Setting | Source |
-|---------|--------|
-| Callsign | WSJT-X/JTDX config file (`MyCall`) |
-| Grid square | WSJT-X/JTDX config file (`MyGrid`) |
-| UDP port | WSJT-X/JTDX config file (`UDPServerPort`) |
-| Multicast | Detected from config or JTAlert running |
-| Port conflicts | Scans active UDP listeners on your system |
-| Running apps | Checks for JTAlert, GridTracker, N3FJP, HRD |
-
-**Where it looks for config files:**
-
-| Platform | Standard Path |
-|----------|---------------|
-| Windows | `%LOCALAPPDATA%\WSJT-X\WSJT-X.ini` |
-| macOS | `~/Library/Preferences/WSJT-X/` or `~/Library/Application Support/WSJT-X/` |
-| Linux | `~/.config/WSJT-X/WSJT-X.ini` |
-
-If configs aren't in standard locations, it searches common config directories for files with "WSJT" or "JTDX" in the name. Multi-instance WSJT-X setups (e.g., `WSJT-X - OmniRig Rig 1`) are also detected.
-
-**Limitations:**
-- Read-only — never modifies other apps' config files
-- Can't detect network setups where WSJT-X runs on a different machine
-- Results are recommendations — you always have the final say
-
 ### File → Settings
 
 **My Callsign:** Your callsign (required for "who hears me" tracking)
@@ -489,8 +429,6 @@ See Troubleshooting section for multi-app setups.
 ## 10. Troubleshooting
 
 ### No Decodes Appearing
-
-**Try auto-detect first:** Tools → Auto-Detect Configuration can identify port conflicts and suggest the right settings.
 
 **Check in order:**
 
@@ -556,7 +494,7 @@ If you're using multicast UDP across multiple computers and have VPN software in
 2. **No perspective data** — target area may have no PSK Reporter coverage
 3. **MQTT not connected** — check status bar for connection
 
-### Path Intelligence Shows "No Nearby Reporters"
+### Path Intelligence Shows "No Reporters in Region"
 
 - Target's area has no PSK Reporter stations uploading
 - This is a data gap, not a problem with your setup
@@ -566,7 +504,7 @@ If you're using multicast UDP across multiple computers and have VPN software in
 
 1. **No log files found** — check WSJT-X/JTDX has created ALL.TXT
 2. **Log files too old** — bootstrap looks at last 14 days
-3. **Custom install path** — try **Tools → Auto-Detect Configuration** which searches common directories for WSJT-X/JTDX files
+3. **Custom install path** — only standard locations auto-detected
 
 ### Windows SmartScreen Warning
 
