@@ -19,6 +19,7 @@ class QSOAnalyzer(QObject):
         super().__init__()
         self.config = config
         self.my_call = config.get('ANALYSIS', 'my_callsign', fallback='N0CALL')
+        self.my_grid = config.get('ANALYSIS', 'my_grid', fallback='')
         
         # --- THREAD SAFETY LOCK ---
         self.lock = threading.Lock() 
@@ -31,7 +32,7 @@ class QSOAnalyzer(QObject):
         self.mqtt.spot_received.connect(self.handle_live_spot)
         self.mqtt.status_message.connect(self.relay_status)
         
-        logger.info(f"Analyzer initialized: my_call={self.my_call}")
+        logger.info(f"Analyzer initialized: my_call={self.my_call}, my_grid={self.my_grid}")
         
         self.current_dial_freq = 0
         self.band_cache = {}      
@@ -45,6 +46,14 @@ class QSOAnalyzer(QObject):
         # v2.1.0: Keyed by sender callsign -> list of spots (who hears that station)
         # Used for Phase 2 Path Intelligence reverse lookups
         self.sender_cache = {}
+        
+        # --- Local Decode Path Evidence (v2.1.3) ---
+        # When we decode "WU2C DH2YBG JO43", FT8 format is TO FROM payload.
+        # DH2YBG transmitted this addressed to WU2C → proof DH2YBG decoded WU2C.
+        # This provides path evidence WITHOUT PSK Reporter.
+        self.decode_evidence = {}   # {call: {'responded_to': set(), 'last_seen': float}}
+        self.call_grid_map = {}     # {call: grid} from decoded stations
+        self.responded_to_me = {}   # {call: last_seen} stations that addressed my_call
         
         self.running = True
         self.mqtt.start()
@@ -65,6 +74,9 @@ class QSOAnalyzer(QObject):
                 self.receiver_cache.clear()
                 self.grid_cache.clear()
                 self.sender_cache.clear()  # v2.1.0: Phase 2 reverse lookup cache
+                self.decode_evidence.clear()   # v2.1.3: Local decode path evidence
+                self.call_grid_map.clear()
+                self.responded_to_me.clear()
             
             self.mqtt.update_subscriptions(self.my_call, freq)
             self.cache_updated.emit()
@@ -731,6 +743,116 @@ class QSOAnalyzer(QObject):
                                 spots.append(r)
         return spots
 
+    # =========================================================================
+    # Local Decode Path Evidence (v2.1.3)
+    # =========================================================================
+    # FT8 messages decoded by our radio contain path evidence:
+    #   "WU2C DH2YBG JO43" → DH2YBG (FROM) transmitted to WU2C (TO)
+    #   Proves DH2YBG decoded WU2C — no PSK Reporter needed.
+    # =========================================================================
+    
+    @staticmethod
+    def _is_callsign(s):
+        """Check if string looks like an amateur radio callsign."""
+        if not s or len(s) < 3 or len(s) > 10:
+            return False
+        s = s.strip('<>')
+        return any(c.isdigit() for c in s) and all(c.isalnum() or c == '/' for c in s)
+
+    def _record_decode_evidence(self, decode_data):
+        """
+        Extract QSO evidence from an FT8 decoded message.
+        
+        FT8 QSO messages have format: TO FROM payload
+        When FROM responds to TO, it proves FROM decoded TO.
+        
+        Also maintains call_grid_map for grid lookups.
+        """
+        message = decode_data.get('message', '')
+        if not message:
+            return
+        
+        # Update call → grid mapping from this decode
+        call = decode_data.get('call', '').upper()
+        grid = decode_data.get('grid', '').upper()
+        if call and grid and len(grid) >= 4:
+            self.call_grid_map[call] = grid
+        
+        # Parse message for QSO evidence
+        parts = message.strip().split()
+        if len(parts) < 2:
+            return
+        
+        # Skip CQ messages — they don't prove anyone was heard
+        if parts[0].upper() == 'CQ':
+            return
+        
+        to_call = parts[0].strip('<>').upper()
+        from_call = parts[1].strip('<>').upper()
+        
+        if not self._is_callsign(to_call) or not self._is_callsign(from_call):
+            return
+        
+        # Record: FROM responded to TO (FROM decoded TO)
+        now = time.time()
+        with self.lock:
+            if from_call not in self.decode_evidence:
+                self.decode_evidence[from_call] = {'responded_to': set(), 'last_seen': now}
+            is_new = to_call not in self.decode_evidence[from_call]['responded_to']
+            self.decode_evidence[from_call]['responded_to'].add(to_call)
+            self.decode_evidence[from_call]['last_seen'] = now
+            
+            # Reverse index: if TO is my callsign, FROM heard me
+            if to_call == self.my_call.upper():
+                was_new = from_call not in self.responded_to_me
+                self.responded_to_me[from_call] = now
+                if was_new:
+                    logger.info(f"Decode evidence: {from_call} responded to ME ({to_call}) — Heard by Target proof")
+            elif is_new:
+                logger.debug(f"Decode evidence: {from_call} responded to {to_call}")
+
+    def _check_decode_path(self, target_call, target_grid):
+        """
+        Check local decode evidence for path status to target.
+        
+        Returns:
+            ('Heard by Target', geo_bonus) if target responded to my call
+            ('Heard in Region', geo_bonus) if regional evidence found
+            (None, 0) if no evidence
+        """
+        if not target_call:
+            return None, 0
+        
+        target_upper = target_call.upper()
+        my_call_upper = self.my_call.upper()
+        my_field = self.my_grid[:2].upper() if len(self.my_grid) >= 2 else ''
+        target_field = target_grid[:2].upper() if target_grid and len(target_grid) >= 2 else ''
+        
+        with self.lock:
+            # Case 1: Target responded to my call → Heard by Target
+            evidence = self.decode_evidence.get(target_upper, {})
+            if my_call_upper in evidence.get('responded_to', set()):
+                logger.debug(f"Decode path: {target_upper} → Heard by Target (responded to {my_call_upper})")
+                return 'Heard by Target', 100
+            
+            # Case 2: Target responded to someone near me → Heard in Region
+            if my_field and evidence.get('responded_to'):
+                for heard_call in evidence['responded_to']:
+                    heard_grid = self.call_grid_map.get(heard_call, '')
+                    if heard_grid and len(heard_grid) >= 2 and heard_grid[:2] == my_field:
+                        logger.debug(f"Decode path: {target_upper} → Heard in Region (responded to {heard_call} in {heard_grid})")
+                        return 'Heard in Region', 15
+            
+            # Case 3: Someone near target responded to my call → Heard in Region
+            if target_field:
+                for responder_call, _ in self.responded_to_me.items():
+                    responder_grid = self.call_grid_map.get(responder_call, '')
+                    if responder_grid and len(responder_grid) >= 2 and responder_grid[:2] == target_field:
+                        logger.debug(f"Decode path: {target_upper} → Heard in Region ({responder_call} in {responder_grid} heard me)")
+                        return 'Heard in Region', 15
+        
+        return None, 0
+
     def analyze_decode(self, decode_data, update_callback=None, use_perspective=False):
         """
         Analyze a decode and calculate probability, path status, and competition.
@@ -753,6 +875,9 @@ class QSOAnalyzer(QObject):
         elif snr > -15: base_prob = 40
         elif snr > -20: base_prob = 20
         else: base_prob = 5
+        
+        # v2.1.3: Record any QSO evidence from this decode's message
+        self._record_decode_evidence(decode_data)
         
         target_call = decode_data.get('call', '')
         target_grid = decode_data.get('grid', '')
@@ -809,6 +934,15 @@ class QSOAnalyzer(QObject):
                     elif r_grid[:2] == target_major:
                         geo_bonus = 15
                         path_str = "Heard in Region"
+        
+        # v2.1.3: Check local decode evidence (works without PSK Reporter)
+        if not path_str:
+            decode_path, decode_bonus = self._check_decode_path(target_call, target_grid)
+            if decode_path:
+                path_str = decode_path
+                geo_bonus = decode_bonus
+                if decode_path == "Heard by Target":
+                    direct_hit = True
         
         # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
@@ -972,6 +1106,12 @@ class QSOAnalyzer(QObject):
                     elif r_grid[:2] == target_major:
                         path_str = "Heard in Region"
         
+        # v2.1.3: Check local decode evidence (works without PSK Reporter)
+        if not path_str:
+            decode_path, _ = self._check_decode_path(target_call, target_grid)
+            if decode_path:
+                path_str = decode_path
+        
         # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
             have_any_spots = len(my_reception_snapshot) > 0
@@ -1058,6 +1198,22 @@ class QSOAnalyzer(QObject):
                     for k in grid_keys_to_remove:
                         del self.grid_cache[k]
                     
+                    # --- v2.1.3: Cleanup decode evidence caches ---
+                    evidence_to_remove = []
+                    for call, ev in self.decode_evidence.items():
+                        if ev.get('last_seen', 0) < cutoff:
+                            evidence_to_remove.append(call)
+                    for k in evidence_to_remove:
+                        del self.decode_evidence[k]
+                    
+                    resp_to_remove = [c for c, t in self.responded_to_me.items() if t < cutoff]
+                    for k in resp_to_remove:
+                        del self.responded_to_me[k]
+                    
+                    # Cap call_grid_map size (grids don't expire but shouldn't grow unbounded)
+                    if len(self.call_grid_map) > 5000:
+                        self.call_grid_map.clear()
+                    
                     # Stats for status
                     receiver_count = len(self.receiver_cache)
                     grid_count = len(self.grid_cache)
@@ -1084,6 +1240,8 @@ class QSOAnalyzer(QObject):
                         f"band_cache_freqs={len(self.band_cache)}, "
                         f"receiver_cache_calls={len(self.receiver_cache)}, "
                         f"grid_cache_grids={len(self.grid_cache)}, "
+                        f"decode_evidence={len(self.decode_evidence)}, "
+                        f"responded_to_me={len(self.responded_to_me)}, "
                         f"unique_senders={len(unique_senders)}, "
                         f"dial_freq={self.current_dial_freq}, "
                         f"spot_errors={'YES' if self._spot_error_logged else 'none'}"
