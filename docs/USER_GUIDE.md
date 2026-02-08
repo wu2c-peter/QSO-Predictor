@@ -364,18 +364,25 @@ You can set up one-click transfer of **frequencies** and **callsigns** using Aut
 
 ; IMPORTANT: Update these coordinates using Window Spy!
 ; Hover over each field, note the CLIENT coordinates
-
-; WSJT-X coordinates
-WSJTX_TX_X := 800    ; TX frequency field
-WSJTX_TX_Y := 630
-WSJTX_DX_X := 130    ; DX Call field
-WSJTX_DX_Y := 630
+;
+; NOTE: Check JTDX first! JTDX's title bar contains "WSJT-X"
+; so WinExist("WSJT-X") matches both apps.
 
 ; JTDX coordinates
 JTDX_TX_X := 800     ; TX frequency field
 JTDX_TX_Y := 630
 JTDX_DX_X := 130     ; DX Call field (text box under "DX Call")
 JTDX_DX_Y := 630
+JTDX_ENTX_X := 480   ; Enable TX button
+JTDX_ENTX_Y := 365
+
+; WSJT-X coordinates
+WSJTX_TX_X := 800    ; TX frequency field
+WSJTX_TX_Y := 630
+WSJTX_DX_X := 130    ; DX Call field
+WSJTX_DX_Y := 630
+WSJTX_ENTX_X := 480  ; Enable TX button
+WSJTX_ENTX_Y := 365
 
 ; Monitor clipboard for changes
 OnClipboardChange ClipboardChanged
@@ -390,26 +397,27 @@ ClipboardChanged(dataType)
     if !clip
         return
 
-    ; Frequency: 3-4 digits, 300-3000 Hz — no Enter needed
+    ; Frequency: 3-4 digits, 300-3000 Hz — no Enter needed, no Enable TX
     if RegExMatch(clip, "^\d{3,4}$") && clip >= 300 && clip <= 3000 {
-        if WinExist("WSJT-X")
-            PasteToField("WSJT-X", WSJTX_TX_X, WSJTX_TX_Y, clip, false)
-        else if WinExist("JTDX")
-            PasteToField("JTDX", JTDX_TX_X, JTDX_TX_Y, clip, false)
+        ; JTDX first — its title contains "WSJT-X" so must check first!
+        if WinExist("JTDX")
+            PasteToField("JTDX", JTDX_TX_X, JTDX_TX_Y, clip, false, 0, 0)
+        else if WinExist("WSJT-X")
+            PasteToField("WSJT-X", WSJTX_TX_X, WSJTX_TX_Y, clip, false, 0, 0)
         return
     }
 
-    ; Callsign: 3-10 chars, has letter AND digit — Enter required to set
+    ; Callsign: 3-10 chars, has letter AND digit — Enter + Enable TX
     if RegExMatch(clip, "^[A-Z0-9/]{3,10}$") && RegExMatch(clip, "[A-Z]") && RegExMatch(clip, "\d") {
-        if WinExist("WSJT-X")
-            PasteToField("WSJT-X", WSJTX_DX_X, WSJTX_DX_Y, clip, true)
-        else if WinExist("JTDX")
-            PasteToField("JTDX", JTDX_DX_X, JTDX_DX_Y, clip, true)
+        if WinExist("JTDX")
+            PasteToField("JTDX", JTDX_DX_X, JTDX_DX_Y, clip, true, JTDX_ENTX_X, JTDX_ENTX_Y)
+        else if WinExist("WSJT-X")
+            PasteToField("WSJT-X", WSJTX_DX_X, WSJTX_DX_Y, clip, true, WSJTX_ENTX_X, WSJTX_ENTX_Y)
         return
     }
 }
 
-PasteToField(windowTitle, clickX, clickY, text, pressEnter)
+PasteToField(windowTitle, clickX, clickY, text, pressEnter, enTxX, enTxY)
 {
     try {
         WinActivate windowTitle
@@ -423,6 +431,12 @@ PasteToField(windowTitle, clickX, clickY, text, pressEnter)
         Send text
         if pressEnter
             Send "{Enter}"
+
+        ; Click Enable TX after setting callsign
+        if (enTxX > 0 && enTxY > 0) {
+            Sleep 100
+            Click enTxX, enTxY
+        }
 
         ; Confirmation tooltip
         label := pressEnter ? "DX Call" : "TX Freq"
@@ -451,14 +465,19 @@ PasteToField(windowTitle, clickX, clickY, text, pressEnter)
 
 -- UPDATE these coordinates using Hammerspoon console:
 --   hs.mouse.absolutePosition()  (then subtract window origin)
-
--- WSJT-X coordinates
-local WSJTX_TX_X, WSJTX_TX_Y = 800, 630   -- TX frequency field
-local WSJTX_DX_X, WSJTX_DX_Y = 130, 630   -- DX Call field
+--
+-- NOTE: Check JTDX first! JTDX's title bar contains "WSJT-X"
+-- so hs.application.find("WSJT-X") matches both apps.
 
 -- JTDX coordinates
-local JTDX_TX_X, JTDX_TX_Y = 800, 630     -- TX frequency field
-local JTDX_DX_X, JTDX_DX_Y = 130, 630     -- DX Call field
+local JTDX_TX_X, JTDX_TX_Y = 800, 630       -- TX frequency field
+local JTDX_DX_X, JTDX_DX_Y = 130, 630       -- DX Call field
+local JTDX_ENTX_X, JTDX_ENTX_Y = 480, 365   -- Enable TX button
+
+-- WSJT-X coordinates
+local WSJTX_TX_X, WSJTX_TX_Y = 800, 630      -- TX frequency field
+local WSJTX_DX_X, WSJTX_DX_Y = 130, 630      -- DX Call field
+local WSJTX_ENTX_X, WSJTX_ENTX_Y = 480, 365  -- Enable TX button
 
 local lastClip = ""
 
@@ -468,40 +487,42 @@ hs.timer.doEvery(0.5, function()
     lastClip = clip
     clip = clip:match("^%s*(.-)%s*$")  -- trim
 
-    -- Frequency: 3-4 digits, 300-3000 — no Enter needed
+    -- Frequency: 3-4 digits, 300-3000 — no Enter, no Enable TX
     if clip:match("^%d+$") and #clip >= 3 and #clip <= 4 then
         local freq = tonumber(clip)
         if freq >= 300 and freq <= 3000 then
-            local app, tx, ty = findAppCoords("TX")
-            if app then pasteToField(app, clip, tx, ty, false) end
+            local app, x, y = findAppCoords("TX")
+            if app then pasteToField(app, clip, x, y, false, 0, 0) end
             return
         end
     end
 
-    -- Callsign: 3-10 chars, has letter AND digit — Enter required
+    -- Callsign: 3-10 chars, has letter AND digit — Enter + Enable TX
     if #clip >= 3 and #clip <= 10
        and clip:match("^[A-Z0-9/]+$")
        and clip:match("[A-Z]")
        and clip:match("%d") then
-        local app, dx, dy = findAppCoords("DX")
-        if app then pasteToField(app, clip, dx, dy, true) end
+        local app, x, y, ex, ey = findAppCoords("DX")
+        if app then pasteToField(app, clip, x, y, true, ex, ey) end
     end
 end)
 
 function findAppCoords(fieldType)
+    -- JTDX first! Its title contains "WSJT-X" so must check first
     local app = hs.application.find("JTDX") or hs.application.find("WSJT-X")
     if not app then return nil end
     local name = app:name()
+    local isJTDX = name:find("JTDX")
     if fieldType == "TX" then
-        if name:find("JTDX") then return app, JTDX_TX_X, JTDX_TX_Y end
-        return app, WSJTX_TX_X, WSJTX_TX_Y
+        if isJTDX then return app, JTDX_TX_X, JTDX_TX_Y, 0, 0 end
+        return app, WSJTX_TX_X, WSJTX_TX_Y, 0, 0
     else
-        if name:find("JTDX") then return app, JTDX_DX_X, JTDX_DX_Y end
-        return app, WSJTX_DX_X, WSJTX_DX_Y
+        if isJTDX then return app, JTDX_DX_X, JTDX_DX_Y, JTDX_ENTX_X, JTDX_ENTX_Y end
+        return app, WSJTX_DX_X, WSJTX_DX_Y, WSJTX_ENTX_X, WSJTX_ENTX_Y
     end
 end
 
-function pasteToField(app, text, x, y, pressEnter)
+function pasteToField(app, text, x, y, pressEnter, enTxX, enTxY)
     app:activate()
     hs.timer.doAfter(0.3, function()
         local win = app:mainWindow()
@@ -514,6 +535,12 @@ function pasteToField(app, text, x, y, pressEnter)
             if pressEnter then
                 hs.eventtap.keyStroke({}, "return")
             end
+            -- Click Enable TX after setting callsign
+            if enTxX > 0 and enTxY > 0 then
+                hs.timer.doAfter(0.1, function()
+                    hs.eventtap.leftClick({x = frame.x + enTxX, y = frame.y + enTxY})
+                end)
+            end
             -- Confirmation
             local label = pressEnter and "DX Call" or "TX Freq"
             hs.alert.show(label .. " → " .. text, 1.5)
@@ -524,7 +551,7 @@ end
 
 3. Reload Hammerspoon config (⌘+R in console).
 
-> **Note:** Both scripts auto-detect whether JTDX or WSJT-X is running. If neither is open, clipboard changes are ignored. You can also skip the scripts entirely and just Ctrl+V / ⌘+V manually.
+> **Note:** Both scripts check for JTDX first because JTDX's title bar contains "WSJT-X" (it's a fork). If you check WSJT-X first, it will match JTDX and use the wrong coordinates. You can also skip the scripts entirely and just Ctrl+V / ⌘+V manually.
 
 📖 **Finding coordinates:** In AutoHotkey use Window Spy; in Hammerspoon use `hs.mouse.absolutePosition()` while hovering over each field.
 
