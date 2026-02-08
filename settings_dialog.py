@@ -73,6 +73,17 @@ class SettingsDialog(QDialog):
         status_layout.addStretch()
         net_layout.addWidget(status_group)
         
+        # v2.2.0: Auto-Detect button
+        detect_layout = QHBoxLayout()
+        btn_auto_detect = QPushButton("🔍 Auto-Detect Configuration")
+        btn_auto_detect.setToolTip(
+            "Scan for WSJT-X/JTDX installations and detect optimal settings"
+        )
+        btn_auto_detect.clicked.connect(self._on_auto_detect)
+        detect_layout.addWidget(btn_auto_detect)
+        detect_layout.addStretch()
+        net_layout.addLayout(detect_layout)
+        
         # UDP Configuration group
         udp_group = QGroupBox("UDP Configuration")
         udp_layout = QVBoxLayout(udp_group)
@@ -233,6 +244,37 @@ class SettingsDialog(QDialog):
                     self.preset_combo.blockSignals(True)
                     self.preset_combo.setCurrentText("Custom")
                     self.preset_combo.blockSignals(False)
+
+    def _on_auto_detect(self):
+        """v2.2.0: Run auto-detection wizard and apply results to settings fields."""
+        try:
+            from setup_wizard import show_setup_wizard
+        except ImportError:
+            QMessageBox.warning(
+                self, "Not Available",
+                "Auto-detect module not found (setup_wizard.py).\n"
+                "Please ensure it is in the application directory."
+            )
+            return
+        
+        result = show_setup_wizard(parent=self, first_run=False)
+        if result:
+            # Update the settings dialog fields with detected values
+            if result.get('callsign'):
+                self.inp_call.setText(result['callsign'])
+            if result.get('grid'):
+                self.inp_grid.setText(result['grid'])
+            if result.get('udp_ip'):
+                self.inp_ip.setText(result['udp_ip'])
+            if result.get('udp_port'):
+                self.inp_port.setValue(result['udp_port'])
+            
+            # Update preset selector to match
+            self._set_initial_preset()
+            
+            logger.info(f"Auto-detect applied to settings: "
+                       f"call={result.get('callsign')}, grid={result.get('grid')}, "
+                       f"udp={result.get('udp_ip')}:{result.get('udp_port')}")
 
     def save_settings(self):
         # Validate forward ports before saving

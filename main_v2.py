@@ -744,18 +744,59 @@ class MainWindow(QMainWindow):
         #self._start_health_check_timer()
     
     def _check_first_run_config(self):
-        """Warn user if callsign/grid haven't been configured."""
+        """v2.2.0: Check if first run and offer auto-configuration wizard."""
         my_call = self.config.get('ANALYSIS', 'my_callsign', fallback='N0CALL')
         my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='FN00aa')
         
         if my_call == 'N0CALL' or my_grid == 'FN00aa':
-            QMessageBox.information(
-                self,
-                "Welcome to QSO Predictor!",
-                "Please configure your callsign and grid square "
-                "for accurate predictions.\n\n"
-                "Go to Edit → Settings to set them up."
-            )
+            try:
+                from setup_wizard import show_setup_wizard
+                
+                result = show_setup_wizard(parent=self, first_run=True)
+                
+                if result:
+                    # Apply detected configuration
+                    if result.get('callsign'):
+                        self.config.save_setting('ANALYSIS', 'my_callsign', result['callsign'])
+                    if result.get('grid'):
+                        self.config.save_setting('ANALYSIS', 'my_grid', result['grid'])
+                    if result.get('udp_ip'):
+                        self.config.save_setting('NETWORK', 'udp_ip', result['udp_ip'])
+                    if result.get('udp_port'):
+                        self.config.save_setting('NETWORK', 'udp_port', str(result['udp_port']))
+                    
+                    logger.info(f"Setup wizard applied: call={result.get('callsign')}, "
+                               f"grid={result.get('grid')}, "
+                               f"udp={result.get('udp_ip')}:{result.get('udp_port')}")
+                    
+                    # Notify user about restart for network changes
+                    QMessageBox.information(
+                        self, "Configuration Applied",
+                        f"Settings configured successfully!\n\n"
+                        f"  Callsign: {result.get('callsign', 'N0CALL')}\n"
+                        f"  Grid: {result.get('grid', '')}\n"
+                        f"  UDP: {result.get('udp_ip', '127.0.0.1')}:{result.get('udp_port', 2237)}\n\n"
+                        "Restart QSO Predictor for network changes to take effect."
+                    )
+                else:
+                    # User chose manual configuration
+                    QMessageBox.information(
+                        self,
+                        "Manual Setup",
+                        "You can configure QSO Predictor at any time via Edit → Settings.\n\n"
+                        "At minimum, set your callsign and grid, and ensure the UDP port "
+                        "matches your WSJT-X/JTDX configuration."
+                    )
+            except ImportError:
+                # setup_wizard.py not present — fall back to original message
+                logger.debug("setup_wizard module not available, using basic first-run message")
+                QMessageBox.information(
+                    self,
+                    "Welcome to QSO Predictor!",
+                    "Please configure your callsign and grid square "
+                    "for accurate predictions.\n\n"
+                    "Go to Edit → Settings to set them up."
+                )
 
     def _init_local_intelligence(self):
         """Initialize Local Intelligence v2.0 features."""
@@ -1069,6 +1110,13 @@ class MainWindow(QMainWindow):
             disabled_action = QAction("Local Intelligence (not available)", self)
             disabled_action.setEnabled(False)
             tools_menu.addAction(disabled_action)
+        
+        # v2.2.0: Auto-Detect Configuration
+        tools_menu.addSeparator()
+        auto_detect_action = QAction("Auto-Detect Configuration...", self)
+        auto_detect_action.setToolTip("Scan for WSJT-X/JTDX and auto-configure settings")
+        auto_detect_action.triggered.connect(self._on_auto_detect_config)
+        tools_menu.addAction(auto_detect_action)
         
         # Help Menu
         help_menu = menu.addMenu("Help")
@@ -1909,6 +1957,42 @@ class MainWindow(QMainWindow):
         # Handle "Open Settings" button (custom return code 2)
         if result == 2:
             self.open_settings()
+    
+    def _on_auto_detect_config(self):
+        """v2.2.0: Run auto-detect from the Tools menu and apply results."""
+        try:
+            from setup_wizard import show_setup_wizard
+        except ImportError:
+            QMessageBox.warning(
+                self, "Not Available",
+                "Auto-detect module not found (setup_wizard.py).\n"
+                "Please ensure it is in the application directory."
+            )
+            return
+        
+        result = show_setup_wizard(parent=self, first_run=False)
+        if result:
+            if result.get('callsign'):
+                self.config.save_setting('ANALYSIS', 'my_callsign', result['callsign'])
+            if result.get('grid'):
+                self.config.save_setting('ANALYSIS', 'my_grid', result['grid'])
+            if result.get('udp_ip'):
+                self.config.save_setting('NETWORK', 'udp_ip', result['udp_ip'])
+            if result.get('udp_port'):
+                self.config.save_setting('NETWORK', 'udp_port', str(result['udp_port']))
+            
+            logger.info(f"Auto-detect config applied: call={result.get('callsign')}, "
+                       f"grid={result.get('grid')}, "
+                       f"udp={result.get('udp_ip')}:{result.get('udp_port')}")
+            
+            QMessageBox.information(
+                self, "Configuration Applied",
+                f"Settings updated:\n\n"
+                f"  Callsign: {result.get('callsign', '')}\n"
+                f"  Grid: {result.get('grid', '')}\n"
+                f"  UDP: {result.get('udp_ip', '127.0.0.1')}:{result.get('udp_port', 2237)}\n\n"
+                "Restart QSO Predictor for network changes to take effect."
+            )
     
     def _show_connection_help(self):
         """Manually show the connection help dialog (from Help menu)."""
