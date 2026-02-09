@@ -115,7 +115,7 @@ class BandMapWidget(QWidget):
             'text_orange': QColor("#FF8800"),
             'text_green': QColor("#00FF00"),
             'text_magenta': QColor("#FF00FF"),
-            'scale_label': QColor("#555"),  # v2.1.1: Frequency scale text
+            'scale_label': QColor("#999"),  # v2.1.1: Frequency scale text
         }
         
         # Fonts
@@ -137,8 +137,8 @@ class BandMapWidget(QWidget):
             'target': QPen(QColor("#FF00FF"), 2),
             'tx': QPen(QColor("#FFFF00"), 2, Qt.PenStyle.DotLine),
             'rec': QPen(QColor("#00FF00"), 2),
-            'scale_major': QPen(QColor("#555"), 1),    # v2.1.1: 500Hz tick marks
-            'scale_minor': QPen(QColor("#333"), 1),    # v2.1.1: 100Hz tick marks
+            'scale_major': QPen(QColor("#888"), 1),    # v2.1.1: 500Hz tick marks
+            'scale_minor': QPen(QColor("#555"), 1),    # v2.1.1: 100Hz tick marks
             'score_solid_green': QPen(QColor(0, 255, 0), 2, Qt.PenStyle.SolidLine),
             'score_solid_yellow_green': QPen(QColor(180, 255, 0), 2, Qt.PenStyle.SolidLine),
             'score_solid_yellow': QPen(QColor(255, 255, 0), 2, Qt.PenStyle.SolidLine),

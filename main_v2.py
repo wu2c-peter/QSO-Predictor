@@ -3,6 +3,7 @@
 #
 # v2.1.4 Changes:
 # - Fixed: JTDX detection in auto-paste scripts (title bar contains "WSJT-X")
+# - Fixed: Band map frequency scale too dim on Windows (brightened labels and ticks)
 # - Added: Auto-paste scripts click Enable TX after pasting callsign
 # - Added: Separate JTDX/WSJT-X coordinates in auto-paste scripts
 #

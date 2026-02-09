@@ -10,6 +10,7 @@
 
 ## v2.1.4
 - **Fixed: JTDX detection in auto-paste scripts** — JTDX's title bar contains "WSJT-X" (it's a fork), so scripts that check for WSJT-X first match JTDX and use wrong coordinates. Scripts now check JTDX first. Thanks to Brian KB1OPD for reporting.
+- **Fixed: Band map frequency scale too dim on Windows** — labels and tick marks brightened for better visibility across platforms. Thanks to Brian KB1OPD.
 - **Auto-paste scripts: Enable TX** — after pasting a callsign into the DX Call field, the script now clicks the Enable TX button automatically. One click from QSO Predictor to calling.
 - **Auto-paste scripts: separate coordinates** — JTDX and WSJT-X have different field positions, scripts now have independent coordinate settings for each app
 
