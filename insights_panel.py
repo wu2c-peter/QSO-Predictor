@@ -421,11 +421,28 @@ class NearMeWidget(QGroupBox):
         # Update status based on station count
         count = len(stations)
         if count == 0:
-            self.status_label.setText("None from your area")
-            self.status_label.setStyleSheet("color: #ff6666;")  # Red
-            if proxy_count > 0 or target_uploading:
+            # Check if path column already has evidence we don't
+            if path_status == PathStatus.CONNECTED:
+                self.status_label.setText("Your signal confirmed!")
+                self.status_label.setStyleSheet("color: #00ffff;")  # Cyan
+                self.insight_label.setText("💡 Target decoded you — call now!")
+                # Override source label — evidence came from PSK Reporter "who heard me" data
+                self.source_label.setText("✓ Confirmed via PSK Reporter")
+                self.source_label.setStyleSheet("color: #00ffff; font-size: 10px;")
+            elif path_status == PathStatus.PATH_OPEN:
+                self.status_label.setText("Your signal reported nearby")
+                self.status_label.setStyleSheet("color: #00ff00;")  # Green
+                self.insight_label.setText("💡 Path is open! Keep calling")
+                # Override source label — evidence came from PSK Reporter "who heard me" data
+                self.source_label.setText("✓ Spotted by receiver in target's region")
+                self.source_label.setStyleSheet("color: #88ff88; font-size: 10px;")
+            elif proxy_count > 0 or target_uploading:
+                self.status_label.setText("None from your area")
+                self.status_label.setStyleSheet("color: #ff6666;")  # Red
                 self.insight_label.setText("💡 No path from your area currently")
             else:
+                self.status_label.setText("None from your area")
+                self.status_label.setStyleSheet("color: #ff6666;")  # Red
                 self.insight_label.setText("💡 No data - target area not reporting")
             # Hide analyze button when no stations
             self.analyze_button.hide()
