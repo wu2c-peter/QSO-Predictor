@@ -502,11 +502,11 @@ class TacticalToast(QFrame):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(42)
+        self.setFixedHeight(48)
         self.hide()
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setContentsMargins(12, 0, 12, 0)
         layout.setSpacing(4)
         
         self._label = QLabel()
