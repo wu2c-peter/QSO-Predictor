@@ -414,10 +414,11 @@ class TargetDashboard(QFrame):
         self.val_path.setText(path)
         if "Heard by Target" in path:
             self.val_path.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
+        elif "Not Reported in Region" in path:
+            # MUST check "Not Reported" BEFORE "Reported" — substring match issue
+            self.val_path.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
         elif "Reported in Region" in path:
             self.val_path.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
-        elif "Not Reported in Region" in path:
-            self.val_path.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
         elif "Not Transmitting" in path:
             self.val_path.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
         elif "No Reporters" in path:
@@ -723,10 +724,11 @@ class DecodeTableModel(QAbstractTableModel):
                 path = str(row_item.get('path', ''))
                 if "Heard by Target" in path:
                     return QColor("#00FFFF")  # Cyan - target hears you!
+                elif "Not Reported in Region" in path:
+                    # MUST check "Not Reported" BEFORE "Reported" — substring match issue
+                    return QColor("#FFA500")  # Orange - reporters exist but haven't spotted you
                 elif "Reported in Region" in path:
                     return QColor("#00FF00")  # Green - path to region confirmed
-                elif "Not Reported in Region" in path:
-                    return QColor("#FFA500")  # Orange - reporters exist but haven't spotted you
                 elif "Not Transmitting" in path:
                     return QColor("#888888")  # Gray - not transmitting recently
                 elif "No Reporters" in path:
@@ -741,7 +743,8 @@ class DecodeTableModel(QAbstractTableModel):
                 return QColor("#004040")  # Teal background
             
             # Reported in Region = propagation confirmed to region
-            if "Reported in Region" in path:
+            # Exclude "Not Reported" — substring match issue
+            if "Reported in Region" in path and "Not Reported" not in path:
                 return QColor("#002800")  # Dark green background
             
             # v2.1.0: Hunt Mode - highlight hunted stations with gold background
@@ -1837,10 +1840,12 @@ class MainWindow(QMainWindow):
         
         if "Heard by Target" in path:
             self.local_intel.set_path_status(PathStatus.CONNECTED)
+        elif "Not Reported in Region" in path:
+            # MUST check "Not Reported" BEFORE "Reported" — 
+            # "Not Reported in Region" contains "Reported in Region"
+            self.local_intel.set_path_status(PathStatus.NO_PATH)
         elif "Reported in Region" in path:
             self.local_intel.set_path_status(PathStatus.PATH_OPEN)
-        elif "Not Reported in Region" in path:
-            self.local_intel.set_path_status(PathStatus.NO_PATH)
         else:
             self.local_intel.set_path_status(PathStatus.UNKNOWN)
 

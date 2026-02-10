@@ -188,3 +188,4 @@ cython_debug/
 # Mac OS stuff
 *.DS_Store
 .DS_Store
+current-state*.zip
