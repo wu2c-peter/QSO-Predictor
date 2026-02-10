@@ -969,6 +969,7 @@ class InsightsPanel(QWidget):
         self._current_target: Optional[str] = None
         self._path_status = PathStatus.UNKNOWN
         self._target_competition: str = ""  # v2.2.0: target-side competition from PSK Reporter
+        self._near_me_count: int = 0  # v2.1.5: near-me stations for effective path status
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -1208,15 +1209,24 @@ class InsightsPanel(QWidget):
                     'calls_made': your_status.get('calls_made', 0),
                 }
                 
+                # v2.1.5: Compute effective path status
+                # If path column says NO_PATH but near-me stations from our area
+                # ARE getting through, the path is open — we just aren't confirmed yet.
+                # This resolves the contradiction between Path Intelligence showing
+                # "Others getting through" and Recommendation saying "TRY LATER".
+                effective_path = self._path_status
+                if self._path_status == PathStatus.NO_PATH and self._near_me_count > 0:
+                    effective_path = PathStatus.PATH_OPEN
+                
                 prediction = self.predictor.predict_success(
                     self._current_target, 
                     features,
-                    self._path_status
+                    effective_path
                 )
                 self.prediction_widget.update_display(prediction)
                 
                 strategy = self.predictor.get_strategy(
-                    self._current_target, self._path_status,
+                    self._current_target, effective_path,
                     target_competition=self._target_competition
                 )
                 self.strategy_widget.update_display(strategy)
@@ -1250,6 +1260,7 @@ class InsightsPanel(QWidget):
     def clear(self):
         """Clear all displays."""
         self._current_target = None
+        self._near_me_count = 0  # v2.1.5
         self.target_label.setText("Target: —")
         self.pileup_widget.clear()
         self.near_me_widget.clear()  # v2.1.0: Path Intelligence
@@ -1266,6 +1277,9 @@ class InsightsPanel(QWidget):
         Args:
             near_me_data: Dict from analyzer.find_near_me_stations()
         """
+        # v2.1.5: Store near-me count for effective path status calculation
+        self._near_me_count = len(near_me_data.get('stations', [])) if near_me_data else 0
+        
         # Pass current path status so widget can give context-aware insights
         self.near_me_widget.update_display(near_me_data, self._path_status)
     
