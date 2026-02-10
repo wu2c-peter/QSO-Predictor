@@ -927,106 +927,118 @@ class BandMapWidget(QWidget):
     
     def _draw_section_labels(self, qp, w, top_h, score_top, score_h, bottom_top):
         """v2.2.0: Draw right-aligned section labels for each band map area."""
-        qp.setFont(self._fonts['medium'])
-        qp.setPen(QColor(153, 153, 153))  # #999999 subtle gray
+        qp.setFont(self._fonts['small_bold'])  # 8pt bold — compact but readable
+        label_color = QColor(170, 170, 170)  # #AAA — visible but not distracting
         
-        margin = 8
-        # Top section label
+        margin = 6
+        label_h = 12
+        
+        # Top section label — just below the divider at top
+        qp.setPen(label_color)
         qp.drawText(
-            QRectF(0, 4, w - margin, 14),
+            QRectF(0, 2, w - margin, label_h),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             "Target's environment (spot data)"
         )
-        # Score section label
+        # Score section label — right-aligned inside score strip
         qp.drawText(
-            QRectF(0, score_top + 2, w - margin, 14),
+            QRectF(0, score_top + 1, w - margin, label_h),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            "Offset score (calculated)"
+            "Offset score"
         )
-        # Bottom section label
+        # Bottom section label — just below divider
         qp.drawText(
-            QRectF(0, bottom_top + 2, w - margin, 14),
+            QRectF(0, bottom_top + 1, w - margin, label_h),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             "Your decodes"
         )
     
     def _draw_perspective_legend(self, qp):
         """v2.2.0: Draw overlay lines legend + tier colors legend at top of perspective section."""
-        qp.setFont(self._fonts['medium'])
+        qp.setFont(self._fonts['small_bold'])  # 8pt bold — compact, readable
         
-        # Row 1: Overlay lines
-        qp.setPen(self._colors['text_magenta']); qp.drawText(10, 20, "— Target")
-        qp.setPen(self._colors['text_yellow']); qp.drawText(80, 20, "··· TX")
-        qp.setPen(self._colors['text_green']); qp.drawText(140, 20, "— Rec")
+        # Row 1: Overlay lines — y=18 (below section label at y=2)
+        y1 = 18
+        qp.setPen(self._colors['text_magenta']); qp.drawText(10, y1, "— Target")
+        qp.setPen(self._colors['text_yellow']);  qp.drawText(82, y1, "··· TX")
+        qp.setPen(self._colors['text_green']);   qp.drawText(132, y1, "— Rec")
         
-        # Row 2: Perspective tier colors (signal density + geographic tiers)
+        # Row 2: Tier colors — y=30 (well below row 1)
+        y2 = 30
+        sq = 7  # swatch size
+        
         qp.setPen(Qt.PenStyle.NoPen)
-        
         qp.setBrush(self._brushes['tier1_bright'])
-        qp.drawRect(10, 30, 8, 8)
-        qp.setPen(self._colors['text_cyan']); qp.drawText(22, 38, "1-3")
+        qp.drawRect(10, y2 - sq, sq, sq)
+        qp.setPen(self._colors['text_cyan']); qp.drawText(20, y2, "1-3")
         
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['tier1_medium'])
-        qp.drawRect(50, 30, 8, 8)
-        qp.setPen(self._colors['text_yellow']); qp.drawText(62, 38, "4-5")
+        qp.drawRect(48, y2 - sq, sq, sq)
+        qp.setPen(self._colors['text_yellow']); qp.drawText(58, y2, "4-5")
         
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['tier1_dim'])
-        qp.drawRect(95, 30, 8, 8)
-        qp.setPen(self._colors['text_orange']); qp.drawText(107, 38, "6+")
+        qp.drawRect(86, y2 - sq, sq, sq)
+        qp.setPen(self._colors['text_orange']); qp.drawText(96, y2, "6+")
 
+        # Spacer then geographic tiers
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['tier2'])
-        qp.drawRect(140, 30, 8, 8)
-        qp.setPen(self._colors['label_light']); qp.drawText(152, 38, "Grid")
+        qp.drawRect(130, y2 - sq, sq, sq)
+        qp.setPen(self._colors['label_light']); qp.drawText(140, y2, "Grid")
 
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['tier3'])
-        qp.drawRect(190, 30, 8, 8)
-        qp.setPen(self._colors['label_light']); qp.drawText(202, 38, "Field")
+        qp.drawRect(175, y2 - sq, sq, sq)
+        qp.setPen(self._colors['label_light']); qp.drawText(185, y2, "Field")
 
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['tier4'])
-        qp.drawRect(245, 30, 8, 8)
-        qp.setPen(self._colors['label_light']); qp.drawText(257, 38, "Global")
+        qp.drawRect(222, y2 - sq, sq, sq)
+        qp.setPen(self._colors['label_light']); qp.drawText(232, y2, "Global")
     
     def _draw_score_legend(self, qp, w, score_top):
         """v2.2.0: Draw score graph legend — solid vs dotted line meaning."""
-        qp.setFont(self._fonts['medium'])
-        qp.setPen(QColor(136, 136, 136))  # #888888
+        qp.setFont(self._fonts['small_bold'])  # 8pt bold — matches section labels
+        label_color = QColor(180, 180, 180)  # Bright enough to read
+        sample_color = QColor(0, 220, 180)   # Teal — visible against score graph
         
-        # Left side: solid = proven, dotted = gap-based
-        y = score_top + 12
-        qp.setPen(QColor(0, 200, 200))  # Cyan-ish for solid line sample
-        qp.drawLine(10, y, 30, y)
-        qp.setPen(QColor(136, 136, 136))
-        qp.drawText(34, y + 4, "proven")
+        # Vertically center in the section: section is 15% of height
+        # Place legend at left, just below the section label
+        y = score_top + 14
         
-        # Dotted sample
-        pen = QPen(QColor(0, 200, 200))
-        pen.setStyle(Qt.PenStyle.DotLine)
-        qp.setPen(pen)
-        qp.drawLine(85, y, 105, y)
-        qp.setPen(QColor(136, 136, 136))
-        qp.drawText(109, y + 4, "gap-based")
+        # Solid line sample + "proven"
+        pen_solid = QPen(sample_color, 2, Qt.PenStyle.SolidLine)
+        qp.setPen(pen_solid)
+        qp.drawLine(10, y, 32, y)
+        qp.setPen(label_color)
+        qp.drawText(36, y + 4, "proven")
+        
+        # Dotted line sample + "gap-based" — good spacing from first
+        pen_dot = QPen(sample_color, 2, Qt.PenStyle.DotLine)
+        qp.setPen(pen_dot)
+        qp.drawLine(90, y, 112, y)
+        qp.setPen(label_color)
+        qp.drawText(116, y + 4, "gap-based")
     
     def _draw_local_legend(self, qp, bottom_top):
         """v2.2.0: Draw local decode color legend at top of the local decode section."""
-        qp.setFont(self._fonts['medium'])
-        y_base = bottom_top + 16  # Position relative to local section top
+        qp.setFont(self._fonts['small_bold'])  # 8pt bold — consistent with other legends
+        y_base = bottom_top + 16  # Below section label
+        sq = 7  # swatch size
         
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['local_strong'])
-        qp.drawRect(10, y_base - 8, 8, 8)
-        qp.setPen(self._colors['label_light']); qp.drawText(22, y_base, ">0dB")
+        qp.drawRect(10, y_base - sq, sq, sq)
+        qp.setPen(self._colors['label_light']); qp.drawText(20, y_base, ">0dB")
 
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['local_medium'])
-        qp.drawRect(60, y_base - 8, 8, 8)
-        qp.setPen(self._colors['label_light']); qp.drawText(72, y_base, ">-10")
+        qp.drawRect(58, y_base - sq, sq, sq)
+        qp.setPen(self._colors['label_light']); qp.drawText(68, y_base, ">-10")
 
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['local_weak'])
-        qp.drawRect(115, y_base - 8, 8, 8)
-        qp.setPen(self._colors['label_light']); qp.drawText(127, y_base, "Weak")
+        qp.drawRect(110, y_base - sq, sq, sq)
+        qp.setPen(self._colors['label_light']); qp.drawText(120, y_base, "Weak")
