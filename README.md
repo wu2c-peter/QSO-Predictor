@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.1.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -8,88 +8,63 @@
 
 ![QSO Predictor Screenshot](docs/screenshot.png)
 
-## v2.1.4
-- **Fixed: JTDX detection in auto-paste scripts** — JTDX's title bar contains "WSJT-X" (it's a fork), so scripts that check for WSJT-X first match JTDX and use wrong coordinates. Scripts now check JTDX first. Thanks to Brian KB1OPD for reporting.
-- **Fixed: Band map frequency scale too dim on Windows** — labels and tick marks brightened for better visibility across platforms. Thanks to Brian KB1OPD.
-- **Auto-paste scripts: Enable TX** — after pasting a callsign into the DX Call field, the script now clicks the Enable TX button automatically. One click from QSO Predictor to calling.
-- **Auto-paste scripts: separate coordinates** — JTDX and WSJT-X have different field positions, scripts now have independent coordinate settings for each app
+## 🆕 What's New in v2.2.0
 
-## v2.1.3
-- **Click-to-copy target callsign** — click the target in either panel to copy to clipboard, then paste into WSJT-X/JTDX (or use the auto-paste scripts in the User Guide)
-- **Local decode evidence** — path detection now uses your local decodes as proof, not just PSK Reporter. If you decode a station responding to you, that's "Heard by Target" immediately — no PSK Reporter lag
-- **Path column relabeled** for clarity: Heard by Target, Heard in Region, Not Heard in Region, Not Transmitting, No Reporters in Region
-- **"Sync to JTDX" → "← Fetch Target"** — button renamed so direction is obvious (pulls JTDX's selection into QSO Predictor)
-- **Combined auto-paste scripts** — updated AutoHotkey/Hammerspoon scripts handle both frequency AND callsign clipboard copies
-- Handles AP codes correctly (strips them instead of showing as callsign) — thanks to Brian KB1OPD for bug report
+### ⚡ Tactical Observation Toasts
+Real-time event-driven alerts appear as a notification bar above the decode table:
+- **Hidden pileup detection** — warns when you see few callers locally but PSK Reporter shows heavy competition at the target's end ("⚠️ Hidden pileup: 1 caller locally, 7 at target's end — you can't hear your competition")
+- **Path change alerts** — instant notification when your signal is first heard by the target ("🎯 VK3ABC has decoded YOU — call now!") or when a path opens/closes
+- **Competition shifts** — alerts when competition at the target increases or drops significantly
+- Rate-limited (1 per 15s) and auto-dismissing (8s) to avoid distraction
 
-## What's New in v2.1.2
+### 📊 Pileup Contrast Intelligence
+The Insights panel now cross-references local and target-side competition:
+- Shows PSK Reporter competition count alongside your local pileup view
+- **Hidden pileup warning** — highlighted alert when you see a clear band locally but the target is buried in callers you can't hear
+- Feeds into strategy recommendations — "WAIT" instead of "CALL NOW" when hidden competition is heavy
 
-### 🐛 Critical Fix: Target Perspective Data
-Fixed a timing issue where PSK Reporter spots were rejected as "stale" — the freshness filter was comparing against the original decode timestamp (3-5 minutes old by the time it reaches us) instead of receipt time. **This was the root cause of empty Target Perspective band maps** reported by Brian KB1OPD and others.
+### 🔍 Smarter Predictions
+Improved data consistency across all displays:
+- **Effective path status** — when PSK Reporter says "No Path" but Path Intelligence shows stations from your area getting through, recommendations now account for this evidence instead of being pessimistic
+- **Local decode competition** — when PSK Reporter has no perspective data, the app now counts callers visible in your local decodes instead of showing "Unknown"
+- **Target-side competition** feeds into success prediction and strategy recommendations for more accurate advice
 
-### 🛡️ Grid Square Validation
-FT8 protocol tokens like `RR73` were being misidentified as Maidenhead grid squares (both match the pattern `[A-Z][A-Z][0-9][0-9]`). Fixed with two layers of defense:
-- Suffix check (`RR73`, `73`, signal reports) now runs **before** grid check
-- Grid validation tightened to Maidenhead range `[A-R]` (was `[A-Z]`)
+### 📋 Column Header Tooltips
+Hover over any column header in the decode table to see what it means and where the data comes from (e.g., "Propagation status to this station. Sources: PSK Reporter spots + local decode analysis.")
 
-### 🔇 ICMP Log Spam Fix
-Windows ICMP "connection reset" errors from UDP forwarding to closed ports were flooding the log (1,697 identical lines in one session). Now logs once on first occurrence, with cumulative count shown in periodic stats.
+### 🐛 Critical Bug Fixes
+- **Path status logic fix** — "Not Reported in Region" was incorrectly matching as "Reported in Region" due to substring collision, causing wrong colors, wrong path status, and wrong recommendations across 4 code locations
+- **Path Intelligence reconciliation** — Path column and Path Intelligence widget now cross-reference each other's data sources instead of showing contradictory information
+- **Toast bar readability** — proper sizing and font weight for legibility
+- **Band map label spacing** — "Your decodes" label repositioned for clear visual separation
 
----
+## Previous Releases
 
-## What's New in v2.1.1
+### v2.1.4
+- Fixed JTDX detection in auto-paste scripts
+- Band map frequency scale brightened for Windows visibility
+- Auto-paste scripts now click Enable TX automatically
 
-### 🔍 Band Map Tooltips
-Hover over any signal bar on the band map to see:
-- **Callsign**, SNR, audio frequency, and grid square
-- **Tier** (Target / Grid / Field / Global) for perspective signals
-- Works for both target perspective (top) and local decode (bottom) sections
+### v2.1.3
+- Click-to-copy target callsign from either panel
+- Local decode evidence for path detection (no PSK Reporter lag)
+- Path column relabeled for clarity
+- Combined auto-paste scripts for frequency and callsign
 
-### 📏 Frequency Scale
-Hz labels along the band map sections — 500 Hz major ticks with labels, 100 Hz minor ticks. No more guessing where frequencies are.
+### v2.1.2
+- **Critical fix:** Target Perspective data rejected as stale — receipt time now used instead of decode time
+- Grid square validation tightened (FT8 tokens like RR73 no longer misidentified as grids)
 
-### ⚠️ Resilient Data Source Monitoring
-Status bar now warns you when data sources go silent:
-- **UDP:** Warning after 30 seconds with no data from WSJT-X/JTDX
-- **MQTT:** Warning after 60 seconds with no PSK Reporter spots
-- Warnings auto-clear when data resumes
+### v2.1.1
+- Band map hover tooltips (callsign, SNR, grid, tier)
+- Frequency scale with Hz labels
+- Resilient data source monitoring (warns when UDP/MQTT goes silent)
 
-### 🔧 Diagnostic Logging
-Improved observability for troubleshooting:
-- Analyzer module now logs first error with full traceback (was silently swallowing all exceptions)
-- Periodic cache health stats for diagnosing empty Target Perspective issues
-
----
-
-## Highlights from v2.1.0
-
-### 🎯 Hunt Mode
-Track specific stations, prefixes, or DXCC entities you want to work:
-- Add targets via **Tools → Hunt List** (Ctrl+H) or right-click context menu
-- **System tray alerts** when hunt targets are spotted
-- **"Working Nearby" alerts** — high-priority notification when your target is working stations from your area
-- Gold highlighting in decode table
-- Supports callsigns (`3Y0K`), prefixes (`3Y`), and countries (`Japan`)
-
-### 📡 Path Intelligence
-Know if others from your area are getting through:
-- **Phase 1:** Shows nearby stations the target is hearing with SNR and frequency
-- **Phase 2:** Click **Analyze** to understand WHY they're succeeding:
-  - Beaming detection (compares directional patterns to peers)
-  - Power/antenna advantage detection (+6dB above peers)
-  - Frequency suggestions based on their clear spots
-
-### 🖥️ Undockable Panels
-Customize your layout for multi-monitor setups:
-- Drag panels to float, dock to edges, or rearrange
-- **View → Reset Layout** to restore defaults
-- Layout saved between sessions
-
-### ✨ Other Improvements
-- **Click-to-clipboard:** Click band map or Rec frequency to copy Hz value
-- **Auto-clear on QSY:** Optionally clear target when changing bands
-- **Improved stability:** Fixed Windows UDP Error 10054 crashes
-- **Better error handling:** Graceful degradation when data unavailable
+### v2.1.0
+- **Hunt Mode** — track stations/prefixes/countries with system tray alerts
+- **Path Intelligence** — see who from your area is getting through and why
+- **Undockable panels** — multi-monitor layout support
+- Click-to-clipboard, auto-clear on QSY, Windows UDP Error 10054 fix
 
 ---
 
@@ -183,6 +158,28 @@ Never miss a wanted station:
 
 ## Version History
 
+### v2.2.0 (February 2026)
+- **NEW:** Tactical observation toasts — real-time alerts for hidden pileups, path changes, competition shifts
+- **NEW:** Pileup contrast intelligence — cross-references local vs target-side competition, warns of hidden pileups
+- **NEW:** Column header tooltips — hover headers for data source info
+- **NEW:** Local decode competition fallback — shows caller count from local decodes when PSK Reporter has no data
+- **IMPROVED:** Effective path status — near-me evidence upgrades predictions when PSK Reporter shows no path
+- **IMPROVED:** Target-side competition feeds into strategy recommendations and success predictions
+- **FIXED:** Critical substring matching bug — "Not Reported in Region" incorrectly matched as "Reported in Region" in 4 code locations
+- **FIXED:** Path Intelligence / Path column data reconciliation
+- **FIXED:** Toast bar readability and band map label spacing
+
+### v2.1.4 (February 2026)
+- **FIXED:** JTDX detection in auto-paste scripts (JTDX title contains "WSJT-X")
+- **FIXED:** Band map frequency scale too dim on Windows
+- **NEW:** Auto-paste scripts click Enable TX automatically after callsign paste
+
+### v2.1.3 (February 2026)
+- **NEW:** Click-to-copy target callsign from either panel
+- **NEW:** Local decode evidence for path detection (no PSK Reporter lag)
+- **IMPROVED:** Path column relabeled for clarity
+- **FIXED:** AP codes handled correctly (stripped instead of shown as callsign)
+
 ### v2.1.2 (February 2026)
 - **FIXED:** Critical bug where Target Perspective never populated — PSK Reporter spots rejected as stale due to timestamp comparison using decode time instead of receipt time (reported by Brian KB1OPD)
 - **FIXED:** FT8 tokens (`RR73`) misidentified as Maidenhead grid squares, causing incorrect tiering
@@ -248,7 +245,7 @@ Contributions welcome! Please open an issue first to discuss proposed changes.
 ### Contributors
 - **Warren KC0GU** — Hunt Mode concept, Clear Target workflow, UI persistence suggestions
 - **Brian KB1OPD** — Band map tooltips and frequency scale requests, auto-clear on QSY, testing and feedback
-- **Doug McDonald, CaptainBucko, Bill K3CDY** — Beta testing and feedback
+- **Doug McDonald, CaptainBucko, Bill K3CDY, Edgar K9RE** — Beta testing and feedback
 
 ## License
 

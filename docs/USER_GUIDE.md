@@ -1,6 +1,6 @@
 # QSO Predictor User Guide
 
-**Version 2.1.0**  
+**Version 2.2.0**  
 **By Peter Hirst (WU2C)**
 
 > 📋 **See [README](https://github.com/wu2c-peter/qso-predictor/blob/main/README.md) for What's New, Version History, and Installation**
@@ -157,6 +157,26 @@ The decode table's **Path** column shows whether your signal is reaching each st
 | **Not Transmitting** | Gray | You haven't transmitted recently |
 | **No Reporters in Region** | Dark gray | No PSK Reporter data from that area |
 
+### Tactical Observation Toasts (v2.2.0)
+
+A notification bar appears above the decode table with real-time tactical alerts:
+
+| Alert | Style | Meaning |
+|-------|-------|---------|
+| **⚠️ Hidden pileup** | Orange | You see few callers locally but PSK Reporter shows heavy competition at the target's end |
+| **📈 Competition increasing** | Orange | Caller count at target has jumped significantly |
+| **📉 Competition dropping** | Green | Pileup is thinning — opportunity window |
+| **🎯 Target decoded YOU** | Green | Your signal confirmed at target — call now! |
+| **🟢 Path confirmed** | Green | Propagation to target's region is open |
+| **🔴 Path lost** | Orange | Path to target's region no longer confirmed |
+| **📡 Spotted near target** | Green | You've been spotted near the target station |
+
+Toasts auto-dismiss after 8 seconds, or click ✕ to dismiss immediately. Rate-limited to 1 per 15 seconds to avoid distraction.
+
+### Column Header Tooltips (v2.2.0)
+
+Hover over any column header in the decode table to see what it means and where the data comes from. Particularly useful for **Prob %** and **Path** columns, which combine multiple data sources.
+
 ### Click-to-Set Frequency
 
 Click anywhere on the band map to manually set the recommended frequency:
@@ -217,6 +237,18 @@ Click the **🔍 Analyze** button to understand WHY nearby stations are succeedi
 | All same direction | Propagation favors that path | Wait or try |
 | Light traffic freq | Their frequency is relatively clear | **Yes! Try it** |
 
+### How Path Data Works Together (v2.2.0)
+
+QSO Predictor uses three independent data sources for path information:
+
+- **PSK Reporter (my signal)** — has any receiver near the target heard YOUR signal?
+- **PSK Reporter (target's receivers)** — is the target hearing stations from YOUR area?
+- **Local decodes** — have you directly decoded a response from the target?
+
+These can sometimes show different things. For example, the Path column might show "Not Heard in Region" (your signal not confirmed) while Path Intelligence shows 3 stations from your area getting through (the path IS viable).
+
+**v2.2.0 reconciliation:** When near-me evidence exists but PSK Reporter hasn't confirmed your specific signal, the strategy recommendation now accounts for both pieces of information — giving you "CALL NOW" instead of the old "TRY LATER" that ignored the evidence.
+
 ---
 
 ## 6. Local Intelligence
@@ -260,6 +292,17 @@ Based on all available data:
 | **CALL NOW** | Conditions favorable, go for it |
 | **WAIT** | Pileup too heavy or poor timing |
 | **TRY LATER** | Path issues or target busy |
+
+### Pileup Contrast (v2.2.0)
+
+The Insights panel now shows target-side competition from PSK Reporter alongside your local pileup count. This reveals **hidden pileups** — situations where you see a clear band locally but the target has heavy competition you can't hear.
+
+When a hidden pileup is detected, you'll see:
+- A yellow warning in the Insights panel: "⚠️ Hidden pileup — you can't hear your competition!"
+- A tactical toast notification bar above the decode table
+- Strategy recommendation adjusted to account for the real competition level
+
+This is one of the most common reasons calls go unanswered — now you can see it happening.
 
 ---
 
@@ -325,6 +368,18 @@ When a hunt target is spotted:
 - Consider waiting for pileup to thin
 - Check Path Intelligence — do you have any advantage?
 
+#### Hidden Pileup (v2.2.0)
+
+**Signs:** Orange toast "Hidden pileup", yellow warning in Insights panel, few callers visible locally but high competition shown at target
+
+**What's happening:** You can't hear the stations competing with you because propagation is one-way — they can reach the target but not you. This is extremely common on long paths.
+
+**Your strategy:**
+- Don't assume the band is clear just because your waterfall looks empty
+- Trust the PSK Reporter data — the competition IS there
+- Wait for the pileup to thin, or find a gap in the target's perspective (cyan bars with low counts)
+- Watch for the "📉 Competition dropping" toast — that's your window
+
 ### Pro Tips
 
 1. **"Heard by Target" is gold** — if Path shows this, call immediately
@@ -337,6 +392,8 @@ When a hunt target is spotted:
 8. **Analyze before giving up** — the Analyze button might reveal why others succeed
 9. **Work one cycle ahead** — select target early, let recommendation stabilize, enter frequency before next cycle starts
 10. **Click to copy callsign** — click the target callsign in either panel to copy to clipboard, then paste into WSJT-X/JTDX (or use the auto-paste scripts below)
+11. **Watch the toast bar** — tactical alerts appear above the decode table when conditions change. A green "target decoded YOU" toast means drop everything and call
+12. **Don't trust an empty waterfall** — if the Insights panel shows a hidden pileup warning, there's competition you can't hear. Wait for the "competition dropping" toast
 
 ### Windows Power Users: Auto-Paste to WSJT-X/JTDX
 
@@ -738,6 +795,12 @@ A: It compares your target to peer stations. Works best with 3+ peers. Can't dis
 
 **Q: Why do I see "Similar pattern to nearby stations"?**  
 A: All near-me stations show the same directional pattern. This is normal — it's likely propagation, not antenna differences.
+
+**Q: What is a "hidden pileup"?**  
+A: When you see few or no callers on your waterfall but PSK Reporter shows heavy competition at the target's location. This happens because propagation is often asymmetric — stations from other regions can reach the target but their signals don't reach you. The v2.2.0 pileup contrast feature detects this and warns you.
+
+**Q: Why does the Path column show "Not Heard" but the recommendation says "CALL NOW"?**  
+A: v2.2.0 uses "effective path status" — if Path Intelligence shows stations from your area getting through (even though YOUR specific signal hasn't been confirmed), the recommendation accounts for that evidence. The Path column still shows the factual status of your signal, while the recommendation considers the broader picture.
 
 ---
 
