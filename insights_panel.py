@@ -419,7 +419,7 @@ class NearMeWidget(QGroupBox):
                 self.status_label.setStyleSheet("color: #00ff00;")  # Green - good
             
             # Customize insight based on path status
-            # Path column now says "Not Heard in Region" which is clearer alongside this data
+            # Path column now says "Not Reported in Region" which is clearer alongside this data
             if path_status == PathStatus.CONNECTED:
                 self.insight_label.setText("💡 Target hears you too!")
             elif path_status == PathStatus.PATH_OPEN:

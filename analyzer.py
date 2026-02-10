@@ -818,7 +818,7 @@ class QSOAnalyzer(QObject):
         
         Returns:
             ('Heard by Target', geo_bonus) if target responded to my call
-            ('Heard in Region', geo_bonus) if regional evidence found
+            ('Reported in Region', geo_bonus) if regional evidence found
             (None, 0) if no evidence
         """
         if not target_call:
@@ -836,21 +836,21 @@ class QSOAnalyzer(QObject):
                 logger.debug(f"Decode path: {target_upper} → Heard by Target (responded to {my_call_upper})")
                 return 'Heard by Target', 100
             
-            # Case 2: Target responded to someone near me → Heard in Region
+            # Case 2: Target responded to someone near me → Reported in Region
             if my_field and evidence.get('responded_to'):
                 for heard_call in evidence['responded_to']:
                     heard_grid = self.call_grid_map.get(heard_call, '')
                     if heard_grid and len(heard_grid) >= 2 and heard_grid[:2] == my_field:
-                        logger.debug(f"Decode path: {target_upper} → Heard in Region (responded to {heard_call} in {heard_grid})")
-                        return 'Heard in Region', 15
+                        logger.debug(f"Decode path: {target_upper} → Reported in Region (responded to {heard_call} in {heard_grid})")
+                        return 'Reported in Region', 15
             
-            # Case 3: Someone near target responded to my call → Heard in Region
+            # Case 3: Someone near target responded to my call → Reported in Region
             if target_field:
                 for responder_call, _ in self.responded_to_me.items():
                     responder_grid = self.call_grid_map.get(responder_call, '')
                     if responder_grid and len(responder_grid) >= 2 and responder_grid[:2] == target_field:
-                        logger.debug(f"Decode path: {target_upper} → Heard in Region ({responder_call} in {responder_grid} heard me)")
-                        return 'Heard in Region', 15
+                        logger.debug(f"Decode path: {target_upper} → Reported in Region ({responder_call} in {responder_grid} heard me)")
+                        return 'Reported in Region', 15
         
         return None, 0
 
@@ -865,7 +865,7 @@ class QSOAnalyzer(QObject):
                            This is expensive - only use for selected target (dashboard).
         
         Sets:
-            'path': Path status for table column (Heard by Target, Heard in Region, etc.)
+            'path': Path status for table column (Heard by Target, Reported in Region, etc.)
             'prob': Success probability percentage
             'competition': Full competition analysis (only when use_perspective=True)
         """
@@ -930,11 +930,11 @@ class QSOAnalyzer(QObject):
                 if len(r_grid) >= 4:
                     if target_minor and r_grid[:4] == target_minor:
                         geo_bonus = 25 
-                        path_str = "Heard in Region"
+                        path_str = "Reported in Region"
                         break
                     elif r_grid[:2] == target_major:
                         geo_bonus = 15
-                        path_str = "Heard in Region"
+                        path_str = "Reported in Region"
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
@@ -951,7 +951,7 @@ class QSOAnalyzer(QObject):
             
             if has_nearby_reporters:
                 if have_any_spots:
-                    path_str = "Not Heard in Region"  # We're TXing (spotted elsewhere), just not reaching target
+                    path_str = "Not Reported in Region"  # We're TXing (spotted elsewhere), just not reaching target
                 else:
                     path_str = "Not Transmitting"  # No spots anywhere — likely not TXing
             else:
@@ -1055,8 +1055,8 @@ class QSOAnalyzer(QObject):
         
         Path values:
             Heard by Target - target heard me
-            Heard in Region - station in same grid/field heard me
-            Not Heard in Region - reporters near target exist, I'm spotted elsewhere, but not there
+            Reported in Region - station in same grid/field reported me
+            Not Reported in Region - reporters near target exist, I'm spotted elsewhere, but not there
             Not Transmitting - reporters near target exist, but I have no spots anywhere
             No Reporters in Region - no reporters in target's region
         """
@@ -1102,10 +1102,10 @@ class QSOAnalyzer(QObject):
                 r_grid = my_rep.get('grid', "")
                 if len(r_grid) >= 4:
                     if target_minor and r_grid[:4] == target_minor:
-                        path_str = "Heard in Region"
+                        path_str = "Reported in Region"
                         break
                     elif r_grid[:2] == target_major:
-                        path_str = "Heard in Region"
+                        path_str = "Reported in Region"
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
@@ -1119,7 +1119,7 @@ class QSOAnalyzer(QObject):
             
             if has_nearby_reporters:
                 if have_any_spots:
-                    path_str = "Not Heard in Region"  # We're TXing (spotted elsewhere), just not reaching target
+                    path_str = "Not Reported in Region"  # We're TXing (spotted elsewhere), just not reaching target
                 else:
                     path_str = "Not Transmitting"  # No spots anywhere — likely not TXing
             else:

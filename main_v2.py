@@ -10,7 +10,7 @@
 # v2.1.3 Changes:
 # - Added: Click-to-copy target callsign (click target in either panel)
 # - Added: Local decode evidence for path detection (works without PSK Reporter)
-# - Changed: Path status labels clarified (Heard by Target, Heard in Region, etc.)
+# - Changed: Path status labels clarified (Heard by Target, Reported in Region, etc.)
 # - Changed: "Sync to JTDX" renamed to "Fetch Target" (clearer direction)
 # - Changed: Combined AutoHotkey/Hammerspoon scripts support frequency + callsign
 # - Fixed: AP decode codes (a1-a7) stripped from Call column
@@ -414,9 +414,9 @@ class TargetDashboard(QFrame):
         self.val_path.setText(path)
         if "Heard by Target" in path:
             self.val_path.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
-        elif "Heard in Region" in path:
+        elif "Reported in Region" in path:
             self.val_path.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
-        elif "Not Heard in Region" in path:
+        elif "Not Reported in Region" in path:
             self.val_path.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
         elif "Not Transmitting" in path:
             self.val_path.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
@@ -614,8 +614,8 @@ class TacticalToast(QFrame):
             return
         
         # Path opened (wasn't connected/open, now is)
-        if new_path_status in ('Heard by Target', 'Heard in Region') and \
-           prev not in ('Heard by Target', 'Heard in Region'):
+        if new_path_status in ('Heard by Target', 'Reported in Region') and \
+           prev not in ('Heard by Target', 'Reported in Region'):
             if new_path_status == 'Heard by Target':
                 self.show_toast(
                     f"🎯 {target_call} has decoded YOU — call now!",
@@ -627,8 +627,8 @@ class TacticalToast(QFrame):
                     'success'
                 )
         # Path lost
-        elif new_path_status in ('Not Heard in Region', 'No Path') and \
-             prev in ('Heard by Target', 'Heard in Region'):
+        elif new_path_status in ('Not Reported in Region', 'No Path') and \
+             prev in ('Heard by Target', 'Reported in Region'):
             self.show_toast(
                 f"🔴 Path to {target_call}'s region no longer confirmed",
                 'warning'
@@ -723,9 +723,9 @@ class DecodeTableModel(QAbstractTableModel):
                 path = str(row_item.get('path', ''))
                 if "Heard by Target" in path:
                     return QColor("#00FFFF")  # Cyan - target hears you!
-                elif "Heard in Region" in path:
+                elif "Reported in Region" in path:
                     return QColor("#00FF00")  # Green - path to region confirmed
-                elif "Not Heard in Region" in path:
+                elif "Not Reported in Region" in path:
                     return QColor("#FFA500")  # Orange - reporters exist but haven't spotted you
                 elif "Not Transmitting" in path:
                     return QColor("#888888")  # Gray - not transmitting recently
@@ -740,8 +740,8 @@ class DecodeTableModel(QAbstractTableModel):
             if "Heard by Target" in path:
                 return QColor("#004040")  # Teal background
             
-            # Heard in Region = propagation confirmed to region
-            if "Heard in Region" in path:
+            # Reported in Region = propagation confirmed to region
+            if "Reported in Region" in path:
                 return QColor("#002800")  # Dark green background
             
             # v2.1.0: Hunt Mode - highlight hunted stations with gold background
@@ -1832,9 +1832,9 @@ class MainWindow(QMainWindow):
         
         if "Heard by Target" in path:
             self.local_intel.set_path_status(PathStatus.CONNECTED)
-        elif "Heard in Region" in path:
+        elif "Reported in Region" in path:
             self.local_intel.set_path_status(PathStatus.PATH_OPEN)
-        elif "Not Heard in Region" in path:
+        elif "Not Reported in Region" in path:
             self.local_intel.set_path_status(PathStatus.NO_PATH)
         else:
             self.local_intel.set_path_status(PathStatus.UNKNOWN)

@@ -178,7 +178,7 @@ class LocalIntelligence(QObject):
                 self.insights_panel.status_message.connect(main_window.update_status_msg)
             
             # Create dock widget
-            self.insights_dock = QDockWidget("Local Intelligence", main_window)
+            self.insights_dock = QDockWidget("Insights", main_window)
             self.insights_dock.setObjectName("local_intel_dock")  # Required for saveState
             self.insights_dock.setWidget(self.insights_panel)
             self.insights_dock.setAllowedAreas(
@@ -237,7 +237,7 @@ class LocalIntelligence(QObject):
         menu.addSeparator()
         
         # Toggle panel
-        toggle_action = menu.addAction("Show Local Intelligence Panel")
+        toggle_action = menu.addAction("Show Insights Panel")
         toggle_action.setCheckable(True)
         toggle_action.setChecked(True)
         toggle_action.triggered.connect(self._toggle_panel)
