@@ -1,10 +1,11 @@
 """
 Insights Panel for QSO Predictor v2.0
 
-UI widget displaying local intelligence:
-- Pileup status
-- Target behavior patterns
-- Success predictions
+UI widget displaying target and operational intelligence:
+- Pileup status (local decodes)
+- Path intelligence (PSK Reporter)
+- Target behavior patterns (log history / live session)
+- Success predictions (combined analysis)
 - Strategy recommendations
 
 Copyright (C) 2025 Peter Hirst (WU2C)
@@ -43,11 +44,22 @@ class PileupStatusWidget(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("Pileup Status", parent)
+        self.setToolTip(
+            "Callers visible in YOUR local decodes.\n"
+            "Note: the target may see more callers that you can't hear.\n"
+            "Check the contrast alert below for target-side competition."
+        )
+        self._last_caller_count = 0  # v2.2.0: tracked for tactical toast
         self._setup_ui()
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(4)
+        
+        # Source badge
+        self.source_badge = QLabel("📡 Your Decodes")
+        self.source_badge.setStyleSheet("color: #888888; font-size: 10px;")
+        layout.addWidget(self.source_badge)
         
         # Size indicator
         size_layout = QHBoxLayout()
@@ -74,16 +86,28 @@ class PileupStatusWidget(QGroupBox):
         trend_layout.addWidget(self.trend_label)
         trend_layout.addStretch()
         layout.addLayout(trend_layout)
+        
+        # v2.2.0: Pileup contrast alert — shows target-side competition
+        self.contrast_label = QLabel("")
+        self.contrast_label.setStyleSheet(
+            "color: #ffcc00; font-size: 11px; font-weight: bold; "
+            "padding: 4px; margin-top: 2px;"
+        )
+        self.contrast_label.setWordWrap(True)
+        self.contrast_label.hide()
+        layout.addWidget(self.contrast_label)
     
     def update_display(self, pileup_info: Optional[Dict], your_status: Dict):
         """Update the display with current pileup info."""
         if not pileup_info:
+            self._last_caller_count = 0  # v2.2.0: track for toast
             self.size_label.setText("—")
             self.rank_label.setText("—")
             self.trend_label.setText("No target")
             return
         
         size = pileup_info.get('size', 0)
+        self._last_caller_count = size  # v2.2.0: track for toast
         
         # Size with color coding
         if size == 0:
@@ -127,6 +151,43 @@ class PileupStatusWidget(QGroupBox):
         # Trend (placeholder - would track over time)
         self.trend_label.setText("—")
     
+    def set_target_competition(self, competition_str: str):
+        """
+        v2.2.0: Show contrast between local pileup and target-side competition.
+        
+        Called when target perspective data updates with competition info.
+        Shows a warning when you see 0 callers locally but the target has competition.
+        """
+        if not competition_str or competition_str == '--':
+            self.contrast_label.hide()
+            return
+        
+        # Parse local caller count from current display
+        local_text = self.size_label.text()
+        try:
+            local_count = int(local_text)
+        except (ValueError, TypeError):
+            local_count = 0
+        
+        # Only show contrast when there's a meaningful discrepancy
+        # (we see few/no callers but target has competition)
+        has_target_competition = any(kw in competition_str.upper() 
+                                      for kw in ['HIGH', 'PILEUP', 'MODERATE'])
+        
+        if local_count <= 2 and has_target_competition:
+            self.contrast_label.setText(
+                f"⚠️ But at target: {competition_str}\n"
+                f"Hidden pileup — you can't hear your competition!"
+            )
+            self.contrast_label.setStyleSheet(
+                "color: #ffcc00; font-size: 11px; font-weight: bold; "
+                "padding: 4px; margin-top: 2px; "
+                "background-color: #332200; border-radius: 3px;"
+            )
+            self.contrast_label.show()
+        else:
+            self.contrast_label.hide()
+    
     def clear(self):
         """Clear the display."""
         self.size_label.setText("—")
@@ -134,6 +195,7 @@ class PileupStatusWidget(QGroupBox):
         self.rank_label.setText("—")
         self.rank_label.setStyleSheet("")
         self.trend_label.setText("—")
+        self.contrast_label.hide()
 
 
 class NearMeWidget(QGroupBox):
@@ -151,6 +213,11 @@ class NearMeWidget(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("Path Intelligence", parent)
+        self.setToolTip(
+            "Stations from your area being reported near the target.\n"
+            "Source: PSK Reporter data.\n"
+            "Helps confirm a propagation path exists from your location."
+        )
         self._setup_ui()
         self._near_me_data = None
         self._analysis_results = {}  # call -> analysis result
@@ -159,6 +226,11 @@ class NearMeWidget(QGroupBox):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(4)
+        
+        # v2.2.0: Source badge
+        source_badge = QLabel("🌐 PSK Reporter")
+        source_badge.setStyleSheet("color: #888888; font-size: 10px;")
+        layout.addWidget(source_badge)
         
         # Header row: clarify that this shows what target is hearing FROM your area
         header_layout = QHBoxLayout()
@@ -340,10 +412,10 @@ class NearMeWidget(QGroupBox):
         elif count >= 1:
             # We have near-me stations getting through
             if count == 1:
-                self.status_label.setText("1 from your area heard")
+                self.status_label.setText("1 from your area reported")
                 self.status_label.setStyleSheet("color: #ffcc00;")  # Yellow - marginal
             else:
-                self.status_label.setText(f"{count} from your area heard")
+                self.status_label.setText(f"{count} from your area reported")
                 self.status_label.setStyleSheet("color: #00ff00;")  # Green - good
             
             # Customize insight based on path status
@@ -428,12 +500,21 @@ class BehaviorWidget(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("Behavior", parent)
+        self.setToolTip(
+            "How this station picks callers.\n"
+            "Based on your WSJT-X/JTDX log history and live session observation."
+        )
         self._current_call = None
         self._setup_ui()
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(4)
+        
+        # v2.2.0: Source badge (dynamic — changes based on prediction source)
+        self.source_badge = QLabel("📋 Log History")
+        self.source_badge.setStyleSheet("color: #888888; font-size: 10px;")
+        layout.addWidget(self.source_badge)
         
         # Pattern
         pattern_layout = QHBoxLayout()
@@ -543,7 +624,29 @@ class BehaviorWidget(QGroupBox):
             self.clear()
             return
         
+        # v2.2.0: Update source badge based on prediction source
         pattern: Optional[PickingPattern] = behavior_info.get('pattern')
+        source = behavior_info.get('bayesian_source', 'default')
+        
+        if pattern:
+            self.source_badge.setText("👁 Live Session")
+            self.source_badge.setStyleSheet("color: #88ff88; font-size: 10px;")
+        elif source == 'historical':
+            self.source_badge.setText("📋 Log History")
+            self.source_badge.setStyleSheet("color: #888888; font-size: 10px;")
+        elif source == 'ml_model':
+            metadata = behavior_info.get('bayesian_metadata') or {}
+            if 'persona' in metadata:
+                self.source_badge.setText("🧩 Persona Match")
+            else:
+                self.source_badge.setText("📋 Log History")
+            self.source_badge.setStyleSheet("color: #888888; font-size: 10px;")
+        elif source == 'bayesian' and behavior_info.get('qso_count', 0) > 0:
+            self.source_badge.setText("👁 Live Session")
+            self.source_badge.setStyleSheet("color: #88ff88; font-size: 10px;")
+        else:
+            self.source_badge.setText("⏳ Observing...")
+            self.source_badge.setStyleSheet("color: #666666; font-size: 10px;")
         
         # Style display names
         style_display = {
@@ -656,6 +759,10 @@ class PredictionWidget(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("Success Prediction", parent)
+        self.setToolTip(
+            "Overall probability estimate combining signal strength,\n"
+            "path status, competition, and behavior prediction."
+        )
         self._setup_ui()
     
     def _setup_ui(self):
@@ -732,6 +839,10 @@ class StrategyWidget(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("Recommendation", parent)
+        self.setToolTip(
+            "Tactical suggestion based on all available intelligence.\n"
+            "Advisory only — you make the call."
+        )
         self._setup_ui()
     
     def _setup_ui(self):

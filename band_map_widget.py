@@ -912,14 +912,54 @@ class BandMapWidget(QWidget):
                 qp.drawLine(x, y_base - tick_minor, x, y_base)
 
     def _draw_legend(self, qp):
+        """v2.2.0: Split legend into section-specific legends + section labels."""
+        w = self.width()
+        h = self.height()
+        top_h = int(h * 0.40)
+        score_h = int(h * 0.15)
+        score_top = top_h
+        bottom_top = top_h + score_h
+        
+        self._draw_section_labels(qp, w, top_h, score_top, score_h, bottom_top)
+        self._draw_perspective_legend(qp)
+        self._draw_score_legend(qp, w, score_top)
+        self._draw_local_legend(qp, bottom_top)
+    
+    def _draw_section_labels(self, qp, w, top_h, score_top, score_h, bottom_top):
+        """v2.2.0: Draw right-aligned section labels for each band map area."""
+        qp.setFont(self._fonts['medium'])
+        qp.setPen(QColor(153, 153, 153))  # #999999 subtle gray
+        
+        margin = 8
+        # Top section label
+        qp.drawText(
+            QRectF(0, 4, w - margin, 14),
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            "Target's environment (spot data)"
+        )
+        # Score section label
+        qp.drawText(
+            QRectF(0, score_top + 2, w - margin, 14),
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            "Offset score (calculated)"
+        )
+        # Bottom section label
+        qp.drawText(
+            QRectF(0, bottom_top + 2, w - margin, 14),
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            "Your decodes"
+        )
+    
+    def _draw_perspective_legend(self, qp):
+        """v2.2.0: Draw overlay lines legend + tier colors legend at top of perspective section."""
         qp.setFont(self._fonts['medium'])
         
-        # Row 1: Lines
+        # Row 1: Overlay lines
         qp.setPen(self._colors['text_magenta']); qp.drawText(10, 20, "— Target")
         qp.setPen(self._colors['text_yellow']); qp.drawText(80, 20, "··· TX")
         qp.setPen(self._colors['text_green']); qp.drawText(140, 20, "— Rec")
         
-        # Row 2: Perspective Tiers (Top Half - What Target Hears)
+        # Row 2: Perspective tier colors (signal density + geographic tiers)
         qp.setPen(Qt.PenStyle.NoPen)
         
         qp.setBrush(self._brushes['tier1_bright'])
@@ -950,21 +990,43 @@ class BandMapWidget(QWidget):
         qp.setBrush(self._brushes['tier4'])
         qp.drawRect(245, 30, 8, 8)
         qp.setPen(self._colors['label_light']); qp.drawText(257, 38, "Global")
+    
+    def _draw_score_legend(self, qp, w, score_top):
+        """v2.2.0: Draw score graph legend — solid vs dotted line meaning."""
+        qp.setFont(self._fonts['medium'])
+        qp.setPen(QColor(136, 136, 136))  # #888888
         
-        # Row 3: Local Signals (Bottom Half - What You Hear)
-        qp.setPen(self._colors['label_medium']); qp.drawText(10, 52, "Local:")
+        # Left side: solid = proven, dotted = gap-based
+        y = score_top + 12
+        qp.setPen(QColor(0, 200, 200))  # Cyan-ish for solid line sample
+        qp.drawLine(10, y, 30, y)
+        qp.setPen(QColor(136, 136, 136))
+        qp.drawText(34, y + 4, "proven")
+        
+        # Dotted sample
+        pen = QPen(QColor(0, 200, 200))
+        pen.setStyle(Qt.PenStyle.DotLine)
+        qp.setPen(pen)
+        qp.drawLine(85, y, 105, y)
+        qp.setPen(QColor(136, 136, 136))
+        qp.drawText(109, y + 4, "gap-based")
+    
+    def _draw_local_legend(self, qp, bottom_top):
+        """v2.2.0: Draw local decode color legend at top of the local decode section."""
+        qp.setFont(self._fonts['medium'])
+        y_base = bottom_top + 16  # Position relative to local section top
         
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['local_strong'])
-        qp.drawRect(50, 44, 8, 8)
-        qp.setPen(self._colors['label_light']); qp.drawText(62, 52, ">0dB")
+        qp.drawRect(10, y_base - 8, 8, 8)
+        qp.setPen(self._colors['label_light']); qp.drawText(22, y_base, ">0dB")
 
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['local_medium'])
-        qp.drawRect(100, 44, 8, 8)
-        qp.setPen(self._colors['label_light']); qp.drawText(112, 52, ">-10")
+        qp.drawRect(60, y_base - 8, 8, 8)
+        qp.setPen(self._colors['label_light']); qp.drawText(72, y_base, ">-10")
 
         qp.setPen(Qt.PenStyle.NoPen)
         qp.setBrush(self._brushes['local_weak'])
-        qp.drawRect(155, 44, 8, 8)
-        qp.setPen(self._colors['label_light']); qp.drawText(167, 52, "Weak")
+        qp.drawRect(115, y_base - 8, 8, 8)
+        qp.setPen(self._colors['label_light']); qp.drawText(127, y_base, "Weak")

@@ -24,7 +24,7 @@
 #
 # v2.1.0 Changes:
 # - Added: Target View as undockable panel (Dashboard + Band Map)
-# - Added: Local Intelligence as undockable panel (right side, full height)
+# - Added: Insights as undockable panel (right side, full height)
 # - Added: View menu with panel toggles and Reset Layout option
 # - Added: Hunt Mode - track stations/prefixes/countries, alert when active (suggested by Warren KC0GU)
 #   - Hunt List dialog (Tools → Hunt List, Ctrl+H)
@@ -64,7 +64,7 @@
 # - Fixed: VERSION file not bundled in macOS build
 # - Added: Sync to WSJT-X/JTDX button and Ctrl+Y shortcut (suggested by KC0GU)
 #          (renamed to "Fetch Target" in v2.1.3 for clarity)
-# - Added: Dock widget (Local Intelligence panel) position persistence
+# - Added: Dock widget (Insights panel) position persistence
 #
 # v2.0.4 Changes:
 # - Fixed: Cache cleanup thread death (analyzer.py)
@@ -278,7 +278,7 @@ class TargetDashboard(QFrame):
         self.btn_sync.clicked.connect(self.sync_requested.emit)
         layout.addWidget(self.btn_sync)
         
-        def add_field(label_text, width=None, stretch=False):
+        def add_field(label_text, width=None, stretch=False, tooltip=None):
             container = QWidget()
             vbox = QVBoxLayout(container)
             vbox.setContentsMargins(0,0,0,0)
@@ -286,6 +286,8 @@ class TargetDashboard(QFrame):
             lbl_title = QLabel(label_text)
             lbl_title.setObjectName("header")
             lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if tooltip:
+                lbl_title.setToolTip(tooltip)
             lbl_val = QLabel("--")
             lbl_val.setObjectName("data")
             lbl_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -296,14 +298,14 @@ class TargetDashboard(QFrame):
             if stretch: layout.setStretchFactor(container, 1)
             return lbl_val
 
-        self.val_utc = add_field("UTC", 50)
-        self.val_snr = add_field("dB", 40)
-        self.val_dt = add_field("DT", 40)
-        self.val_freq = add_field("Freq", 50)
-        self.val_msg = add_field("Message", stretch=True) 
+        self.val_utc = add_field("UTC", 50, tooltip="Last decode time of target at your receiver")
+        self.val_snr = add_field("dB", 40, tooltip="How strong target's signal is at YOUR receiver")
+        self.val_dt = add_field("DT", 40, tooltip="Target's time offset (seconds)")
+        self.val_freq = add_field("Freq", 50, tooltip="Target's transmit audio frequency offset (Hz)")
+        self.val_msg = add_field("Message", stretch=True, tooltip="Target's most recent decoded message") 
         self.val_msg.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.val_grid = add_field("Grid", 60)
-        self.val_prob = add_field("Prob %", 70)
+        self.val_grid = add_field("Grid", 60, tooltip="Target's Maidenhead grid locator")
+        self.val_prob = add_field("Prob %", 70, tooltip="Your estimated probability of completing\na QSO with this target")
         
         # Stacked Path / Competition field
         path_comp_container = QWidget()
@@ -319,6 +321,7 @@ class TargetDashboard(QFrame):
         lbl_path_title = QLabel("Path")
         lbl_path_title.setObjectName("header")
         lbl_path_title.setFixedWidth(70)
+        lbl_path_title.setToolTip("Has your signal been detected near this station?\nSources: PSK Reporter spots + local decode analysis")
         self.val_path = QLabel("--")
         self.val_path.setObjectName("data")
         path_hbox.addWidget(lbl_path_title)
@@ -333,6 +336,7 @@ class TargetDashboard(QFrame):
         lbl_comp_title = QLabel("Competition")
         lbl_comp_title.setObjectName("header")
         lbl_comp_title.setFixedWidth(75)
+        lbl_comp_title.setToolTip("Signal density near target FROM THEIR PERSPECTIVE.\nSource: PSK Reporter. You may not hear these stations.")
         self.val_comp = QLabel("--")
         self.val_comp.setObjectName("data")
         comp_hbox.addWidget(lbl_comp_title)
@@ -347,6 +351,7 @@ class TargetDashboard(QFrame):
         self.lbl_rec = ClickableCopyLabel()
         self.lbl_rec.setObjectName("rec")
         self.lbl_rec.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.lbl_rec.setToolTip("Recommended TX frequency based on target perspective analysis.\nClick to copy. Rec = recommended, Cur = your current TX frequency.")
         self.lbl_rec.copied.connect(self.status_message.emit)  # Bubble up to main window
         self.update_rec("----", "----") 
         layout.addWidget(self.lbl_rec)
@@ -478,6 +483,177 @@ class HuntHighlightDelegate(QStyledItemDelegate):
         super().paint(painter, option, index)
 
 
+# --- v2.2.0: TACTICAL OBSERVATION TOASTS ---
+class TacticalToast(QFrame):
+    """Thin notification bar for tactical observations.
+    
+    Shows event-driven alerts like hidden pileups, path changes,
+    and competition shifts. Auto-dismisses after 8 seconds.
+    Rate-limited to 1 toast per 15 seconds to avoid spam.
+    """
+    
+    # Style presets by priority
+    STYLES = {
+        'warning': "background-color: #3A2800; color: #FFA500; border: 1px solid #664400; border-radius: 3px; padding: 4px 8px;",
+        'success': "background-color: #002A00; color: #00FF00; border: 1px solid #004400; border-radius: 3px; padding: 4px 8px;",
+        'info':    "background-color: #001A2A; color: #00CCFF; border: 1px solid #003344; border-radius: 3px; padding: 4px 8px;",
+    }
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(28)
+        self.hide()
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 2, 8, 2)
+        layout.setSpacing(4)
+        
+        self._label = QLabel()
+        self._label.setFont(QFont("Segoe UI", 9))
+        layout.addWidget(self._label, 1)
+        
+        self._dismiss_btn = QLabel("✕")
+        self._dismiss_btn.setStyleSheet("color: #888; font-size: 12px;")
+        self._dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._dismiss_btn.mousePressEvent = lambda e: self._dismiss()
+        layout.addWidget(self._dismiss_btn)
+        
+        # Auto-dismiss timer
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._dismiss)
+        
+        # Rate limiting
+        self._last_show_time = 0
+        self._min_interval = 15  # seconds between toasts
+        self._queue = []  # [(message, style_key)]
+        
+        # State tracking for change detection
+        self._prev_competition_count = 0
+        self._prev_path_status = ""
+        self._prev_reporting_near_target = 0
+    
+    def show_toast(self, message, style='info', duration=8000):
+        """Show a toast notification, or queue it if rate-limited."""
+        now = time.time()
+        elapsed = now - self._last_show_time
+        
+        if elapsed < self._min_interval and self.isVisible():
+            # Rate-limited — queue it (keep only the latest)
+            self._queue = [(message, style)]
+            return
+        
+        self._display(message, style, duration)
+    
+    def _display(self, message, style, duration):
+        """Actually show the toast."""
+        self._label.setText(message)
+        self.setStyleSheet(self.STYLES.get(style, self.STYLES['info']))
+        self._last_show_time = time.time()
+        self._timer.start(duration)
+        self.show()
+    
+    def _dismiss(self):
+        """Hide toast and show queued toast if any."""
+        self._timer.stop()
+        self.hide()
+        
+        # Show queued toast after a brief pause
+        if self._queue:
+            msg, style = self._queue.pop(0)
+            QTimer.singleShot(500, lambda: self._display(msg, style, 8000))
+    
+    def check_competition_change(self, competition_str, local_callers):
+        """Detect and toast competition changes.
+        
+        Args:
+            competition_str: e.g. "High (4)", "PILEUP (8)", "Low (1)"
+            local_callers: int count from local pileup tracking
+        """
+        # Extract count from competition string
+        count = 0
+        if competition_str and '(' in competition_str:
+            try:
+                count = int(competition_str.split('(')[1].split(')')[0])
+            except (ValueError, IndexError):
+                pass
+        
+        prev = self._prev_competition_count
+        self._prev_competition_count = count
+        
+        # Skip if no previous data (first update)
+        if prev == 0 and count == 0:
+            return
+        
+        # Hidden pileup detection
+        if count >= 3 and local_callers <= 1 and prev < 3:
+            self.show_toast(
+                f"⚠️ Hidden pileup: {local_callers} caller{'s' if local_callers != 1 else ''} locally, "
+                f"{count} at target's end — you can't hear your competition",
+                'warning'
+            )
+        # Significant pileup growth
+        elif count >= prev + 3 and prev > 0:
+            self.show_toast(
+                f"📈 Competition increasing at target: was {prev}, now {count}",
+                'warning'
+            )
+        # Pileup thinning
+        elif count <= prev - 3 and count > 0 and prev > 3:
+            self.show_toast(
+                f"📉 Competition dropping at target: was {prev}, now {count}",
+                'success'
+            )
+    
+    def check_path_change(self, new_path_status, target_call):
+        """Detect and toast path status changes."""
+        prev = self._prev_path_status
+        self._prev_path_status = new_path_status
+        
+        if not prev or not target_call:
+            return
+        
+        # Path opened (wasn't connected/open, now is)
+        if new_path_status in ('Heard by Target', 'Heard in Region') and \
+           prev not in ('Heard by Target', 'Heard in Region'):
+            if new_path_status == 'Heard by Target':
+                self.show_toast(
+                    f"🎯 {target_call} has decoded YOU — call now!",
+                    'success'
+                )
+            else:
+                self.show_toast(
+                    f"🟢 Path to {target_call}'s region confirmed!",
+                    'success'
+                )
+        # Path lost
+        elif new_path_status in ('Not Heard in Region', 'No Path') and \
+             prev in ('Heard by Target', 'Heard in Region'):
+            self.show_toast(
+                f"🔴 Path to {target_call}'s region no longer confirmed",
+                'warning'
+            )
+    
+    def check_near_target_spotted(self, near_target_count, target_call):
+        """Toast when first spotted near target."""
+        prev = self._prev_reporting_near_target
+        self._prev_reporting_near_target = near_target_count
+        
+        if prev == 0 and near_target_count > 0 and target_call:
+            self.show_toast(
+                f"📡 You've been spotted near {target_call}! Keep calling",
+                'success'
+            )
+    
+    def reset_state(self):
+        """Reset state tracking (called on target clear/change)."""
+        self._prev_competition_count = 0
+        self._prev_path_status = ""
+        self._prev_reporting_near_target = 0
+        self._queue.clear()
+        self._dismiss()
+
+
 # --- MODEL: DECODE TABLE ---
 class DecodeTableModel(QAbstractTableModel):
     def __init__(self, headers, config):
@@ -550,7 +726,7 @@ class DecodeTableModel(QAbstractTableModel):
                 elif "Heard in Region" in path:
                     return QColor("#00FF00")  # Green - path to region confirmed
                 elif "Not Heard in Region" in path:
-                    return QColor("#FFA500")  # Orange - reporters exist but don't hear you
+                    return QColor("#FFA500")  # Orange - reporters exist but haven't spotted you
                 elif "Not Transmitting" in path:
                     return QColor("#888888")  # Gray - not transmitting recently
                 elif "No Reporters" in path:
@@ -601,6 +777,21 @@ class DecodeTableModel(QAbstractTableModel):
             # --- FIX: FORCE CENTER ALIGNMENT FOR HEADERS ---
             elif role == Qt.ItemDataRole.TextAlignmentRole:
                 return Qt.AlignmentFlag.AlignCenter
+            # v2.2.0: Column header tooltips for data provenance
+            elif role == Qt.ItemDataRole.ToolTipRole:
+                tooltips = {
+                    "UTC": "Time of decode (UTC)",
+                    "dB": "Signal-to-noise ratio at your receiver",
+                    "DT": "Time offset from expected (seconds)",
+                    "Freq": "Audio frequency offset (Hz)",
+                    "Call": "Station callsign",
+                    "Grid": "Maidenhead grid locator",
+                    "Message": "Decoded FT8/FT4 message",
+                    "Prob %": "Estimated success probability.\nBased on signal strength + PSK Reporter path data.",
+                    "Path": "Propagation status to this station.\nSources: PSK Reporter spots + local decode analysis.",
+                }
+                col_name = self._headers[section]
+                return tooltips.get(col_name)
         return None
 
     def sort(self, column, order):
@@ -844,7 +1035,7 @@ class MainWindow(QMainWindow):
         # --- v2.1.0: DOCK LAYOUT ---
         # Central widget: Decode Table (with info bar and toolbar)
         # Bottom dock: Target View (Dashboard + Band Map) - can undock
-        # Right dock: Local Intelligence - can undock, spans full height
+        # Right dock: Insights panel - can undock, spans full height
         #
         # setCorner: Right dock owns the corners, so it spans full height
         # and the bottom dock (Target View) only spans left of it.
@@ -1017,6 +1208,10 @@ class MainWindow(QMainWindow):
         # --- v2.0.3: Restore column widths ---
         self._restore_column_widths()
         
+        # v2.2.0: Tactical observation toast bar (between info bar and table)
+        self.tactical_toast = TacticalToast()
+        main_layout.addWidget(self.tactical_toast)
+        
         # Table is the central content
         main_layout.addWidget(self.table_view)
         
@@ -1088,7 +1283,7 @@ class MainWindow(QMainWindow):
         
         # Panel visibility toggles - both docks work the same way
         view_menu.addAction(self.target_dock.toggleViewAction())
-        # Insights dock toggle will be added after Local Intelligence setup
+        # Insights dock toggle will be added after Insights panel setup
         self._view_menu = view_menu  # Store reference for adding insights toggle later
         
         view_menu.addSeparator()
@@ -1111,11 +1306,11 @@ class MainWindow(QMainWindow):
             tools_menu.addAction(hunt_list_action)
             tools_menu.addSeparator()
         
-        # Add Local Intelligence menu items if available
+        # Add Insights menu items if available
         if self.local_intel:
             self.local_intel.add_menu_items(tools_menu)
         else:
-            disabled_action = QAction("Local Intelligence (not available)", self)
+            disabled_action = QAction("Insights (not available)", self)
             disabled_action.setEnabled(False)
             tools_menu.addAction(disabled_action)
         
@@ -1332,6 +1527,7 @@ class MainWindow(QMainWindow):
         # Clear internal state
         self.current_target_call = ""
         self.current_target_grid = ""
+        self.analyzer.current_target_grid = ""  # v2.2.0: clear near-target count
         
         # Clear table highlight
         self.model.set_target_call(None)
@@ -1353,6 +1549,9 @@ class MainWindow(QMainWindow):
                 self.local_intel.set_target("", "")
             except Exception as e:
                 logger.debug(f"Error clearing local intel target: {e}")
+        
+        # v2.2.0: Reset tactical toast state
+        self.tactical_toast.reset_state()
     
     # --- v2.0.3: QSO Logged handler (suggested by KC0GU) ---
     def on_qso_logged(self, data):
@@ -1561,6 +1760,7 @@ class MainWindow(QMainWindow):
                 # Store target state for perspective refresh
                 self.current_target_call = dx_call
                 self.current_target_grid = target_grid
+                self.analyzer.current_target_grid = target_grid  # v2.2.0: for near-target count
                 
                 # Update band map
                 self.band_map.set_target_freq(target_freq)
@@ -1597,6 +1797,10 @@ class MainWindow(QMainWindow):
             # --- STORE TARGET STATE FOR PERIODIC REFRESH ---
             self.current_target_call = target_call
             self.current_target_grid = target_grid
+            self.analyzer.current_target_grid = target_grid  # v2.2.0: for near-target count
+            
+            # v2.2.0: Reset tactical toast state for new target
+            self.tactical_toast.reset_state()
             
             # Update dashboard and table highlighting
             self.dashboard.lbl_target.setText(target_call)
@@ -1647,6 +1851,21 @@ class MainWindow(QMainWindow):
                     # --- LOCAL INTELLIGENCE: Update path status ---
                     if self.local_intel:
                         self._update_local_intel_path_status(row)
+                    
+                    # --- v2.2.0: TACTICAL TOAST TRIGGERS ---
+                    # Check competition changes
+                    competition_str = str(row.get('competition', ''))
+                    local_callers = 0
+                    if self.local_intel and hasattr(self.local_intel, 'insights_panel'):
+                        pw = self.local_intel.insights_panel.pileup_widget
+                        if hasattr(pw, '_last_caller_count'):
+                            local_callers = pw._last_caller_count
+                    self.tactical_toast.check_competition_change(competition_str, local_callers)
+                    
+                    # Check path changes
+                    path_str = str(row.get('path', ''))
+                    self.tactical_toast.check_path_change(path_str, self.current_target_call)
+                    
                     break
             
             # Update band map perspective
@@ -2045,7 +2264,7 @@ class MainWindow(QMainWindow):
             f"<p>Real-Time Tactical Assistant for FT8 & FT4</p>"
             f"<p>Copyright © 2025 Peter Hirst (WU2C)</p>"
             f"<p>Licensed under GNU GPL v3</p>"
-            f"<p>Local Intelligence: {local_intel_status}</p>"
+            f"<p>Insights Engine: {local_intel_status}</p>"
             f"<p>Log file: <small>{log_path}</small></p>"
             f"<p><a href='https://github.com/wu2c-peter/qso-predictor'>GitHub Repository</a></p>"
         )

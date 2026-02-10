@@ -35,15 +35,16 @@ class QSOAnalyzer(QObject):
         logger.info(f"Analyzer initialized: my_call={self.my_call}, my_grid={self.my_grid}")
         
         self.current_dial_freq = 0
+        self.current_target_grid = ""  # v2.2.0: Set by main when target changes
         self.band_cache = {}      
         self.my_reception_cache = [] 
         
         # --- NEW: Target Perspective Caches ---
-        # Keyed by receiver callsign -> list of spots (what each station hears)
+        # Keyed by receiver callsign -> list of spots (spots reported by each receiver)
         self.receiver_cache = {}
-        # Keyed by grid[:4] (subsquare) -> list of spots (what stations in that grid hear)
+        # Keyed by grid[:4] (subsquare) -> list of spots (spots reported from that grid)
         self.grid_cache = {}
-        # v2.1.0: Keyed by sender callsign -> list of spots (who hears that station)
+        # v2.1.0: Keyed by sender callsign -> list of spots (who reports that station)
         # Used for Phase 2 Path Intelligence reverse lookups
         self.sender_cache = {}
         
@@ -1141,7 +1142,7 @@ class QSOAnalyzer(QObject):
             try:
                 now = time.time()
                 cutoff = now - (15 * 60)  # Keep 15 mins for BAND MAP history
-                cutoff_recent = now - (3 * 60)  # Keep 3 mins for "who hears me" (tactical relevance)
+                cutoff_recent = now - (3 * 60)  # Keep 3 mins for "who reports me" (tactical relevance)
                 
                 # LOCK: Modifying cache
                 with self.lock:
@@ -1164,13 +1165,22 @@ class QSOAnalyzer(QObject):
                     for k in keys_to_remove:
                         del self.band_cache[k]
                     
-                    # Use shorter window for "who hears me" - recent propagation matters
+                    # Use shorter window for "who reports me" - recent propagation matters
                     # FIX v2.0.4: Safe comparison
                     self.my_reception_cache = [
                         r for r in self.my_reception_cache 
                         if isinstance(r.get('time'), (int, float)) and r['time'] > cutoff_recent
                     ]
-                    hearing_me_count = len(self.my_reception_cache)
+                    reporting_me_count = len(self.my_reception_cache)
+                    
+                    # v2.2.0: Count how many reporters are near current target
+                    near_target_count = 0
+                    if self.current_target_grid and len(self.current_target_grid) >= 2:
+                        target_field = self.current_target_grid[:2]
+                        for rep in self.my_reception_cache:
+                            rep_grid = rep.get('grid', '')
+                            if rep_grid and len(rep_grid) >= 2 and rep_grid[:2] == target_field:
+                                near_target_count += 1
                     
                     # --- NEW: Cleanup receiver_cache ---
                     receiver_keys_to_remove = []
@@ -1225,9 +1235,14 @@ class QSOAnalyzer(QObject):
                         band = self._freq_to_band(self.current_dial_freq)
                         dial_display = f"{band} ({freq_mhz:.3f} MHz) | "
                 
+                # v2.2.0: "reporting" not "hear"; add near-target count
+                reporting_str = f"{reporting_me_count} reporting {self.my_call}"
+                if self.current_target_grid and len(self.current_target_grid) >= 2:
+                    reporting_str += f" ({near_target_count} near target)"
+                
                 self.cache_updated.emit()
                 self.status_message.emit(
-                    f"{dial_display}Tracking {len(unique_senders)} stations | {hearing_me_count} hear {self.my_call}"
+                    f"{dial_display}Tracking {len(unique_senders)} stations | {reporting_str}"
                 )
                 
                 # Diagnostic: log cache health every ~30 seconds (every 15th cycle)
