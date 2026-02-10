@@ -45,9 +45,9 @@ class PileupStatusWidget(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Pileup Status", parent)
         self.setToolTip(
-            "Callers visible in YOUR local decodes.\n"
-            "Note: the target may see more callers that you can't hear.\n"
-            "Check the contrast alert below for target-side competition."
+            "Callers visible in YOUR local decodes + target-side\n"
+            "competition from PSK Reporter data.\n"
+            "When there's a discrepancy, a contrast alert appears."
         )
         self._last_caller_count = 0  # v2.2.0: tracked for tactical toast
         self._setup_ui()
@@ -153,10 +153,11 @@ class PileupStatusWidget(QGroupBox):
     
     def set_target_competition(self, competition_str: str):
         """
-        v2.2.0: Show contrast between local pileup and target-side competition.
+        v2.2.0: Show target-side competition from PSK Reporter data.
         
-        Called when target perspective data updates with competition info.
-        Shows a warning when you see 0 callers locally but the target has competition.
+        Always shows the target competition when available.
+        Highlights with warning styling when there's a discrepancy
+        (you see few callers but target has heavy competition).
         """
         if not competition_str or competition_str == '--':
             self.contrast_label.hide()
@@ -169,20 +170,39 @@ class PileupStatusWidget(QGroupBox):
         except (ValueError, TypeError):
             local_count = 0
         
-        # Only show contrast when there's a meaningful discrepancy
-        # (we see few/no callers but target has competition)
+        # Parse target count
+        target_count = 0
+        if '(' in competition_str:
+            try:
+                target_count = int(competition_str.split('(')[1].split(')')[0])
+            except (ValueError, IndexError):
+                pass
+        
+        # Check for meaningful discrepancy (hidden pileup)
         has_target_competition = any(kw in competition_str.upper() 
                                       for kw in ['HIGH', 'PILEUP', 'MODERATE'])
+        is_hidden = local_count <= 2 and has_target_competition
         
-        if local_count <= 2 and has_target_competition:
+        if is_hidden:
+            # Warning style — significant hidden pileup
             self.contrast_label.setText(
-                f"⚠️ But at target: {competition_str}\n"
+                f"⚠️ At target: {competition_str}\n"
                 f"Hidden pileup — you can't hear your competition!"
             )
             self.contrast_label.setStyleSheet(
                 "color: #ffcc00; font-size: 11px; font-weight: bold; "
                 "padding: 4px; margin-top: 2px; "
                 "background-color: #332200; border-radius: 3px;"
+            )
+            self.contrast_label.show()
+        elif target_count > 0:
+            # Informational — show target competition without alarm
+            self.contrast_label.setText(
+                f"📡 At target: {competition_str}"
+            )
+            self.contrast_label.setStyleSheet(
+                "color: #aaaaaa; font-size: 11px; "
+                "padding: 4px; margin-top: 2px;"
             )
             self.contrast_label.show()
         else:
@@ -948,6 +968,7 @@ class InsightsPanel(QWidget):
         # Current target
         self._current_target: Optional[str] = None
         self._path_status = PathStatus.UNKNOWN
+        self._target_competition: str = ""  # v2.2.0: target-side competition from PSK Reporter
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -1131,6 +1152,19 @@ class InsightsPanel(QWidget):
         self._path_status = status
         self.refresh()
     
+    def set_target_competition(self, competition_str: str):
+        """v2.2.0: Update target-side competition from PSK Reporter data.
+        
+        This bridges the gap between the analyzer (PSK Reporter intelligence)
+        and the Insights panel (local decode intelligence). Without this,
+        the Insights panel has no idea about competition at the target's end.
+        
+        Data flow: analyzer → main_v2 refresh_target_perspective → here → pileup_widget + strategy
+        """
+        self._target_competition = competition_str
+        # Forward to pileup widget for contrast alert display
+        self.pileup_widget.set_target_competition(competition_str)
+    
     def start_updates(self, interval_ms: int = 1000):
         """Start periodic updates."""
         self.update_timer.start(interval_ms)
@@ -1157,13 +1191,19 @@ class InsightsPanel(QWidget):
         # when ML models fail to load (e.g., sklearn version mismatch)
         if self.predictor and self._current_target and not self._predictor_failed:
             try:
+                # v2.2.0: Use target-side competition if available (from PSK Reporter)
+                # This is more accurate than local pileup since it shows what the TARGET sees
+                local_competition = pileup_info.get('size', 0) if pileup_info else 0
+                target_competition_count = self._parse_competition_count(self._target_competition)
+                effective_competition = max(local_competition, target_competition_count)
+                
                 # Build basic features
                 features = {
                     'target_snr': -10,  # Would come from actual data
                     'your_snr': -10,
                     'band_encoded': 5,
                     'hour_utc': 12,
-                    'competition': pileup_info.get('size', 0) if pileup_info else 0,
+                    'competition': effective_competition,
                     'region_encoded': 0,
                     'calls_made': your_status.get('calls_made', 0),
                 }
@@ -1175,7 +1215,10 @@ class InsightsPanel(QWidget):
                 )
                 self.prediction_widget.update_display(prediction)
                 
-                strategy = self.predictor.get_strategy(self._current_target, self._path_status)
+                strategy = self.predictor.get_strategy(
+                    self._current_target, self._path_status,
+                    target_competition=self._target_competition
+                )
                 self.strategy_widget.update_display(strategy)
                 
             except Exception as e:
@@ -1191,6 +1234,18 @@ class InsightsPanel(QWidget):
         else:
             self.prediction_widget.clear()
             self.strategy_widget.clear()
+    
+    @staticmethod
+    def _parse_competition_count(competition_str: str) -> int:
+        """Extract numeric count from competition string like 'High (5)'."""
+        if not competition_str or competition_str == '--':
+            return 0
+        try:
+            if '(' in competition_str:
+                return int(competition_str.split('(')[1].split(')')[0])
+        except (ValueError, IndexError):
+            pass
+        return 0
     
     def clear(self):
         """Clear all displays."""

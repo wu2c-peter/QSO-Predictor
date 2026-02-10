@@ -820,10 +820,7 @@ class BandMapWidget(QWidget):
         # Background for score section
         qp.fillRect(0, section_top, w, section_h, self._colors['background_dark'])
         
-        # Label
-        qp.setFont(self._fonts['small'])
-        qp.setPen(self._colors['label_dim'])
-        qp.drawText(5, section_top + 12, "Score")
+        # v2.2.0: Old "Score" label removed — section label on right replaces it
         
         # 50% line (unproven baseline)
         y_50 = section_top + section_h * 0.5
@@ -860,11 +857,8 @@ class BandMapWidget(QWidget):
                 prev_x = x
                 prev_y = y
         
-        # Show "No perspective data" message if no tier1
-        if not has_tier1_data:
-            qp.setFont(self._fonts['small'])
-            qp.setPen(self._colors['label_medium'])
-            qp.drawText(w - 130, section_top + 12, "(gap-based scoring)")
+        # v2.2.0: Gap-based indicator now shown via dotted line style in legend
+        # Old "(gap-based scoring)" label removed to avoid overlap with section labels
         
         # Show score at current recommendation
         if self.best_offset > 0:
@@ -946,9 +940,9 @@ class BandMapWidget(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             "Offset score"
         )
-        # Bottom section label — just below divider
+        # Bottom section label — offset below divider for visual separation
         qp.drawText(
-            QRectF(0, bottom_top + 1, w - margin, label_h),
+            QRectF(0, bottom_top + 4, w - margin, label_h),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             "Your decodes"
         )

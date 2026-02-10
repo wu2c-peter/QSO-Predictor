@@ -338,13 +338,16 @@ class BayesianPredictor:
         
         return " | ".join(parts)
     
-    def get_strategy(self, target_call: str, path_status: PathStatus = PathStatus.UNKNOWN) -> StrategyRecommendation:
+    def get_strategy(self, target_call: str, path_status: PathStatus = PathStatus.UNKNOWN,
+                     target_competition: str = "") -> StrategyRecommendation:
         """
         Get recommended strategy for working a target.
         
         Args:
             target_call: Target station callsign
             path_status: Current path status
+            target_competition: v2.2.0 - Target-side competition string from PSK Reporter
+                               e.g. "High (5)", "PILEUP (8)", "Low (1)"
             
         Returns:
             StrategyRecommendation with action and reasoning
@@ -366,19 +369,33 @@ class BayesianPredictor:
         elif path_status == PathStatus.PATH_OPEN:
             reasons.append("Path is open")
         
-        # Check pileup state (only if path is OK)
-        if pileup_info and recommended_action != "try_later":
-            size = pileup_info.get('size', 0)
-            
-            if size == 0:
-                reasons.append("No visible competition")
-            elif size > 10:
-                reasons.append(f"Heavy pileup ({size} stations)")
+        # v2.2.0: Determine effective competition (max of local and target-side)
+        local_size = pileup_info.get('size', 0) if pileup_info else 0
+        target_count = self._parse_target_competition_count(target_competition)
+        effective_size = max(local_size, target_count)
+        
+        # Check pileup state using effective competition (only if path is OK)
+        if recommended_action != "try_later":
+            if effective_size == 0:
+                reasons.append("No competition")
+            elif effective_size > 10:
+                reasons.append(f"Heavy pileup ({effective_size} stations)")
                 if path_status != PathStatus.CONNECTED:
                     recommended_action = "wait"
+            elif effective_size >= 4:
+                # v2.2.0: Moderate competition — flag it
+                if target_count > local_size:
+                    reasons.append(f"Hidden pileup at target ({target_count} stations)")
+                else:
+                    reasons.append(f"Moderate competition ({effective_size} stations)")
+            elif effective_size >= 1:
+                if target_count > local_size:
+                    reasons.append(f"Competition at target ({target_count})")
+                else:
+                    reasons.append(f"Light competition ({effective_size})")
             
             # Your position
-            if your_status.get('rank'):
+            if pileup_info and your_status.get('rank'):
                 rank = your_status['rank']
                 if rank == '?':
                     reasons.append("You're calling")
@@ -387,7 +404,7 @@ class BayesianPredictor:
                 elif isinstance(rank, int) and rank <= 3:
                     reasons.append(f"You're #{rank} by signal strength")
                 elif isinstance(rank, int):
-                    reasons.append(f"You're #{rank}/{size} - consider waiting")
+                    reasons.append(f"You're #{rank}/{local_size} - consider waiting")
         
         # Check behavior pattern
         if behavior_info and behavior_info.get('pattern') and recommended_action != "try_later":
@@ -432,6 +449,16 @@ class BayesianPredictor:
             recommended_action=recommended_action,
             reasons=reasons,
         )
+    
+    @staticmethod
+    def _parse_target_competition_count(competition_str: str) -> int:
+        """Extract numeric count from competition string like 'High (5)'."""
+        if not competition_str or '(' not in competition_str:
+            return 0
+        try:
+            return int(competition_str.split('(')[1].split(')')[0])
+        except (ValueError, IndexError):
+            return 0
     
     def invalidate_cache(self, target_call: str = None):
         """
@@ -542,13 +569,15 @@ class HeuristicPredictor:
             confidence="low"  # Heuristic = lower confidence
         )
     
-    def get_strategy(self, target_call: str, path_status: PathStatus = PathStatus.UNKNOWN) -> StrategyRecommendation:
+    def get_strategy(self, target_call: str, path_status: PathStatus = PathStatus.UNKNOWN,
+                     target_competition: str = "") -> StrategyRecommendation:
         """
         Get strategy recommendation using heuristics.
         
         Args:
             target_call: Target callsign
             path_status: Current path status
+            target_competition: v2.2.0 - Target-side competition from PSK Reporter
             
         Returns:
             Strategy recommendation
@@ -571,20 +600,36 @@ class HeuristicPredictor:
             action = 'call_now'
             reasons.append("Path is open")
         
-        # Determine action based on pileup size (only if path is OK)
-        pileup_size = pileup_info.get('size', 0) if pileup_info else 0
+        # v2.2.0: Effective competition = max of local and target-side
+        local_size = pileup_info.get('size', 0) if pileup_info else 0
+        target_count = 0
+        if target_competition and '(' in target_competition:
+            try:
+                target_count = int(target_competition.split('(')[1].split(')')[0])
+            except (ValueError, IndexError):
+                pass
+        effective_size = max(local_size, target_count)
         
         if action != 'try_later':  # Don't override no-path
-            if pileup_size == 0:
+            if effective_size == 0:
                 reasons.append("No competition")
-            elif pileup_size <= 3:
-                reasons.append(f"Light pileup ({pileup_size} callers)")
-            elif pileup_size <= 8:
-                reasons.append(f"Moderate pileup ({pileup_size} callers)")
+            elif effective_size <= 3:
+                if target_count > local_size:
+                    reasons.append(f"Competition at target ({target_count})")
+                else:
+                    reasons.append(f"Light pileup ({effective_size} callers)")
+            elif effective_size <= 8:
+                if target_count > local_size:
+                    reasons.append(f"Hidden pileup at target ({target_count} stations)")
+                else:
+                    reasons.append(f"Moderate pileup ({effective_size} callers)")
             else:
                 if action != 'call_now' or path_status == PathStatus.UNKNOWN:
                     action = 'wait'
-                reasons.append(f"Heavy pileup ({pileup_size} callers)")
+                if target_count > local_size:
+                    reasons.append(f"Heavy hidden pileup ({target_count} at target)")
+                else:
+                    reasons.append(f"Heavy pileup ({effective_size} callers)")
         
         # Check your rank
         if your_status.get('in_pileup'):

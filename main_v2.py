@@ -343,7 +343,7 @@ class TargetDashboard(QFrame):
         comp_hbox.addWidget(self.val_comp)
         path_comp_vbox.addWidget(comp_row)
         
-        path_comp_container.setFixedWidth(210)
+        path_comp_container.setFixedWidth(270)  # v2.2.0: wider to fit "Not Reported in Region"
         layout.addWidget(path_comp_container)
 
         layout.addSpacing(10)
@@ -1819,6 +1819,11 @@ class MainWindow(QMainWindow):
             if self.local_intel:
                 self.local_intel.set_target(target_call, target_grid)
                 self._update_local_intel_path_status(data)
+                
+                # v2.2.0: Forward target competition to insights panel immediately
+                comp_str = str(data.get('competition', ''))
+                if hasattr(self.local_intel, 'insights_panel'):
+                    self.local_intel.insights_panel.set_target_competition(comp_str)
             
             # 3. Update band map perspective display
             self._update_perspective_display()
@@ -1861,6 +1866,14 @@ class MainWindow(QMainWindow):
                         if hasattr(pw, '_last_caller_count'):
                             local_callers = pw._last_caller_count
                     self.tactical_toast.check_competition_change(competition_str, local_callers)
+                    
+                    # v2.2.0: Forward target-side competition to Insights panel
+                    # This bridges PSK Reporter intelligence → Insights for:
+                    # - Pileup contrast alert (local vs target competition)
+                    # - Strategy recommendation (accounts for hidden pileup)
+                    # - Success prediction (effective competition = max of local, target)
+                    if self.local_intel and hasattr(self.local_intel, 'insights_panel'):
+                        self.local_intel.insights_panel.set_target_competition(competition_str)
                     
                     # Check path changes
                     path_str = str(row.get('path', ''))
