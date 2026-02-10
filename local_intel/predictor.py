@@ -370,8 +370,11 @@ class BayesianPredictor:
             reasons.append("Path is open")
         
         # v2.2.0: Determine effective competition (max of local and target-side)
+        # v2.2.1: If target_competition is from local decodes (suffix "local"),
+        # it's the same data source — don't double-count or call it "hidden"
         local_size = pileup_info.get('size', 0) if pileup_info else 0
-        target_count = self._parse_target_competition_count(target_competition)
+        is_local_source = 'local' in target_competition.lower() if target_competition else False
+        target_count = 0 if is_local_source else self._parse_target_competition_count(target_competition)
         effective_size = max(local_size, target_count)
         
         # Check pileup state using effective competition (only if path is OK)
@@ -601,9 +604,12 @@ class HeuristicPredictor:
             reasons.append("Path is open")
         
         # v2.2.0: Effective competition = max of local and target-side
+        # v2.2.1: If target_competition is from local decodes (suffix "local"),
+        # it's the same data source — don't double-count or call it "hidden"
         local_size = pileup_info.get('size', 0) if pileup_info else 0
+        is_local_source = 'local' in target_competition.lower() if target_competition else False
         target_count = 0
-        if target_competition and '(' in target_competition:
+        if not is_local_source and target_competition and '(' in target_competition:
             try:
                 target_count = int(target_competition.split('(')[1].split(')')[0])
             except (ValueError, IndexError):

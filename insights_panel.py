@@ -158,10 +158,16 @@ class PileupStatusWidget(QGroupBox):
         Always shows the target competition when available.
         Highlights with warning styling when there's a discrepancy
         (you see few callers but target has heavy competition).
+        
+        v2.2.1: Skip hidden pileup warning when data is from local decodes
+        (suffix "local") — by definition you CAN see local callers.
         """
         if not competition_str or competition_str == '--':
             self.contrast_label.hide()
             return
+        
+        # v2.2.1: Local decode data is never "hidden" — you can see it
+        is_local_source = 'local' in competition_str.lower()
         
         # Parse local caller count from current display
         local_text = self.size_label.text()
@@ -179,9 +185,10 @@ class PileupStatusWidget(QGroupBox):
                 pass
         
         # Check for meaningful discrepancy (hidden pileup)
+        # Only applies when data is from PSK Reporter (target-side), not local decodes
         has_target_competition = any(kw in competition_str.upper() 
                                       for kw in ['HIGH', 'PILEUP', 'MODERATE'])
-        is_hidden = local_count <= 2 and has_target_competition
+        is_hidden = local_count <= 2 and has_target_competition and not is_local_source
         
         if is_hidden:
             # Warning style — significant hidden pileup
@@ -195,8 +202,9 @@ class PileupStatusWidget(QGroupBox):
                 "background-color: #332200; border-radius: 3px;"
             )
             self.contrast_label.show()
-        elif target_count > 0:
+        elif target_count > 0 and not is_local_source:
             # Informational — show target competition without alarm
+            # v2.2.1: Skip for local decode data — already visible in Competition column
             self.contrast_label.setText(
                 f"📡 At target: {competition_str}"
             )
@@ -1211,8 +1219,11 @@ class InsightsPanel(QWidget):
             try:
                 # v2.2.0: Use target-side competition if available (from PSK Reporter)
                 # This is more accurate than local pileup since it shows what the TARGET sees
+                # v2.2.1: If competition data is from local decodes (suffix "local"),
+                # it's the same source as local_competition — don't double-count
                 local_competition = pileup_info.get('size', 0) if pileup_info else 0
-                target_competition_count = self._parse_competition_count(self._target_competition)
+                is_local_source = 'local' in self._target_competition.lower() if self._target_competition else False
+                target_competition_count = 0 if is_local_source else self._parse_competition_count(self._target_competition)
                 effective_competition = max(local_competition, target_competition_count)
                 
                 # Build basic features

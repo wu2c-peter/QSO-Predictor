@@ -568,7 +568,7 @@ class TacticalToast(QFrame):
         """Detect and toast competition changes.
         
         Args:
-            competition_str: e.g. "High (4)", "PILEUP (8)", "Low (1)"
+            competition_str: e.g. "High (4)", "PILEUP (8)", "Low (1)", "High (6) local"
             local_callers: int count from local pileup tracking
         """
         # Extract count from competition string
@@ -579,6 +579,9 @@ class TacticalToast(QFrame):
             except (ValueError, IndexError):
                 pass
         
+        # v2.2.1: Local decode data is never "hidden" — you can see it
+        is_local_source = 'local' in str(competition_str).lower()
+        
         prev = self._prev_competition_count
         self._prev_competition_count = count
         
@@ -586,8 +589,8 @@ class TacticalToast(QFrame):
         if prev == 0 and count == 0:
             return
         
-        # Hidden pileup detection
-        if count >= 3 and local_callers <= 1 and prev < 3:
+        # Hidden pileup detection — only for PSK Reporter data, not local decodes
+        if count >= 3 and local_callers <= 1 and prev < 3 and not is_local_source:
             self.show_toast(
                 f"⚠️ Hidden pileup: {local_callers} caller{'s' if local_callers != 1 else ''} locally, "
                 f"{count} at target's end — you can't hear your competition",
