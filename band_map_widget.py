@@ -940,9 +940,9 @@ class BandMapWidget(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             "Offset score"
         )
-        # Bottom section label — offset below divider for visual separation
+        # Bottom section label — pushed below legend row for clear separation from score graph
         qp.drawText(
-            QRectF(0, bottom_top + 4, w - margin, label_h),
+            QRectF(0, bottom_top + 22, w - margin, label_h),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             "Your decodes"
         )

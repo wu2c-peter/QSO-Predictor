@@ -495,26 +495,26 @@ class TacticalToast(QFrame):
     
     # Style presets by priority
     STYLES = {
-        'warning': "background-color: #3A2800; color: #FFA500; border: 1px solid #664400; border-radius: 3px; padding: 4px 8px;",
-        'success': "background-color: #002A00; color: #00FF00; border: 1px solid #004400; border-radius: 3px; padding: 4px 8px;",
-        'info':    "background-color: #001A2A; color: #00CCFF; border: 1px solid #003344; border-radius: 3px; padding: 4px 8px;",
+        'warning': "background-color: #3A2800; color: #FFA500; border: 1px solid #664400; border-radius: 3px; padding: 4px 12px; font-weight: bold;",
+        'success': "background-color: #002A00; color: #00FF00; border: 1px solid #004400; border-radius: 3px; padding: 4px 12px; font-weight: bold;",
+        'info':    "background-color: #001A2A; color: #00CCFF; border: 1px solid #003344; border-radius: 3px; padding: 4px 12px; font-weight: bold;",
     }
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(28)
+        self.setFixedHeight(36)
         self.hide()
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 2, 8, 2)
+        layout.setContentsMargins(12, 4, 12, 4)
         layout.setSpacing(4)
         
         self._label = QLabel()
-        self._label.setFont(QFont("Segoe UI", 9))
+        self._label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         layout.addWidget(self._label, 1)
         
         self._dismiss_btn = QLabel("✕")
-        self._dismiss_btn.setStyleSheet("color: #888; font-size: 12px;")
+        self._dismiss_btn.setStyleSheet("color: #888; font-size: 14px; font-weight: bold;")
         self._dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._dismiss_btn.mousePressEvent = lambda e: self._dismiss()
         layout.addWidget(self._dismiss_btn)
