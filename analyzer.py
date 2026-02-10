@@ -854,6 +854,53 @@ class QSOAnalyzer(QObject):
         
         return None, 0
 
+    def _count_local_callers(self, target_call):
+        """
+        Count stations calling the target based on local decode evidence.
+        
+        Evidence comes from two directions:
+        1. Messages TO the target (e.g. "YC9UAB K3BBB FN42") — K3BBB calling target
+           → decode_evidence['K3BBB']['responded_to'] contains 'YC9UAB'
+        2. Messages FROM the target (e.g. "K3BBB YC9UAB -17") — target responding to K3BBB
+           → decode_evidence['YC9UAB']['responded_to'] contains 'K3BBB'
+        
+        Both prove K3BBB is interacting with target = competition.
+        
+        Returns:
+            set of callsigns interacting with the target (excludes our own call)
+        """
+        if not target_call:
+            return set()
+        
+        target_upper = target_call.upper()
+        my_call_upper = self.my_call.upper() if self.my_call else ''
+        callers = set()
+        now = time.time()
+        
+        with self.lock:
+            # Direction 1: Stations that sent messages TO the target
+            for station_call, evidence in self.decode_evidence.items():
+                if now - evidence.get('last_seen', 0) > 120:
+                    continue
+                if station_call == target_upper or station_call == my_call_upper:
+                    continue
+                if target_upper in evidence.get('responded_to', set()):
+                    callers.add(station_call)
+            
+            # Direction 2: Target responded TO someone = target is working them
+            # Only count stations we've also decoded recently (avoids counting
+            # stale entries from target's cumulative responded_to set)
+            target_evidence = self.decode_evidence.get(target_upper, {})
+            if now - target_evidence.get('last_seen', 0) <= 120:
+                for worked_call in target_evidence.get('responded_to', set()):
+                    if worked_call == my_call_upper:
+                        continue
+                    worked_evidence = self.decode_evidence.get(worked_call, {})
+                    if now - worked_evidence.get('last_seen', 0) <= 120:
+                        callers.add(worked_call)
+        
+        return callers
+
     def analyze_decode(self, decode_data, update_callback=None, use_perspective=False):
         """
         Analyze a decode and calculate probability, path status, and competition.
@@ -1028,9 +1075,26 @@ class QSOAnalyzer(QObject):
                     comp_str += " + QRM"
                     qrm_penalty += 20
             
-            # No perspective data available
+            # No perspective data available — check local decode evidence
             if total_perspective == 0 and competition_count == 0:
-                comp_str = "Unknown"
+                local_callers = self._count_local_callers(target_call)
+                if local_callers:
+                    local_count = len(local_callers)
+                    if local_count <= 1:
+                        intensity = "Low"
+                        qrm_penalty = 5
+                    elif local_count <= 3:
+                        intensity = "Medium"
+                        qrm_penalty = 15
+                    elif local_count <= 6:
+                        intensity = "High"
+                        qrm_penalty = 30
+                    else:
+                        intensity = "PILEUP"
+                        qrm_penalty = 50
+                    comp_str = f"{intensity} ({local_count}) local"
+                else:
+                    comp_str = "Unknown"
             
             # Override with path status if connected
             if direct_hit:
