@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.2.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -37,6 +37,17 @@ Hover over any column header in the decode table to see what it means and where 
 - **Path Intelligence reconciliation** — Path column and Path Intelligence widget now cross-reference each other's data sources instead of showing contradictory information
 - **Toast bar readability** — proper sizing and font weight for legibility
 - **Band map label spacing** — "Your decodes" label repositioned for clear visual separation
+
+### v2.2.2
+
+- **FIXED:** Missing menus on Linux/GNOME — added `setNativeMenuBar(False)` to prevent desktop environment from swallowing Edit/View/Tools menus
+- **FIXED:** Removed legacy `main.py` (v1.x entry point) that caused Linux users to launch the wrong interface with missing menus and no tooltip styling
+- **FIXED:** `launcher.py` now correctly launches `main_v2.py`
+- Thanks to **Jallu OH4NDU** for reporting from Ubuntu Server 24.04
+
+### v2.2.1
+
+- **FIXED:** Local decode competition incorrectly triggering hidden pileup warnings
 
 ## Previous Releases
 
@@ -158,6 +169,15 @@ Never miss a wanted station:
 
 ## Version History
 
+### v2.2.2 (March 2026)
+- **FIXED:** Missing menus on Linux/GNOME — `setNativeMenuBar(False)` prevents desktop menu integration from swallowing menus
+- **FIXED:** Removed legacy `main.py` (v1.x entry point) — Linux users launching the wrong file got only File/Help menus
+- **FIXED:** `launcher.py` updated to launch `main_v2.py`
+- **CLEANUP:** Removed tracked `current-state.zip` (already in `.gitignore`)
+
+### v2.2.1 (February 2026)
+- **FIXED:** Local decode competition incorrectly triggering hidden pileup warnings
+
 ### v2.2.0 (February 2026)
 - **NEW:** Tactical observation toasts — real-time alerts for hidden pileups, path changes, competition shifts
 - **NEW:** Pileup contrast intelligence — cross-references local vs target-side competition, warns of hidden pileups
@@ -245,6 +265,7 @@ Contributions welcome! Please open an issue first to discuss proposed changes.
 ### Contributors
 - **Warren KC0GU** — Hunt Mode concept, Clear Target workflow, UI persistence suggestions
 - **Brian KB1OPD** — Band map tooltips and frequency scale requests, auto-clear on QSY, testing and feedback
+- **Jallu OH4NDU** — First Linux bug reports (missing menus, tooltip styling on Ubuntu)
 - **Doug McDonald, CaptainBucko, Bill K3CDY, Edgar K9RE** — Beta testing and feedback
 
 ## License

@@ -51,18 +51,18 @@ def check_and_install():
     return True
 
 def launch_app():
-    logger.info("Launching main.py...")
-    if not os.path.exists("main.py"):
-        logger.error(" [ ERROR ] main.py not found in this folder!")
+    logger.info("Launching main_v2.py...")
+    if not os.path.exists("main_v2.py"):
+        logger.error(" [ ERROR ] main_v2.py not found in this folder!")
         return
 
     try:
-        # Run main.py
-        result = subprocess.run([sys.executable, "main.py"])
+        # Run main_v2.py
+        result = subprocess.run([sys.executable, "main_v2.py"])
         if result.returncode != 0:
             logger.warning(f"Application exited with error code: {result.returncode}")
     except Exception as e:
-        logger.error(f"Failed to launch main.py: {e}")
+        logger.error(f"Failed to launch main_v2.py: {e}")
 
 if __name__ == "__main__":
     try:

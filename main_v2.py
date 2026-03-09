@@ -1254,6 +1254,11 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.target_dock)
         
         # Menu
+        # v2.2.2: Force menu bar inside app window on Linux (prevents GNOME/Ubuntu
+        # global menu integration from swallowing Edit/View/Tools menus).
+        # Not needed on macOS (native menu bar works correctly) or Windows (no global menu bar).
+        if sys.platform.startswith('linux'):
+            self.menuBar().setNativeMenuBar(False)
         menu = self.menuBar()
         
         # --- FILE MENU ---
