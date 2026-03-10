@@ -2024,15 +2024,15 @@ class MainWindow(QMainWindow):
         # Toast triggers for significant state transitions
         target = self.current_target_call
         if state == 'cqing' and prev_state in ('working_other', 'completing_with_other', 'idle', 'unknown'):
-            self.toast_bar.show_toast(
+            self.tactical_toast.show_toast(
                 f"🎯 {target} is now CQing — call now!", 'success'
             )
         elif state == 'working_you' and prev_state != 'working_you':
-            self.toast_bar.show_toast(
+            self.tactical_toast.show_toast(
                 f"📡 {target} is responding to YOU!", 'success'
             )
         elif state == 'working_other' and prev_state == 'cqing':
-            self.toast_bar.show_toast(
+            self.tactical_toast.show_toast(
                 f"📡 {target} working {other_call} — competition confirmed", 'info'
             )
     
