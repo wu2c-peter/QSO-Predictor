@@ -283,17 +283,17 @@ class UDPHandler(QObject):
 
                 self._status_received += 1
                 
-                # Log first status to confirm data is flowing
-                if not self._first_status_logged:
-                    logger.info(f"UDP: First status received - freq={dial_freq}, dx_call={dx_call or '(none)'}")
-                    logger.info("UDP: Status updates flowing (not logged individually)")
-                    self._first_status_logged = True
-                
                 # v2.3.0: Parse additional fields for Special Operation Mode
                 # Fields 12-18 may not be present in older WSJT-X/JTDX versions
                 de_call = ""
                 de_grid = ""
                 special_mode = 0  # 0=None, 5=WW DIGI, 6=Fox, 7=Hound
+                
+                # Diagnostic: log remaining bytes on first status (helps debug JTDX vs WSJT-X)
+                if not self._first_status_logged:
+                    remaining = len(data) - idx
+                    logger.info(f"UDP: Status msg total={len(data)} bytes, idx after field 11={idx}, remaining={remaining}")
+                
                 try:
                     # 12. DE call (utf8)
                     de_call, idx = self._read_utf8(data, idx)
@@ -311,8 +311,16 @@ class UDPHandler(QObject):
                     if idx < len(data):
                         special_mode = data[idx]
                         idx += 1
-                except (IndexError, struct.error):
-                    pass  # Older versions may not send these fields
+                except (IndexError, struct.error) as e:
+                    if not self._first_status_logged:
+                        logger.info(f"UDP: Extended field parsing stopped: {e}")
+                
+                # Log first status with full diagnostic info
+                if not self._first_status_logged:
+                    logger.info(f"UDP: First status received - freq={dial_freq}, dx_call={dx_call or '(none)'}")
+                    logger.info(f"UDP: Extended fields: de_call='{de_call}', de_grid='{de_grid}', special_mode={special_mode}")
+                    logger.info("UDP: Status updates flowing (not logged individually)")
+                    self._first_status_logged = True
                 
                 # Emit the update!
                 self.status_update.emit({
