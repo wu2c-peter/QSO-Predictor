@@ -279,6 +279,7 @@ class UDPHandler(QObject):
             # 11. Tx DF (4 bytes - quint32)
             if idx + 4 <= len(data):
                 tx_df = struct.unpack('>I', data[idx:idx+4])[0]
+                idx += 4
 
                 self._status_received += 1
                 
@@ -288,6 +289,31 @@ class UDPHandler(QObject):
                     logger.info("UDP: Status updates flowing (not logged individually)")
                     self._first_status_logged = True
                 
+                # v2.3.0: Parse additional fields for Special Operation Mode
+                # Fields 12-18 may not be present in older WSJT-X/JTDX versions
+                de_call = ""
+                de_grid = ""
+                special_mode = 0  # 0=None, 5=WW DIGI, 6=Fox, 7=Hound
+                try:
+                    # 12. DE call (utf8)
+                    de_call, idx = self._read_utf8(data, idx)
+                    # 13. DE grid (utf8)
+                    de_grid, idx = self._read_utf8(data, idx)
+                    # 14. DX grid (utf8)
+                    _, idx = self._read_utf8(data, idx)
+                    # 15. Tx Watchdog (bool)
+                    idx += 1
+                    # 16. Sub-mode (utf8)
+                    _, idx = self._read_utf8(data, idx)
+                    # 17. Fast mode (bool)
+                    idx += 1
+                    # 18. Special Operation Mode (quint8)
+                    if idx < len(data):
+                        special_mode = data[idx]
+                        idx += 1
+                except (IndexError, struct.error):
+                    pass  # Older versions may not send these fields
+                
                 # Emit the update!
                 self.status_update.emit({
                     'dial_freq': dial_freq,
@@ -295,6 +321,9 @@ class UDPHandler(QObject):
                     'tx_df': tx_df,
                     'tx_enabled': tx_enabled,
                     'transmitting': transmitting,
+                    'de_call': de_call,          # v2.3.0: our callsign from JTDX
+                    'de_grid': de_grid,          # v2.3.0: our grid from JTDX
+                    'special_mode': special_mode, # v2.3.0: 0=None, 6=Fox, 7=Hound
                 })
         except Exception as e:
             logger.debug(f"UDP: Status parse error: {e}")

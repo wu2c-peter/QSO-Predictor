@@ -319,7 +319,7 @@ class LocalIntelligence(QObject):
         finally:
             self._setting_target = False
     
-    def set_path_status(self, status: PathStatus):
+    def set_path_status(self, status: PathStatus, my_snr: int = None, reporter: str = None):
         """
         Update the path status to current target.
         
@@ -327,12 +327,14 @@ class LocalIntelligence(QObject):
         
         Args:
             status: Current path status
+            my_snr: SNR reported for our signal (dB), if available
+            reporter: Callsign of station that reported us
         """
         if not self._enabled:
             return
         
         if self.insights_panel:
-            self.insights_panel.set_path_status(status)
+            self.insights_panel.set_path_status(status, my_snr=my_snr, reporter=reporter)
     
     def update_near_me(self, near_me_data: dict):
         """

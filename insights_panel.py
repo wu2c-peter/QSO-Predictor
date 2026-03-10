@@ -380,7 +380,8 @@ class NearMeWidget(QGroupBox):
                     self.analysis_labels[i].setText(f"⚠️ {result['error']}")
                     self.analysis_labels[i].show()
     
-    def update_display(self, near_me_data: Optional[Dict], path_status: 'PathStatus' = None):
+    def update_display(self, near_me_data: Optional[Dict], path_status: 'PathStatus' = None,
+                       my_snr: int = None, snr_reporter: str = None):
         """
         Update display with near-me station data.
         
@@ -394,6 +395,8 @@ class NearMeWidget(QGroupBox):
                 }
             path_status: Current path status (CONNECTED, PATH_OPEN, NO_PATH, UNKNOWN)
                          Used to customize insight text
+            my_snr: SNR (dB) reported for our signal, if available
+            snr_reporter: Callsign of station that reported our SNR
         """
         self._near_me_data = near_me_data
         
@@ -433,14 +436,22 @@ class NearMeWidget(QGroupBox):
             if path_status == PathStatus.CONNECTED:
                 self.status_label.setText("Your signal confirmed!")
                 self.status_label.setStyleSheet("color: #00ffff;")  # Cyan
-                self.insight_label.setText("💡 Target decoded you — call now!")
+                if my_snr is not None:
+                    snr_str = f"{my_snr:+d}" if isinstance(my_snr, int) else str(my_snr)
+                    self.insight_label.setText(f"💡 Target decoded you at {snr_str} dB — call now!")
+                else:
+                    self.insight_label.setText("💡 Target decoded you — call now!")
                 # Override source label — evidence came from PSK Reporter "who heard me" data
                 self.source_label.setText("✓ Confirmed via PSK Reporter")
                 self.source_label.setStyleSheet("color: #00ffff; font-size: 10px;")
             elif path_status == PathStatus.PATH_OPEN:
                 self.status_label.setText("Your signal reported nearby")
                 self.status_label.setStyleSheet("color: #00ff00;")  # Green
-                self.insight_label.setText("💡 Path is open! Keep calling")
+                if my_snr is not None and snr_reporter:
+                    snr_str = f"{my_snr:+d}" if isinstance(my_snr, int) else str(my_snr)
+                    self.insight_label.setText(f"💡 Spotted at {snr_str} dB by {snr_reporter} — path open!")
+                else:
+                    self.insight_label.setText("💡 Path is open! Keep calling")
                 # Override source label — evidence came from PSK Reporter "who heard me" data
                 self.source_label.setText("✓ Spotted by receiver in target's region")
                 self.source_label.setStyleSheet("color: #88ff88; font-size: 10px;")
@@ -993,6 +1004,8 @@ class InsightsPanel(QWidget):
         # Current target
         self._current_target: Optional[str] = None
         self._path_status = PathStatus.UNKNOWN
+        self._my_snr_at_target = None  # v2.3.0: SNR reported for our signal at target
+        self._my_snr_reporter = None   # v2.3.0: Who reported our SNR
         self._target_competition: str = ""  # v2.2.0: target-side competition from PSK Reporter
         self._near_me_count: int = 0  # v2.1.5: near-me stations for effective path status
     
@@ -1173,9 +1186,17 @@ class InsightsPanel(QWidget):
         # Note: Removed QApplication.processEvents() - it can cause re-entrant 
         # calls to set_target if UDP events are queued, leading to oscillation/crashes
     
-    def set_path_status(self, status: PathStatus):
-        """Update path status (from main app's perspective)."""
+    def set_path_status(self, status: PathStatus, my_snr: int = None, reporter: str = None):
+        """Update path status (from main app's perspective).
+        
+        Args:
+            status: Current path status enum
+            my_snr: SNR reported for our signal (dB), if available
+            reporter: Callsign of station that reported us
+        """
         self._path_status = status
+        self._my_snr_at_target = my_snr
+        self._my_snr_reporter = reporter
         self.refresh()
     
     def set_target_competition(self, competition_str: str):
@@ -1309,7 +1330,10 @@ class InsightsPanel(QWidget):
         self._near_me_count = len(near_me_data.get('stations', [])) if near_me_data else 0
         
         # Pass current path status so widget can give context-aware insights
-        self.near_me_widget.update_display(near_me_data, self._path_status)
+        self.near_me_widget.update_display(
+            near_me_data, self._path_status,
+            my_snr=self._my_snr_at_target, snr_reporter=self._my_snr_reporter
+        )
     
     def _on_path_analyze_requested(self, stations: list):
         """

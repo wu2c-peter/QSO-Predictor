@@ -960,11 +960,15 @@ class QSOAnalyzer(QObject):
                     has_nearby_reporters = True
 
         # Check for direct connection (target heard us)
+        my_snr_at_target = None
+        my_snr_reporter = None
         for my_rep in my_reception_snapshot:
             if my_rep['receiver'] == target_call:
                 geo_bonus = 100
                 direct_hit = True
                 path_str = "Heard by Target"
+                my_snr_at_target = my_rep.get('snr', None)
+                my_snr_reporter = target_call
                 break
         
         # Check for path open (nearby station heard us)
@@ -978,10 +982,14 @@ class QSOAnalyzer(QObject):
                     if target_minor and r_grid[:4] == target_minor:
                         geo_bonus = 25 
                         path_str = "Reported in Region"
+                        my_snr_at_target = my_rep.get('snr', None)
+                        my_snr_reporter = my_rep.get('receiver', '')
                         break
                     elif r_grid[:2] == target_major:
                         geo_bonus = 15
                         path_str = "Reported in Region"
+                        my_snr_at_target = my_rep.get('snr', None)
+                        my_snr_reporter = my_rep.get('receiver', '')
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
@@ -1011,6 +1019,8 @@ class QSOAnalyzer(QObject):
             else: geo_bonus = -15 
         
         decode_data['path'] = path_str
+        decode_data['my_snr_at_target'] = my_snr_at_target
+        decode_data['my_snr_reporter'] = my_snr_reporter
         
         # --- COMPETITION (expensive, only for selected target) ---
         if use_perspective:
@@ -1152,9 +1162,13 @@ class QSOAnalyzer(QObject):
                     has_nearby_reporters = True
 
         # Check for direct connection (target heard us)
+        my_snr_at_target = None
+        my_snr_reporter = None
         for my_rep in my_reception_snapshot:
             if my_rep['receiver'] == target_call:
                 path_str = "Heard by Target"
+                my_snr_at_target = my_rep.get('snr', None)
+                my_snr_reporter = target_call
                 break
         
         # Check for path open (nearby station heard us)
@@ -1167,9 +1181,13 @@ class QSOAnalyzer(QObject):
                 if len(r_grid) >= 4:
                     if target_minor and r_grid[:4] == target_minor:
                         path_str = "Reported in Region"
+                        my_snr_at_target = my_rep.get('snr', None)
+                        my_snr_reporter = my_rep.get('receiver', '')
                         break
                     elif r_grid[:2] == target_major:
                         path_str = "Reported in Region"
+                        my_snr_at_target = my_rep.get('snr', None)
+                        my_snr_reporter = my_rep.get('receiver', '')
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
@@ -1190,6 +1208,8 @@ class QSOAnalyzer(QObject):
                 path_str = "No Reporters in Region"
         
         decode_data['path'] = path_str
+        decode_data['my_snr_at_target'] = my_snr_at_target
+        decode_data['my_snr_reporter'] = my_snr_reporter
 
     def stop(self):
         self.running = False

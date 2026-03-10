@@ -61,6 +61,9 @@ class BandMapWidget(QWidget):
         self.manual_override_time = 0
         self.manual_override_duration = 3.0  # seconds
         
+        # v2.3.0: Fox/Hound mode — clamp recommendations to 1000+ Hz
+        self.hound_mode = False
+        
         # === PERFORMANCE FIX: Cache all paint objects ===
         self._init_paint_cache()
         
@@ -276,6 +279,17 @@ class BandMapWidget(QWidget):
         self.target_freq = freq
         self.update()  # PERFORMANCE FIX: was repaint()
 
+    def set_hound_mode(self, active):
+        """v2.3.0: Enable/disable Hound mode frequency clamping.
+        When active, recommendations are clamped to 1000+ Hz (Fox TX zone below)."""
+        if self.hound_mode != active:
+            self.hound_mode = active
+            if active:
+                logger.info("Fox/Hound: Hound mode detected — clamping recommendations to 1000+ Hz")
+            else:
+                logger.info("Fox/Hound: Hound mode disabled — full frequency range restored")
+            self.update()
+
     def _tick(self):
         self._cleanup_data()
         
@@ -299,7 +313,8 @@ class BandMapWidget(QWidget):
             freq = int((x / w) * self.bandwidth)
             
             # Clamp to valid range
-            freq = max(200, min(2800, freq))
+            min_freq = 1000 if self.hound_mode else 200
+            freq = max(min_freq, min(2800, freq))
             
             # Set manual override
             self.best_offset = freq
@@ -413,6 +428,11 @@ class BandMapWidget(QWidget):
         self.score_map[0:200] = 0
         self.score_map[2800:3000] = 0
         
+        # v2.3.0: Fox/Hound — zero out Fox TX zone when in Hound mode
+        if self.hound_mode:
+            local_busy[0:1000] = True
+            self.score_map[0:1000] = 0
+        
         # Mark locally busy areas as low score
         for i in range(self.bandwidth):
             if local_busy[i]:
@@ -495,6 +515,13 @@ class BandMapWidget(QWidget):
                 self.score_map[i] = 35  # Busy area
             else:
                 self.score_map[i] = 25  # Very congested
+        
+        # v2.3.0: Soft edge penalty — gentle ramp near band edges
+        # Discourages recommendations near edges where decoder performance degrades
+        for i in range(200, 300):
+            self.score_map[i] *= (i - 200) / 100.0  # 0% at 200, 100% at 300
+        for i in range(2700, 2800):
+            self.score_map[i] *= (2800 - i) / 100.0  # 100% at 2700, 0% at 2800
         
         # === STEP 6: Check current position status ===
         current_idx = max(200, min(2800, self.best_offset))
@@ -627,6 +654,20 @@ class BandMapWidget(QWidget):
         
         # 1. Background - use cached color
         qp.fillRect(0, 0, w, h, self._colors['background'])
+        
+        # v2.3.0: Fox/Hound mode — dim the Fox TX zone (0-1000 Hz)
+        if self.hound_mode:
+            fox_x = int((1000 / self.bandwidth) * w)
+            qp.fillRect(0, 0, fox_x, h, QColor(80, 0, 0, 60))  # Dark red overlay
+            qp.setPen(QColor("#FF4444"))
+            qp.setFont(self._fonts.get('medium_bold', QFont("Consolas", 9, QFont.Weight.Bold)))
+            qp.drawText(5, top_h // 2, "FOX TX ZONE")
+            # Draw boundary line at 1000 Hz
+            pen = QPen(QColor("#FF4444"))
+            pen.setStyle(Qt.PenStyle.DashLine)
+            pen.setWidth(1)
+            qp.setPen(pen)
+            qp.drawLine(fox_x, 0, fox_x, h)
         
         # Grid lines - use cached pen
         qp.setPen(self._pens['grid'])

@@ -343,6 +343,21 @@ class TargetDashboard(QFrame):
         comp_hbox.addWidget(self.val_comp)
         path_comp_vbox.addWidget(comp_row)
         
+        # v2.3.0: Target Activity Status row
+        status_row = QWidget()
+        status_hbox = QHBoxLayout(status_row)
+        status_hbox.setContentsMargins(0,0,0,0)
+        status_hbox.setSpacing(4)
+        lbl_status_title = QLabel("Status")
+        lbl_status_title.setObjectName("header")
+        lbl_status_title.setFixedWidth(75)
+        lbl_status_title.setToolTip("What the target station is doing right now.\nSource: Local decodes (real-time)")
+        self.val_activity = QLabel("--")
+        self.val_activity.setObjectName("data")
+        status_hbox.addWidget(lbl_status_title)
+        status_hbox.addWidget(self.val_activity)
+        path_comp_vbox.addWidget(status_row)
+        
         path_comp_container.setFixedWidth(270)  # v2.2.0: wider to fit "Not Reported in Region"
         layout.addWidget(path_comp_container)
 
@@ -383,6 +398,8 @@ class TargetDashboard(QFrame):
             self.val_path.setStyleSheet("")
             self.val_comp.setText("--")
             self.val_comp.setStyleSheet("")
+            self.val_activity.setText("--")
+            self.val_activity.setStyleSheet("")
             return
 
         self.lbl_target.setText(data.get('call', '???'))
@@ -411,7 +428,13 @@ class TargetDashboard(QFrame):
         
         # Path status
         path = str(data.get('path', '--'))
-        self.val_path.setText(path)
+        my_snr = data.get('my_snr_at_target', None)
+        # v2.3.0: Append SNR to path display when available
+        path_display = path
+        if my_snr is not None and path in ("Heard by Target", "Reported in Region"):
+            snr_str = f"{my_snr:+d}" if isinstance(my_snr, int) else str(my_snr)
+            path_display = f"{path} ({snr_str} dB)"
+        self.val_path.setText(path_display)
         if "Heard by Target" in path:
             self.val_path.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
         elif "Not Reported in Region" in path:
@@ -466,6 +489,39 @@ class TargetDashboard(QFrame):
         # v2.1.0: Set copy value for click-to-clipboard
         if str(rec_freq) != "----":
             self.lbl_rec.set_copy_value(rec_freq)
+
+    def update_activity(self, state, other_call=None):
+        """v2.3.0: Update target activity state display.
+        
+        Args:
+            state: Activity state string
+            other_call: Callsign of station target is working (if applicable)
+        """
+        if state == 'cqing':
+            self.val_activity.setText("CQing")
+            self.val_activity.setStyleSheet("color: #00FF00; font-weight: bold;")
+        elif state == 'working_you':
+            self.val_activity.setText("Working YOU")
+            self.val_activity.setStyleSheet("color: #00FFFF; font-weight: bold;")
+        elif state == 'completing_with_you':
+            self.val_activity.setText("QSO complete!")
+            self.val_activity.setStyleSheet("color: #00FFFF; font-weight: bold;")
+        elif state == 'working_other':
+            display_call = other_call[:8] if other_call else "?"
+            self.val_activity.setText(f"Working {display_call}")
+            self.val_activity.setStyleSheet("color: #FFA500; font-weight: bold;")
+        elif state == 'completing_with_other':
+            self.val_activity.setText("Finishing QSO")
+            self.val_activity.setStyleSheet("color: #FFFF00; font-weight: bold;")
+        elif state == 'being_called':
+            self.val_activity.setText("Being called")
+            self.val_activity.setStyleSheet("color: #DDDDDD;")
+        elif state == 'idle':
+            self.val_activity.setText("Idle")
+            self.val_activity.setStyleSheet("color: #888888;")
+        else:
+            self.val_activity.setText("--")
+            self.val_activity.setStyleSheet("color: #666666;")
 
 
 # --- DELEGATE: Custom painting for hunt highlighting ---
@@ -888,6 +944,70 @@ class ClickableCopyLabel(QLabel):
             self.copied.emit(f"Copied to clipboard: {self._copy_value} Hz")
 
 
+# --- v2.3.0: TARGET ACTIVITY STATE PARSER ---
+def parse_target_activity(message, target_call, my_call):
+    """Parse an FT8/FT4 message to determine target's activity state.
+    
+    Analyzes decoded messages to infer what the target station is doing:
+    - CQing (open for calls)
+    - Working you (responding to your callsign)  
+    - Working another station (competition confirmed)
+    - Being called by someone
+    
+    Args:
+        message: Raw FT8 message string (e.g., "WU2C J51A -04")
+        target_call: Current target callsign (uppercase)
+        my_call: Our callsign (uppercase)
+    
+    Returns:
+        (state, other_call) tuple, or (None, None) if message doesn't involve target.
+        state values: 'cqing', 'working_you', 'completing_with_you',
+                      'working_other', 'completing_with_other', 'being_called'
+    """
+    if not message or not target_call:
+        return None, None
+    
+    parts = message.split()
+    if len(parts) < 2:
+        return None, None
+    
+    target_upper = target_call.upper()
+    my_upper = my_call.upper() if my_call else ""
+    
+    # Target is CQing: "CQ J51A GF25" or "CQ DX J51A GF25"
+    if parts[0] == 'CQ':
+        if target_upper in parts:
+            return 'cqing', None
+        return None, None
+    
+    # Target in Position 2 — they are transmitting TO the station in Position 1
+    # Pattern: "OTHERCALL TARGET payload"
+    if len(parts) >= 3 and parts[1] == target_upper:
+        other_call = parts[0]
+        payload = ' '.join(parts[2:])
+        
+        if my_upper and other_call == my_upper:
+            # Target is working US
+            if 'RR73' in payload or payload.strip() == '73':
+                return 'completing_with_you', my_upper
+            return 'working_you', my_upper
+        else:
+            # Target is working someone else
+            if 'RR73' in payload or payload.strip() == '73':
+                return 'completing_with_other', other_call
+            return 'working_other', other_call
+    
+    # Target in Position 1 — someone is calling/responding TO target
+    # Pattern: "TARGET CALLER payload"
+    if len(parts) >= 2 and parts[0] == target_upper:
+        caller = parts[1] if len(parts) >= 2 else None
+        # Don't count if caller looks like a grid or report
+        if caller and len(caller) >= 3 and any(c.isdigit() for c in caller) and any(c.isalpha() for c in caller):
+            return 'being_called', caller
+    
+    return None, None
+
+
 # --- MAIN APPLICATION WINDOW ---
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -925,6 +1045,13 @@ class MainWindow(QMainWindow):
         self.current_target_call = ""
         self.current_target_grid = ""
         self.jtdx_last_dx_call = ""  # Track what JTDX last sent (separate from our selection)
+        
+        # v2.3.0: Target Activity State tracking
+        self._target_activity_state = 'unknown'
+        self._target_activity_other = None  # Who target is working
+        self._target_activity_time = 0  # Last activity timestamp
+        self._inferred_competitors = {}  # {callsign: timestamp} — competitors inferred from target responses
+        self._activity_idle_timeout = 120  # Seconds before state goes to 'idle'
         
         # --- UPDATE CHECK STATE ---
         self.update_available = None  # Will hold version string if update available
@@ -1540,6 +1667,12 @@ class MainWindow(QMainWindow):
         self.current_target_grid = ""
         self.analyzer.current_target_grid = ""  # v2.2.0: clear near-target count
         
+        # v2.3.0: Clear target activity state
+        self._target_activity_state = 'unknown'
+        self._target_activity_other = None
+        self._target_activity_time = 0
+        self._inferred_competitors.clear()
+        
         # Clear table highlight
         self.model.set_target_call(None)
         
@@ -1660,6 +1793,17 @@ class MainWindow(QMainWindow):
                     'dt': item.get('dt', 0.0),
                     'mode': 'FT8',
                 })
+            
+            # --- v2.3.0: TARGET ACTIVITY STATE ---
+            if self.current_target_call:
+                my_call = self.config.get('ANALYSIS', 'my_callsign', fallback='')
+                state, other = parse_target_activity(
+                    item.get('message', ''),
+                    self.current_target_call.upper(),
+                    my_call.upper()
+                )
+                if state:
+                    self._update_target_activity(state, other)
         
         # Disable sorting during batch add to prevent jitter
         self.table_view.setSortingEnabled(False)
@@ -1722,6 +1866,13 @@ class MainWindow(QMainWindow):
         # Update Band Map (Yellow Line)
         cur_tx = status.get('tx_df', 0)
         self.band_map.set_current_tx_freq(cur_tx)
+        
+        # v2.3.0: Fox/Hound mode detection from UDP Special Operation Mode
+        special_mode = status.get('special_mode', 0)
+        # Hound mode: value 6 (older WSJT-X) or 7 (newer with WW DIGI)
+        is_hound = special_mode in (6, 7)
+        if hasattr(self.band_map, 'set_hound_mode'):
+            self.band_map.set_hound_mode(is_hound)
         
         # --- LOCAL INTELLIGENCE: Update TX status ---
         if self.local_intel:
@@ -1839,31 +1990,106 @@ class MainWindow(QMainWindow):
             # 3. Update band map perspective display
             self._update_perspective_display()
 
+    def _update_target_activity(self, state, other_call):
+        """v2.3.0: Update target activity state from decoded message.
+        
+        Called when a local decode reveals what the target is doing.
+        
+        Args:
+            state: Activity state from parse_target_activity()
+            other_call: Callsign of station target is interacting with
+        """
+        import time as _time
+        now = _time.time()
+        prev_state = self._target_activity_state
+        
+        self._target_activity_state = state
+        self._target_activity_other = other_call
+        self._target_activity_time = now
+        
+        # Track inferred competitors (stations we know are competing because 
+        # the target responded to them, even if we never saw them call)
+        if state in ('working_other', 'completing_with_other') and other_call:
+            self._inferred_competitors[other_call] = now
+        
+        # Clean up old inferred competitors (>2 minutes)
+        cutoff = now - 120
+        self._inferred_competitors = {
+            c: t for c, t in self._inferred_competitors.items() if t > cutoff
+        }
+        
+        # Update dashboard display
+        self.dashboard.update_activity(state, other_call)
+        
+        # Toast triggers for significant state transitions
+        target = self.current_target_call
+        if state == 'cqing' and prev_state in ('working_other', 'completing_with_other', 'idle', 'unknown'):
+            self.toast_bar.show_toast(
+                f"🎯 {target} is now CQing — call now!", 'success'
+            )
+        elif state == 'working_you' and prev_state != 'working_you':
+            self.toast_bar.show_toast(
+                f"📡 {target} is responding to YOU!", 'success'
+            )
+        elif state == 'working_other' and prev_state == 'cqing':
+            self.toast_bar.show_toast(
+                f"📡 {target} working {other_call} — competition confirmed", 'info'
+            )
+    
+    def _check_target_activity_idle(self):
+        """v2.3.0: Check if target activity should transition to idle.
+        Called from refresh_target_perspective timer."""
+        import time as _time
+        if (self._target_activity_state not in ('idle', 'unknown') and 
+            self._target_activity_time > 0 and
+            _time.time() - self._target_activity_time > self._activity_idle_timeout):
+            self._target_activity_state = 'idle'
+            self._target_activity_other = None
+            self.dashboard.update_activity('idle')
+
     def _update_local_intel_path_status(self, row_data):
         """Update Local Intelligence with current path status."""
         if not self.local_intel:
             return
         
         path = str(row_data.get('path', ''))
+        my_snr = row_data.get('my_snr_at_target', None)
+        my_snr_reporter = row_data.get('my_snr_reporter', None)
         
         if "Heard by Target" in path:
-            self.local_intel.set_path_status(PathStatus.CONNECTED)
+            self.local_intel.set_path_status(PathStatus.CONNECTED, my_snr=my_snr, reporter=my_snr_reporter)
         elif "Not Reported in Region" in path:
             # MUST check "Not Reported" BEFORE "Reported" — 
             # "Not Reported in Region" contains "Reported in Region"
             self.local_intel.set_path_status(PathStatus.NO_PATH)
         elif "Reported in Region" in path:
-            self.local_intel.set_path_status(PathStatus.PATH_OPEN)
+            self.local_intel.set_path_status(PathStatus.PATH_OPEN, my_snr=my_snr, reporter=my_snr_reporter)
         else:
             self.local_intel.set_path_status(PathStatus.UNKNOWN)
 
     def refresh_target_perspective(self):
         """Called periodically by timer to keep target perspective current."""
         if self.current_target_call:
+            # v2.3.0: Check if target activity should transition to idle
+            self._check_target_activity_idle()
+            
             # Find and re-analyze the selected target with full perspective
             for row in self.model._data:
                 if row.get('call') == self.current_target_call:
                     self.analyzer.analyze_decode(row, use_perspective=True)
+                    
+                    # v2.3.0: Augment competition with inferred competitors
+                    # (stations we know about from target responses, not visible callers)
+                    if self._inferred_competitors:
+                        comp = row.get('competition', '')
+                        inferred_count = len(self._inferred_competitors)
+                        if comp in ('Clear', 'Unknown'):
+                            # Replace with inferred data
+                            if inferred_count == 1:
+                                row['competition'] = f"Low ({inferred_count}) inferred"
+                            else:
+                                row['competition'] = f"Moderate ({inferred_count}) inferred"
+                    
                     self.dashboard.update_data(row)
                     
                     # --- LOCAL INTELLIGENCE: Update path status ---
