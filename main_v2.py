@@ -433,7 +433,9 @@ class TargetDashboard(QFrame):
         path_display = path
         if my_snr is not None and path in ("Heard by Target", "Reported in Region"):
             snr_str = f"{my_snr:+d}" if isinstance(my_snr, int) else str(my_snr)
-            path_display = f"{path} ({snr_str} dB)"
+            # Shorten labels to fit with SNR ("Rprtd" not "Rptd" — latter implies "Repeated")
+            short = "Heard by Target" if path == "Heard by Target" else "Rprtd in Region"
+            path_display = f"{short} ({snr_str} dB)"
         self.val_path.setText(path_display)
         if "Heard by Target" in path:
             self.val_path.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
