@@ -95,6 +95,14 @@ Qt stylesheets **completely override** model `BackgroundRole` data. If you set b
 
 Linux desktop themes often don't style Qt tooltips properly, resulting in invisible text (dark on dark). The app sets explicit `QToolTip` stylesheet at the `QApplication` level in `main_v2.py`.
 
+### JTDX Does Not Report Special Operation Mode via UDP
+
+Confirmed through testing (March 2026): JTDX sends the extended UDP status fields (DE call, DE grid parse correctly) but `special_mode` is always 0 regardless of Hound mode setting. Tested across three configurations including with/without Split rig control.
+
+JTDX also does not enforce the 1000 Hz Hound TX boundary — "Use hound TX frequency control" checkbox is intermittently grayed out, and even when available, TX below 1000 Hz is not blocked. This may be related to using Ham Radio Deluxe as a CAT middleman; direct CAT to the radio may work better.
+
+**Impact:** Fox/Hound auto-detection via UDP (Layer 1) only works with WSJT-X. For JTDX users, QSOP provides a manual F/H checkbox and Layer 2 inference (auto-detecting Fox from decode patterns) as alternatives.
+
 ---
 
 ## Logging Architecture

@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.2.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.3.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -8,48 +8,55 @@
 
 ![QSO Predictor Screenshot](docs/screenshot.png)
 
-## 🆕 What's New in v2.2.0
+## 🆕 What's New in v2.3.0
 
-### ⚡ Tactical Observation Toasts
-Real-time event-driven alerts appear as a notification bar above the decode table:
-- **Hidden pileup detection** — warns when you see few callers locally but PSK Reporter shows heavy competition at the target's end ("⚠️ Hidden pileup: 1 caller locally, 7 at target's end — you can't hear your competition")
-- **Path change alerts** — instant notification when your signal is first heard by the target ("🎯 VK3ABC has decoded YOU — call now!") or when a path opens/closes
-- **Competition shifts** — alerts when competition at the target increases or drops significantly
-- Rate-limited (1 per 15s) and auto-dismissing (8s) to avoid distraction
+### 🦊 Fox/Hound Mode Awareness
+Full support for DXpedition Fox/Hound operation:
+- **F/H Mode checkbox** in toolbar — enable manually for JTDX users
+- **Auto-detection from WSJT-X** via UDP Special Operation Mode field
+- **Auto-detection from decodes** — if target consistently TXes below 1000 Hz with callers above, QSOP infers Fox mode automatically
+- **Fox zone overlay** — 0-1000 Hz dimmed red on band map with boundary line
+- **Recommendations clamped** to 1000-2800 Hz when F/H active
+- **Fox QSO protection** — when Fox responds to you, click-to-set is disabled and green line replaced with "FOX CONTROLLING TX FREQUENCY" to prevent breaking the exchange
+- Toast alerts for F/H state changes
 
-### 📊 Pileup Contrast Intelligence
-The Insights panel now cross-references local and target-side competition:
-- Shows PSK Reporter competition count alongside your local pileup view
-- **Hidden pileup warning** — highlighted alert when you see a clear band locally but the target is buried in callers you can't hear
-- Feeds into strategy recommendations — "WAIT" instead of "CALL NOW" when hidden competition is heavy
+### 📡 Target Activity State
+Real-time display of what the target station is doing, inferred from local decodes:
+- **CQing** — target calling CQ, open for calls
+- **Working YOU** — target is responding to your callsign
+- **Working (other call)** — target in QSO with someone else (competition confirmed)
+- **Idle** — no recent activity from target
+- New **Status** row in the Target Dashboard
+- **Inferred competition** — stations the target responds to count as competitors even if you never saw them call
+- Toast alerts: "Target is now CQing — call now!" and "Target is responding to YOU!"
 
-### 🔍 Smarter Predictions
-Improved data consistency across all displays:
-- **Effective path status** — when PSK Reporter says "No Path" but Path Intelligence shows stations from your area getting through, recommendations now account for this evidence instead of being pessimistic
-- **Local decode competition** — when PSK Reporter has no perspective data, the app now counts callers visible in your local decodes instead of showing "Unknown"
-- **Target-side competition** feeds into success prediction and strategy recommendations for more accurate advice
+### 📊 SNR at Target
+When PSK Reporter confirms your signal is reaching the target area, now shows at what signal strength:
+- Dashboard: "Heard by Target (-12 dB)" or "Reported in Region (-08 dB)"
+- Path Intelligence: "Target decoded you at -12 dB — call now!"
+- Also shows SNR for nearby station path confirmation
 
-### 📋 Column Header Tooltips
-Hover over any column header in the decode table to see what it means and where the data comes from (e.g., "Propagation status to this station. Sources: PSK Reporter spots + local decode analysis.")
-
-### 🐛 Critical Bug Fixes
-- **Path status logic fix** — "Not Reported in Region" was incorrectly matching as "Reported in Region" due to substring collision, causing wrong colors, wrong path status, and wrong recommendations across 4 code locations
-- **Path Intelligence reconciliation** — Path column and Path Intelligence widget now cross-reference each other's data sources instead of showing contradictory information
-- **Toast bar readability** — proper sizing and font weight for legibility
-- **Band map label spacing** — "Your decodes" label repositioned for clear visual separation
-
-### v2.2.2
-
-- **FIXED:** Missing menus on Linux/GNOME — added `setNativeMenuBar(False)` to prevent desktop environment from swallowing Edit/View/Tools menus
-- **FIXED:** Removed legacy `main.py` (v1.x entry point) that caused Linux users to launch the wrong interface with missing menus and no tooltip styling
-- **FIXED:** `launcher.py` now correctly launches `main_v2.py`
-- Thanks to **Jallu OH4NDU** for reporting from Ubuntu Server 24.04
-
-### v2.2.1
-
-- **FIXED:** Local decode competition incorrectly triggering hidden pileup warnings
+### 📈 Band Edge Score Softening
+- Gentle score ramp in 200-300 Hz and 2700-2800 Hz transition zones
+- Discourages recommendations at extreme edges where decoder performance degrades
+- Proven frequencies near edges can still override the penalty
 
 ## Previous Releases
+
+### v2.2.2
+- Fixed missing menus on Linux/GNOME
+- Removed legacy `main.py` entry point
+- Updated `launcher.py` to launch `main_v2.py`
+
+### v2.2.1
+- Fixed local decode competition incorrectly triggering hidden pileup warnings
+
+### v2.2.0
+- Tactical observation toasts (hidden pileup, path changes, competition shifts)
+- Pileup contrast intelligence
+- Column header tooltips
+- Local decode competition fallback
+- Critical path status substring matching fix
 
 ### v2.1.4
 - Fixed JTDX detection in auto-paste scripts
@@ -146,6 +153,19 @@ Never miss a wanted station:
 - **Score graph** — Visual scoring across the band
 - **Solid vs dotted** — Confidence indicator (proven vs estimated)
 
+### Fox/Hound DXpedition Support
+Intelligent handling of Fox/Hound mode operation:
+- **F/H Mode checkbox** or auto-detection from decodes
+- Recommendations clamped to Hound TX range (1000+ Hz)
+- Fox zone visually marked on band map
+- Click-to-set disabled when Fox is controlling your TX frequency
+
+### Target Activity State
+See what the target station is doing right now:
+- **Status row** in dashboard (CQing, Working YOU, Working other, Idle)
+- Inferred competition from target responses
+- Toast alerts on key transitions
+
 ## Documentation
 
 📖 **[User Guide](docs/USER_GUIDE.md)** — Complete usage documentation
@@ -168,6 +188,16 @@ Never miss a wanted station:
 - Internet connection (for PSK Reporter data)
 
 ## Version History
+
+### v2.3.0 (March 2026)
+- **NEW:** Fox/Hound mode awareness — manual checkbox, WSJT-X UDP detection, and auto-inference from decode patterns
+- **NEW:** Fox zone overlay on band map, recommendations clamped to 1000+ Hz in Hound mode
+- **NEW:** Fox QSO protection — click-to-set disabled when Fox controls TX frequency
+- **NEW:** Target Activity State — real-time display of what target is doing (CQing, Working YOU, Working other, Idle)
+- **NEW:** Inferred competition — target responses reveal competitors you can't hear
+- **NEW:** SNR at Target — Path Intelligence and dashboard show signal strength when path confirmed
+- **IMPROVED:** Band edge score softening — gentle penalty discourages extreme edge recommendations
+- **IMPROVED:** UDP status parser extended to field 18 (Special Operation Mode, DE call, DE grid)
 
 ### v2.2.2 (March 2026)
 - **FIXED:** Missing menus on Linux/GNOME — `setNativeMenuBar(False)` prevents desktop menu integration from swallowing menus
@@ -264,7 +294,7 @@ Contributions welcome! Please open an issue first to discuss proposed changes.
 
 ### Contributors
 - **Warren KC0GU** — Hunt Mode concept, Clear Target workflow, UI persistence suggestions
-- **Brian KB1OPD** — Band map tooltips and frequency scale requests, auto-clear on QSY, testing and feedback
+- **Brian KB1OPD** — Band map tooltips and frequency scale requests, auto-clear on QSY, Fox/Hound mode feature request, testing and feedback
 - **Jallu OH4NDU** — First Linux bug reports (missing menus, tooltip styling on Ubuntu)
 - **Doug McDonald, CaptainBucko, Bill K3CDY, Edgar K9RE** — Beta testing and feedback
 

@@ -1,6 +1,6 @@
 # QSO Predictor User Guide
 
-**Version 2.2.0**  
+**Version 2.3.0**  
 **By Peter Hirst (WU2C)**
 
 > 📋 **See [README](https://github.com/wu2c-peter/qso-predictor/blob/main/README.md) for What's New, Version History, and Installation**
