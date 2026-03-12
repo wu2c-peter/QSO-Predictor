@@ -63,6 +63,7 @@ class BandMapWidget(QWidget):
         
         # v2.3.0: Fox/Hound mode — clamp recommendations to 1000+ Hz
         self.hound_mode = False
+        self.fox_qso_active = False  # Fox controlling our TX — disable click-to-set
         
         # === PERFORMANCE FIX: Cache all paint objects ===
         self._init_paint_cache()
@@ -290,6 +291,16 @@ class BandMapWidget(QWidget):
                 logger.info("Fox/Hound: Hound mode disabled — full frequency range restored")
             self.update()
 
+    def set_fox_qso(self, active):
+        """v2.3.0: Set Fox QSO state — Fox is controlling our TX frequency.
+        When active, click-to-set is disabled and recommendation line hidden."""
+        self.fox_qso_active = active
+        if active:
+            self.setCursor(Qt.CursorShape.ForbiddenCursor)
+        else:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update()
+
     def _tick(self):
         self._cleanup_data()
         
@@ -307,6 +318,11 @@ class BandMapWidget(QWidget):
     def mousePressEvent(self, event):
         """Handle click to manually set frequency and copy to clipboard."""
         if event.button() == Qt.MouseButton.LeftButton:
+            # v2.3.0: Block click-to-set when Fox is controlling TX frequency
+            if self.fox_qso_active:
+                self.status_message.emit("Fox is controlling TX frequency — click disabled")
+                return
+            
             # Calculate frequency from click position
             x = event.position().x()
             w = self.width()
@@ -802,7 +818,12 @@ class BandMapWidget(QWidget):
             qp.drawLine(int(x), 0, int(x), h)
         
         # Recommended frequency (green solid)
-        if self.best_offset > 0:
+        if self.fox_qso_active:
+            # v2.3.0: Fox is controlling TX — hide recommendation, show message
+            qp.setFont(self._fonts['medium_bold'])
+            qp.setPen(QColor("#FF4444"))
+            qp.drawText(int(w * 0.3), score_top + score_h // 2 + 4, "FOX CONTROLLING TX FREQUENCY")
+        elif self.best_offset > 0:
             x = (self.best_offset / 3000) * w
             qp.setPen(self._pens['rec'])
             qp.drawLine(int(x), 0, int(x), h)

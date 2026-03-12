@@ -1053,6 +1053,13 @@ class MainWindow(QMainWindow):
         self._inferred_competitors = {}  # {callsign: timestamp} — competitors inferred from target responses
         self._activity_idle_timeout = 120  # Seconds before state goes to 'idle'
         
+        # v2.3.0: Fox/Hound mode state
+        self._fh_active = False           # Master F/H state (from any trigger)
+        self._fh_source = None            # What triggered F/H: 'manual', 'udp', 'inferred'
+        self._fh_fox_qso = False          # Fox is controlling our TX frequency
+        self._fh_target_tx_below_1000 = 0 # Count of target decodes below 1000 Hz (for Layer 2)
+        self._fh_target_tx_above_1000 = 0 # Count of callers above 1000 Hz (for Layer 2)
+        
         # --- UPDATE CHECK STATE ---
         self.update_available = None  # Will hold version string if update available
         self._normal_status = ""     # v2.1.1: Last non-warning status message
@@ -1263,6 +1270,17 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.chk_auto_clear_band)
         
         toolbar.addSeparator()
+        
+        # v2.3.0: Fox/Hound mode manual override
+        self.chk_fh_mode = QCheckBox("F/H Mode")
+        self.chk_fh_mode.setToolTip(
+            "Enable Fox/Hound mode manually.\n"
+            "Clamps TX recommendations to 1000+ Hz.\n"
+            "Auto-detected from WSJT-X or decode patterns when possible."
+        )
+        self.chk_fh_mode.setChecked(False)
+        self.chk_fh_mode.stateChanged.connect(self._on_fh_manual_changed)
+        toolbar.addWidget(self.chk_fh_mode)
         
         # Spacer to push items to the left
         spacer = QWidget()
@@ -1673,6 +1691,15 @@ class MainWindow(QMainWindow):
         self._target_activity_time = 0
         self._inferred_competitors.clear()
         
+        # v2.3.0: Reset F/H inference counters (keep manual/UDP state)
+        self._fh_target_tx_below_1000 = 0
+        self._fh_target_tx_above_1000 = 0
+        self._fh_fox_qso = False
+        self.band_map.set_fox_qso(False)
+        # If F/H was inferred from previous target, deactivate
+        if self._fh_source == 'inferred':
+            self._set_fox_hound_active(False, None)
+        
         # Clear table highlight
         self.model.set_target_call(None)
         
@@ -1804,6 +1831,12 @@ class MainWindow(QMainWindow):
                 )
                 if state:
                     self._update_target_activity(state, other)
+            
+            # --- v2.3.0: LAYER 2 FOX DETECTION ---
+            self._check_fox_from_decodes(
+                item.get('message', ''),
+                item.get('freq', 0)
+            )
         
         # Disable sorting during batch add to prevent jitter
         self.table_view.setSortingEnabled(False)
@@ -1871,8 +1904,10 @@ class MainWindow(QMainWindow):
         special_mode = status.get('special_mode', 0)
         # Hound mode: value 6 (older WSJT-X) or 7 (newer with WW DIGI)
         is_hound = special_mode in (6, 7)
-        if hasattr(self.band_map, 'set_hound_mode'):
-            self.band_map.set_hound_mode(is_hound)
+        if is_hound and not self._fh_active:
+            self._set_fox_hound_active(True, 'udp')
+        elif not is_hound and self._fh_source == 'udp':
+            self._set_fox_hound_active(False, None)
         
         # --- LOCAL INTELLIGENCE: Update TX status ---
         if self.local_intel:
@@ -2035,6 +2070,14 @@ class MainWindow(QMainWindow):
             self.tactical_toast.show_toast(
                 f"📡 {target} working {other_call} — competition confirmed", 'info'
             )
+        
+        # v2.3.0: Fox QSO detection — when F/H active and Fox responds to us
+        if self._fh_active:
+            if state in ('working_you', 'completing_with_you'):
+                self._set_fox_qso_active(True)
+            elif self._fh_fox_qso and state not in ('working_you', 'completing_with_you'):
+                # Fox stopped responding to us — restore click-to-set
+                self._set_fox_qso_active(False)
     
     def _check_target_activity_idle(self):
         """v2.3.0: Check if target activity should transition to idle.
@@ -2046,6 +2089,123 @@ class MainWindow(QMainWindow):
             self._target_activity_state = 'idle'
             self._target_activity_other = None
             self.dashboard.update_activity('idle')
+
+    # =========================================================================
+    # v2.3.0: FOX/HOUND MODE MANAGEMENT
+    # =========================================================================
+    
+    def _on_fh_manual_changed(self, state):
+        """Handle manual F/H checkbox toggle."""
+        if state:
+            self._set_fox_hound_active(True, 'manual')
+        else:
+            # User unchecked — always deactivate regardless of source
+            self._set_fox_hound_active(False, None)
+    
+    def _set_fox_hound_active(self, active, source):
+        """Master F/H state setter — called by all triggers.
+        
+        Args:
+            active: True to enable F/H mode
+            source: 'manual', 'udp', or 'inferred'
+        """
+        if active == self._fh_active and source == self._fh_source:
+            return  # No change
+        
+        prev_active = self._fh_active
+        self._fh_active = active
+        self._fh_source = source if active else None
+        
+        # Update band map
+        self.band_map.set_hound_mode(active)
+        
+        # Update checkbox (without re-triggering signal)
+        self.chk_fh_mode.blockSignals(True)
+        self.chk_fh_mode.setChecked(active)
+        self.chk_fh_mode.blockSignals(False)
+        
+        # Toast on state change
+        if active and not prev_active:
+            if source == 'manual':
+                self.tactical_toast.show_toast(
+                    "🦊 F/H mode enabled — recommendations clamped to 1000+ Hz", 'info'
+                )
+            elif source == 'udp':
+                self.tactical_toast.show_toast(
+                    "🦊 Hound mode detected from WSJT-X — recommendations clamped to 1000+ Hz", 'info'
+                )
+            elif source == 'inferred':
+                self.tactical_toast.show_toast(
+                    "🦊 Target appears to be Fox — recommendations clamped to 1000+ Hz", 'warning'
+                )
+            logger.info(f"Fox/Hound: ACTIVATED (source={source})")
+        elif not active and prev_active:
+            self.tactical_toast.show_toast(
+                "F/H mode disabled — full frequency range restored", 'info'
+            )
+            # Reset Fox QSO state
+            self._fh_fox_qso = False
+            self.band_map.set_fox_qso(False)
+            logger.info("Fox/Hound: DEACTIVATED")
+    
+    def _check_fox_from_decodes(self, message, freq):
+        """v2.3.0 Layer 2: Infer Fox mode from decode patterns.
+        
+        If target consistently TXes below 1000 Hz while callers are above,
+        that's a Fox pattern. Called from process_buffer for each decode.
+        
+        Args:
+            message: Raw decoded message string
+            freq: Audio frequency offset of the decode
+        """
+        if not self.current_target_call:
+            return
+        
+        target = self.current_target_call.upper()
+        parts = message.split() if message else []
+        
+        if len(parts) < 2:
+            return
+        
+        # Target is transmitting (appears as caller in message)
+        # Pattern: "OTHERCALL TARGET payload" — target in position 2
+        if len(parts) >= 3 and parts[1] == target:
+            if freq < 1000:
+                self._fh_target_tx_below_1000 += 1
+            else:
+                # Target TXing above 1000 — not Fox pattern
+                self._fh_target_tx_below_1000 = max(0, self._fh_target_tx_below_1000 - 2)
+        
+        # Someone calling target above 1000 Hz
+        # Pattern: "TARGET CALLER payload" — target in position 1
+        if len(parts) >= 2 and parts[0] == target and freq > 1000:
+            self._fh_target_tx_above_1000 += 1
+        
+        # Inference: 3+ target decodes below 1000 Hz AND callers above = Fox pattern
+        if (not self._fh_active and 
+            self._fh_target_tx_below_1000 >= 3 and 
+            self._fh_target_tx_above_1000 >= 2):
+            self._set_fox_hound_active(True, 'inferred')
+    
+    def _set_fox_qso_active(self, active):
+        """v2.3.0: Set Fox QSO state — Fox is controlling our TX frequency.
+        
+        When active, click-to-set is disabled and recommendation line hidden.
+        Called when activity state detects Fox responding to us.
+        """
+        if active == self._fh_fox_qso:
+            return
+        
+        self._fh_fox_qso = active
+        self.band_map.set_fox_qso(active)
+        
+        if active:
+            self.tactical_toast.show_toast(
+                "🎯 Fox is calling you — TX frequency under Fox control!", 'success'
+            )
+            logger.info("Fox/Hound: Fox QSO active — click-to-set disabled")
+        else:
+            logger.info("Fox/Hound: Fox QSO ended — click-to-set restored")
 
     def _update_local_intel_path_status(self, row_data):
         """Update Local Intelligence with current path status."""
