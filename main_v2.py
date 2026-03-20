@@ -99,7 +99,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QTableView, QLabel, QHeaderView, QDockWidget,
                              QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu, QToolBar, QPushButton, QCheckBox,
-                             QStyledItemDelegate)
+                             QStyledItemDelegate, QComboBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
 from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon, QCursor, QBrush
 
@@ -1058,9 +1058,11 @@ class MainWindow(QMainWindow):
         # v2.3.0: Fox/Hound mode state
         self._fh_active = False           # Master F/H state (from any trigger)
         self._fh_source = None            # What triggered F/H: 'manual', 'udp', 'inferred'
+        self._fh_type = None              # 'fh' (old-style) or 'superfh' — controls clamping behavior
         self._fh_fox_qso = False          # Fox is controlling our TX frequency
         self._fh_target_tx_below_1000 = 0 # Count of target decodes below 1000 Hz (for Layer 2)
         self._fh_target_tx_above_1000 = 0 # Count of callers above 1000 Hz (for Layer 2)
+        self._fh_dialog_shown = False     # Prevent repeated dialogs in same session
         
         # --- UPDATE CHECK STATE ---
         self.update_available = None  # Will hold version string if update available
@@ -1273,16 +1275,34 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
-        # v2.3.0: Fox/Hound mode manual override
-        self.chk_fh_mode = QCheckBox("F/H Mode")
-        self.chk_fh_mode.setToolTip(
-            "Enable Fox/Hound mode manually.\n"
-            "Clamps TX recommendations to 1000+ Hz.\n"
+        # v2.3.0: Fox/Hound mode selector (Off / F/H / SuperF/H)
+        self.cmb_fh_mode = QComboBox()
+        self.cmb_fh_mode.addItems(["F/H Off", "F/H", "SuperF/H"])
+        self.cmb_fh_mode.setToolTip(
+            "Fox/Hound mode:\n"
+            "  F/H — Old-style: clamps TX to 1000+ Hz\n"
+            "  SuperF/H — SuperFox: full band, no clamping\n"
             "Auto-detected from WSJT-X or decode patterns when possible."
         )
-        self.chk_fh_mode.setChecked(False)
-        self.chk_fh_mode.stateChanged.connect(self._on_fh_manual_changed)
-        toolbar.addWidget(self.chk_fh_mode)
+        self.cmb_fh_mode.setCurrentIndex(0)
+        self.cmb_fh_mode.currentIndexChanged.connect(self._on_fh_combo_changed)
+        self.cmb_fh_mode.setStyleSheet("""
+            QComboBox {
+                color: #CCCCCC;
+                background: #2A2A2A;
+                border: 1px solid #555;
+                padding: 2px 6px;
+                min-width: 80px;
+            }
+            QComboBox:hover { border-color: #00FFFF; }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                color: #CCCCCC;
+                background: #2A2A2A;
+                selection-background-color: #444;
+            }
+        """)
+        toolbar.addWidget(self.cmb_fh_mode)
         
         # Spacer to push items to the left
         spacer = QWidget()
@@ -1697,10 +1717,11 @@ class MainWindow(QMainWindow):
         self._fh_target_tx_below_1000 = 0
         self._fh_target_tx_above_1000 = 0
         self._fh_fox_qso = False
+        self._fh_dialog_shown = False
         self.band_map.set_fox_qso(False)
         # If F/H was inferred from previous target, deactivate
         if self._fh_source == 'inferred':
-            self._set_fox_hound_active(False, None)
+            self._set_fox_hound_active(False, None, None)
         
         # Clear table highlight
         self.model.set_target_call(None)
@@ -1905,11 +1926,14 @@ class MainWindow(QMainWindow):
         # v2.3.0: Fox/Hound mode detection from UDP Special Operation Mode
         special_mode = status.get('special_mode', 0)
         # Hound mode: value 6 (older WSJT-X) or 7 (newer with WW DIGI)
+        # Note: WSJT-X sends 7 for BOTH Hound and SuperHound — can't distinguish
         is_hound = special_mode in (6, 7)
         if is_hound and not self._fh_active:
-            self._set_fox_hound_active(True, 'udp')
+            logger.info(f"Fox/Hound: UDP special_mode={special_mode} — showing disambiguation dialog")
+            self._show_fh_disambiguation_dialog('udp')
         elif not is_hound and self._fh_source == 'udp':
-            self._set_fox_hound_active(False, None)
+            logger.info(f"Fox/Hound: UDP special_mode={special_mode} — deactivating (was udp-triggered)")
+            self._set_fox_hound_active(False, None, None)
         
         # --- LOCAL INTELLIGENCE: Update TX status ---
         if self.local_intel:
@@ -2096,51 +2120,109 @@ class MainWindow(QMainWindow):
     # v2.3.0: FOX/HOUND MODE MANAGEMENT
     # =========================================================================
     
-    def _on_fh_manual_changed(self, state):
-        """Handle manual F/H checkbox toggle."""
-        if state:
-            self._set_fox_hound_active(True, 'manual')
-        else:
-            # User unchecked — always deactivate regardless of source
-            self._set_fox_hound_active(False, None)
+    def _on_fh_combo_changed(self, index):
+        """Handle F/H combo box selection: 0=Off, 1=F/H, 2=SuperF/H."""
+        labels = ['Off', 'F/H', 'SuperF/H']
+        logger.info(f"Fox/Hound: Combo box changed to {labels[index]} (index={index})")
+        if index == 0:
+            self._set_fox_hound_active(False, None, None)
+        elif index == 1:
+            self._set_fox_hound_active(True, 'manual', 'fh')
+        elif index == 2:
+            self._set_fox_hound_active(True, 'manual', 'superfh')
     
-    def _set_fox_hound_active(self, active, source):
+    def _show_fh_disambiguation_dialog(self, source):
+        """Show dialog asking user to choose between old F/H and SuperF/H.
+        
+        Called when UDP or Layer 2 detects Hound mode but can't tell which type.
+        Only shown once per session (reset on target change or manual override).
+        
+        Args:
+            source: 'udp' or 'inferred' — what triggered the detection
+        """
+        if self._fh_dialog_shown:
+            return
+        self._fh_dialog_shown = True
+        
+        logger.info(f"Fox/Hound: Disambiguation dialog triggered (source={source})")
+        
+        if source == 'udp':
+            title = "Hound Mode Detected"
+            text = "WSJT-X reports Hound mode is active."
+        else:
+            title = "Fox Station Detected"
+            text = "Target appears to be operating as Fox."
+        
+        msg = QMessageBox(self)
+        msg.setWindowTitle(title)
+        msg.setText(f"{text}\n\nWhich type of operation?")
+        msg.setInformativeText(
+            "Fox/Hound — TX clamped to 1000+ Hz, Fox controls your TX during QSO\n\n"
+            "SuperFox/Hound — Full band (200-2800 Hz), you keep your calling frequency"
+        )
+        msg.setIcon(QMessageBox.Icon.Question)
+        
+        btn_fh = msg.addButton("Fox/Hound", QMessageBox.ButtonRole.AcceptRole)
+        btn_sfh = msg.addButton("SuperFox/Hound", QMessageBox.ButtonRole.AcceptRole)
+        btn_cancel = msg.addButton("Ignore", QMessageBox.ButtonRole.RejectRole)
+        
+        msg.exec()
+        
+        clicked = msg.clickedButton()
+        if clicked == btn_fh:
+            logger.info("Fox/Hound: User selected Fox/Hound (old-style)")
+            self._set_fox_hound_active(True, source, 'fh')
+        elif clicked == btn_sfh:
+            logger.info("Fox/Hound: User selected SuperFox/Hound")
+            self._set_fox_hound_active(True, source, 'superfh')
+        else:
+            logger.info("Fox/Hound: User clicked Ignore")
+    
+    def _set_fox_hound_active(self, active, source, fh_type):
         """Master F/H state setter — called by all triggers.
         
         Args:
             active: True to enable F/H mode
             source: 'manual', 'udp', or 'inferred'
+            fh_type: 'fh' (old-style, clamp 1000+) or 'superfh' (full band)
         """
-        if active == self._fh_active and source == self._fh_source:
+        if active == self._fh_active and source == self._fh_source and fh_type == self._fh_type:
             return  # No change
         
         prev_active = self._fh_active
+        prev_type = self._fh_type
         self._fh_active = active
         self._fh_source = source if active else None
+        self._fh_type = fh_type if active else None
         
-        # Update band map
-        self.band_map.set_hound_mode(active)
+        # Only clamp to 1000+ Hz for old-style F/H, not SuperFox
+        use_clamping = active and fh_type == 'fh'
+        self.band_map.set_hound_mode(use_clamping)
         
-        # Update checkbox (without re-triggering signal)
-        self.chk_fh_mode.blockSignals(True)
-        self.chk_fh_mode.setChecked(active)
-        self.chk_fh_mode.blockSignals(False)
+        # Update combo box (without re-triggering signal)
+        self.cmb_fh_mode.blockSignals(True)
+        if not active:
+            self.cmb_fh_mode.setCurrentIndex(0)  # Off
+        elif fh_type == 'fh':
+            self.cmb_fh_mode.setCurrentIndex(1)  # F/H
+        elif fh_type == 'superfh':
+            self.cmb_fh_mode.setCurrentIndex(2)  # SuperF/H
+        self.cmb_fh_mode.blockSignals(False)
         
         # Toast on state change
         if active and not prev_active:
-            if source == 'manual':
+            if fh_type == 'fh':
                 self.tactical_toast.show_toast(
-                    "🦊 F/H mode enabled — recommendations clamped to 1000+ Hz", 'info'
+                    "🦊 F/H mode — recommendations clamped to 1000+ Hz", 'info'
                 )
-            elif source == 'udp':
+            elif fh_type == 'superfh':
                 self.tactical_toast.show_toast(
-                    "🦊 Hound mode detected from WSJT-X — recommendations clamped to 1000+ Hz", 'info'
+                    "🦊 SuperFox mode — full band available, finding best frequency", 'info'
                 )
-            elif source == 'inferred':
-                self.tactical_toast.show_toast(
-                    "🦊 Target appears to be Fox — recommendations clamped to 1000+ Hz", 'warning'
-                )
-            logger.info(f"Fox/Hound: ACTIVATED (source={source})")
+            logger.info(f"Fox/Hound: ACTIVATED (source={source}, type={fh_type})")
+        elif active and prev_active and fh_type != prev_type:
+            # Type changed while active
+            logger.info(f"Fox/Hound: Type changed to {fh_type}")
         elif not active and prev_active:
             self.tactical_toast.show_toast(
                 "F/H mode disabled — full frequency range restored", 'info'
@@ -2148,6 +2230,7 @@ class MainWindow(QMainWindow):
             # Reset Fox QSO state
             self._fh_fox_qso = False
             self.band_map.set_fox_qso(False)
+            self._fh_dialog_shown = False
             logger.info("Fox/Hound: DEACTIVATED")
     
     def _check_fox_from_decodes(self, message, freq):
@@ -2171,23 +2254,46 @@ class MainWindow(QMainWindow):
         
         # Target is transmitting (appears as caller in message)
         # Pattern: "OTHERCALL TARGET payload" — target in position 2
+        # Fox TX range is 300-900 Hz; threshold at 950 Hz to avoid false positives
+        # from normal stations near the bottom of the band (e.g. 973 Hz)
         if len(parts) >= 3 and parts[1] == target:
-            if freq < 1000:
+            if freq < 950:
                 self._fh_target_tx_below_1000 += 1
+                if self._fh_target_tx_below_1000 in (1, 4):  # Log first hit and threshold
+                    logger.info(f"Fox/Hound Layer 2: Target TX at {freq} Hz (<950), "
+                                f"count={self._fh_target_tx_below_1000}")
             else:
-                # Target TXing above 1000 — not Fox pattern
+                # Target TXing above Fox range — not Fox pattern
                 self._fh_target_tx_below_1000 = max(0, self._fh_target_tx_below_1000 - 2)
         
         # Someone calling target above 1000 Hz
         # Pattern: "TARGET CALLER payload" — target in position 1
         if len(parts) >= 2 and parts[0] == target and freq > 1000:
             self._fh_target_tx_above_1000 += 1
+            if self._fh_target_tx_above_1000 in (1, 3):  # Log first hit and threshold
+                logger.info(f"Fox/Hound Layer 2: Caller above 1000 Hz at {freq} Hz, "
+                            f"count={self._fh_target_tx_above_1000}")
         
-        # Inference: 3+ target decodes below 1000 Hz AND callers above = Fox pattern
+        # Inference: 4+ target decodes below 950 Hz AND callers above = Fox pattern
         if (not self._fh_active and 
-            self._fh_target_tx_below_1000 >= 3 and 
-            self._fh_target_tx_above_1000 >= 2):
-            self._set_fox_hound_active(True, 'inferred')
+            self._fh_target_tx_below_1000 >= 4 and 
+            self._fh_target_tx_above_1000 >= 3):
+            self._show_fh_disambiguation_dialog('inferred')
+        
+        # SuperFox auto-detection: "verified" or "$VERIFY$" in decode = definitive SuperFox
+        # e.g. "CY0S verified" or "$VERIFY$ CY0S 687863" as decode lines
+        # This fires even if F/H is already active (to upgrade from old F/H to SuperFox)
+        # Note: only works with WSJT-X (JTDX cannot decode SuperFox)
+        msg_lower = message.lower()
+        if (('verified' in msg_lower or '$verify$' in msg_lower) and 
+            self.current_target_call and
+            self.current_target_call.upper() in message.upper() and
+            self._fh_type != 'superfh'):
+            logger.info(f"Fox/Hound: SuperFox detected — 'verified' in decode for {self.current_target_call}")
+            self._set_fox_hound_active(True, 'inferred', 'superfh')
+            self.tactical_toast.show_toast(
+                f"🦊 {self.current_target_call} is verified SuperFox — full band available", 'info'
+            )
     
     def _set_fox_qso_active(self, active):
         """v2.3.0: Set Fox QSO state — Fox is controlling our TX frequency.
@@ -2202,9 +2308,14 @@ class MainWindow(QMainWindow):
         self.band_map.set_fox_qso(active)
         
         if active:
-            self.tactical_toast.show_toast(
-                "🎯 Fox is calling you — TX frequency under Fox control!", 'success'
-            )
+            if self._fh_type == 'superfh':
+                self.tactical_toast.show_toast(
+                    "🎯 Fox is calling you — stay on your frequency!", 'success'
+                )
+            else:
+                self.tactical_toast.show_toast(
+                    "🎯 Fox is calling you — TX frequency under Fox control!", 'success'
+                )
             logger.info("Fox/Hound: Fox QSO active — click-to-set disabled")
         else:
             logger.info("Fox/Hound: Fox QSO ended — click-to-set restored")
