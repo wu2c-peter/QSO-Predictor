@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.3.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.3.1-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -8,81 +8,89 @@
 
 ![QSO Predictor Screenshot](docs/screenshot.png)
 
-## 🆕 What's New in v2.3.0
+---
 
-### 🦊 Fox/Hound Mode Awareness
-Full support for DXpedition Fox/Hound operation:
-- **F/H Mode checkbox** in toolbar — enable manually for JTDX users
-- **Auto-detection from WSJT-X** via UDP Special Operation Mode field
-- **Auto-detection from decodes** — if target consistently TXes below 1000 Hz with callers above, QSOP infers Fox mode automatically
-- **Fox zone overlay** — 0-1000 Hz dimmed red on band map with boundary line
-- **Recommendations clamped** to 1000-2800 Hz when F/H active
-- **Fox QSO protection** — when Fox responds to you, click-to-set is disabled and green line replaced with "FOX CONTROLLING TX FREQUENCY" to prevent breaking the exchange
-- Toast alerts for F/H state changes
+## 🆕 What's New in v2.3.1
 
-### 📡 Target Activity State
-Real-time display of what the target station is doing, inferred from local decodes:
-- **CQing** — target calling CQ, open for calls
-- **Working YOU** — target is responding to your callsign
-- **Working (other call)** — target in QSO with someone else (competition confirmed)
-- **Idle** — no recent activity from target
-- New **Status** row in the Target Dashboard
-- **Inferred competition** — stations the target responds to count as competitors even if you never saw them call
-- Toast alerts: "Target is now CQing — call now!" and "Target is responding to YOU!"
+### 🦊 SuperFox/SuperHound Support
 
-### 📊 SNR at Target
-When PSK Reporter confirms your signal is reaching the target area, now shows at what signal strength:
-- Dashboard: "Heard by Target (-12 dB)" or "Reported in Region (-08 dB)"
-- Path Intelligence: "Target decoded you at -12 dB — call now!"
-- Also shows SNR for nearby station path confirmation
+v2.3.0 introduced Fox/Hound mode awareness. v2.3.1 properly handles the **SuperFox/SuperHound** protocol used by major DXpeditions (CY0S, TX5EU, etc.).
 
-### 📈 Band Edge Score Softening
-- Gentle score ramp in 200-300 Hz and 2700-2800 Hz transition zones
-- Discourages recommendations at extreme edges where decoder performance degrades
-- Proven frequencies near edges can still override the penalty
+**Three-state F/H combo box** replaces the old checkbox:
+
+| Setting | Use when |
+|---------|----------|
+| **F/H Off** | Normal FT8 operation |
+| **F/H** | Old-style Fox/Hound (Fox 300–900 Hz, Hounds above 1000 Hz) |
+| **SuperF/H** | SuperFox/SuperHound (wide 1512 Hz Fox signal, Hounds anywhere ≥200 Hz) |
+
+**Disambiguation dialog** — when WSJT-X UDP or Layer 2 inference detects a Fox/Hound situation, QSOP now asks you to confirm which mode you're in rather than guessing. Prevents false activations.
+
+**Tightened Layer 2 threshold** — false positive fix: frequency threshold moved to 950 Hz, 4+ observations now required (was 3 at 1000 Hz). Fixes incorrect detection of stations calling near the bottom of the Hound window.
+
+### SuperFox Operating Notes
+
+If you're chasing a SuperFox DXpedition:
+
+1. Tune your rig to the DXpedition's **published FT8 frequency** (e.g. 14.091 MHz — NOT the standard 14.074)
+2. Set RX audio offset to ~750 Hz in WSJT-X
+3. Set QSOP combo box to **SuperF/H**
+4. Watch for the wide 1512 Hz signal block on the waterfall — nothing like normal FT8
+5. Double-click the Fox decode in WSJT-X to start calling — WSJT-X auto-sequences from there
+
+---
 
 ## Previous Releases
 
-### v2.2.2
-- Fixed missing menus on Linux/GNOME
-- Removed legacy `main.py` entry point
-- Updated `launcher.py` to launch `main_v2.py`
+### v2.3.0
+
+* **NEW:** Target Activity State — real-time status showing whether target is CQing, Working YOU, Working other, or Idle
+* **NEW:** Fox/Hound Mode Awareness — three-layer detection (manual, WSJT-X UDP field 18, Layer 2 decode-pattern inference)
+* **NEW:** Fox zone overlay on band map, recommendation clamping to ≥1000 Hz in F/H mode
+* **NEW:** SNR at Target — surfaces PSK Reporter signal strength in Path field and Path Intelligence panel
+* **NEW:** Band Edge Score Softening — gentle score ramp in 200–300 Hz and 2700–2800 Hz zones
 
 ### v2.2.1
-- Fixed local decode competition incorrectly triggering hidden pileup warnings
+
+* **FIXED:** Critical bug — local decode competition data incorrectly triggered "hidden pileup" warnings when PSK Reporter had zero perspective data from target's area
 
 ### v2.2.0
-- Tactical observation toasts (hidden pileup, path changes, competition shifts)
-- Pileup contrast intelligence
-- Column header tooltips
-- Local decode competition fallback
-- Critical path status substring matching fix
+
+* **NEW:** Tactical observation toasts — real-time alerts for hidden pileups, path changes, competition shifts
+* **NEW:** Pileup contrast intelligence — cross-references local vs target-side competition
+* **NEW:** Column header tooltips
+* **NEW:** Local decode competition fallback
+* **FIXED:** Critical substring matching bug — "Not Reported in Region" incorrectly matched as "Reported in Region"
 
 ### v2.1.4
-- Fixed JTDX detection in auto-paste scripts
-- Band map frequency scale brightened for Windows visibility
-- Auto-paste scripts now click Enable TX automatically
+
+* Fixed JTDX detection in auto-paste scripts
+* Band map frequency scale brightened for Windows visibility
+* Auto-paste scripts click Enable TX automatically
 
 ### v2.1.3
-- Click-to-copy target callsign from either panel
-- Local decode evidence for path detection (no PSK Reporter lag)
-- Path column relabeled for clarity
-- Combined auto-paste scripts for frequency and callsign
+
+* Click-to-copy target callsign from either panel
+* Local decode evidence for path detection
+* Path column relabeled for clarity
 
 ### v2.1.2
-- **Critical fix:** Target Perspective data rejected as stale — receipt time now used instead of decode time
-- Grid square validation tightened (FT8 tokens like RR73 no longer misidentified as grids)
+
+* **FIXED:** Target Perspective never populated — receipt time now used instead of decode time
+* Grid square validation tightened
 
 ### v2.1.1
-- Band map hover tooltips (callsign, SNR, grid, tier)
-- Frequency scale with Hz labels
-- Resilient data source monitoring (warns when UDP/MQTT goes silent)
+
+* Band map hover tooltips (callsign, SNR, grid, tier)
+* Frequency scale with Hz labels
+* Resilient data source monitoring
 
 ### v2.1.0
-- **Hunt Mode** — track stations/prefixes/countries with system tray alerts
-- **Path Intelligence** — see who from your area is getting through and why
-- **Undockable panels** — multi-monitor layout support
-- Click-to-clipboard, auto-clear on QSY, Windows UDP Error 10054 fix
+
+* **NEW:** Hunt Mode — track stations/prefixes/countries with alerts
+* **NEW:** Path Intelligence — see who from your area is getting through and why
+* **NEW:** Undockable panels — multi-monitor layout support
+* Click-to-clipboard, auto-clear on QSY, Windows UDP Error 10054 fix
 
 ---
 
@@ -95,20 +103,23 @@ Traditional tools show the band from **your** perspective. QSO Predictor shows y
 ## The Solution
 
 Using real-time PSK Reporter data, QSO Predictor shows:
-- **What the target is hearing** — signals arriving at their location
-- **How crowded each frequency is** — at their end, not yours
-- **Whether your signal path is open** — before you call
-- **Who else from your area is getting through** — and why
+
+* **What the target is hearing** — signals arriving at their location
+* **How crowded each frequency is** — at their end, not yours
+* **Whether your signal path is open** — before you call
+* **Who else from your area is getting through** — and why
 
 ## Quick Start
 
 ### Windows
+
 1. Download latest `.zip` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases)
 2. Extract and run `QSO Predictor.exe`
 3. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`
 
 ### macOS / Linux (from source)
-```bash
+
+```
 git clone https://github.com/wu2c-peter/qso-predictor.git
 cd qso-predictor
 pip install -r requirements.txt
@@ -116,55 +127,68 @@ python main_v2.py
 ```
 
 ### First-Time Setup
+
 1. **File → Settings** — enter your callsign and grid
 2. **Tools → Bootstrap Behavior** — analyze your logs for behavior prediction (optional but recommended)
 
 ## Features
 
 ### Target Perspective Band Map
+
 See what the DX station hears, color-coded by data quality:
-- **Cyan** — Target is directly decoding these signals
-- **Blue tiers** — Nearby stations (proxy data)
-- **Count numbers** — Signal density (1-3 ideal, 6+ crowded)
+
+* **Cyan** — Target is directly decoding these signals
+* **Blue tiers** — Nearby stations (proxy data)
+* **Count numbers** — Signal density (1-3 ideal, 6+ crowded)
 
 ### Path Status
+
 Your signal's reach, at a glance:
-- **Heard by Target** — Target has decoded YOUR signal — call now!
-- **Heard in Region** — Stations near the target heard you — path confirmed
-- **Not Heard in Region** — Reporters exist but haven't heard you yet
-- **Not Transmitting** — You haven't transmitted recently
-- **No Reporters in Region** — No PSK Reporter data from that area
-- **Analyze button** — Deep dive into why others succeed
 
-### Local Intelligence
-Predicts DX station behavior from observed patterns:
-- **Loudest First** — favors strong signals
-- **Methodical** — works through pileup systematically  
-- **Random/Fair** — no clear preference
-
-### Hunt Mode
-Never miss a wanted station:
-- Track by callsign, prefix, or country
-- Desktop notifications when spotted
-- Special alerts when working your area
-
-### Smart Frequency Recommendations
-- **Green line** — Algorithm's recommended TX frequency
-- **Score graph** — Visual scoring across the band
-- **Solid vs dotted** — Confidence indicator (proven vs estimated)
-
-### Fox/Hound DXpedition Support
-Intelligent handling of Fox/Hound mode operation:
-- **F/H Mode checkbox** or auto-detection from decodes
-- Recommendations clamped to Hound TX range (1000+ Hz)
-- Fox zone visually marked on band map
-- Click-to-set disabled when Fox is controlling your TX frequency
+* **Heard by Target** — Target has decoded YOUR signal — call now!
+* **Heard in Region** — Stations near the target heard you — path confirmed
+* **Not Heard in Region** — Reporters exist but haven't heard you yet
+* **Not Transmitting** — You haven't transmitted recently
+* **No Reporters in Region** — No PSK Reporter data from that area
+* **Analyze button** — Deep dive into why others succeed
 
 ### Target Activity State
-See what the target station is doing right now:
-- **Status row** in dashboard (CQing, Working YOU, Working other, Idle)
-- Inferred competition from target responses
-- Toast alerts on key transitions
+
+Real-time status of what the target station is doing:
+
+* **CQing** — Target is calling CQ — open for contacts
+* **Working YOU** — Target is in QSO with you
+* **Working [call]** — Target is in QSO with another station
+* **Idle** — No recent target activity
+
+### Fox/Hound Mode Awareness
+
+* Three-layer detection: manual combo box, WSJT-X UDP, Layer 2 decode inference
+* Fox zone overlay on band map (0–1000 Hz dimmed)
+* Recommendations clamped to ≥1000 Hz in F/H mode
+* Full SuperFox/SuperHound support with disambiguation dialog
+
+### Local Intelligence
+
+Predicts DX station behavior from observed patterns:
+
+* **Loudest First** — favors strong signals
+* **Methodical** — works through pileup systematically
+* **Random/Fair** — no clear preference
+
+### Hunt Mode
+
+Never miss a wanted station:
+
+* Track by callsign, prefix, or country
+* Desktop notifications when spotted
+* Special alerts when working your area
+
+### Smart Frequency Recommendations
+
+* **Green line** — Algorithm's recommended TX frequency
+* **Score graph** — Visual scoring across the band
+* **Solid vs dotted** — Confidence indicator (proven vs estimated)
 
 ## Documentation
 
@@ -182,130 +206,76 @@ See what the target station is doing right now:
 
 ## Requirements
 
-- Windows 10/11, macOS, or Linux
-- Python 3.10+ (if running from source)
-- WSJT-X or JTDX
-- Internet connection (for PSK Reporter data)
+* Windows 10/11, macOS, or Linux
+* Python 3.10+ (if running from source)
+* WSJT-X or JTDX
+* Internet connection (for PSK Reporter data)
 
 ## Version History
 
-### v2.3.0 (March 2026)
-- **NEW:** Fox/Hound mode awareness — manual checkbox, WSJT-X UDP detection, and auto-inference from decode patterns
-- **NEW:** Fox zone overlay on band map, recommendations clamped to 1000+ Hz in Hound mode
-- **NEW:** Fox QSO protection — click-to-set disabled when Fox controls TX frequency
-- **NEW:** Target Activity State — real-time display of what target is doing (CQing, Working YOU, Working other, Idle)
-- **NEW:** Inferred competition — target responses reveal competitors you can't hear
-- **NEW:** SNR at Target — Path Intelligence and dashboard show signal strength when path confirmed
-- **IMPROVED:** Band edge score softening — gentle penalty discourages extreme edge recommendations
-- **IMPROVED:** UDP status parser extended to field 18 (Special Operation Mode, DE call, DE grid)
+### v2.3.1 (March 2026)
+* **NEW:** Three-state F/H combo box — Off / F/H / SuperF/H
+* **NEW:** Disambiguation dialog for F/H mode detection
+* **IMPROVED:** Layer 2 inference threshold tightened to 950 Hz, 4+ observations required
+* **FIXED:** 1000 Hz clamping now applies to F/H only, not SuperF/H
+* **FIXED:** Path field truncation for long SNR labels
 
-### v2.2.2 (March 2026)
-- **FIXED:** Missing menus on Linux/GNOME — `setNativeMenuBar(False)` prevents desktop menu integration from swallowing menus
-- **FIXED:** Removed legacy `main.py` (v1.x entry point) — Linux users launching the wrong file got only File/Help menus
-- **FIXED:** `launcher.py` updated to launch `main_v2.py`
-- **CLEANUP:** Removed tracked `current-state.zip` (already in `.gitignore`)
+### v2.3.0 (March 2026)
+* **NEW:** Target Activity State (CQing/Working YOU/Working other/Idle)
+* **NEW:** Fox/Hound Mode Awareness — 3-layer detection
+* **NEW:** SNR at Target in Path field and Path Intelligence
+* **NEW:** Band Edge Score Softening (200–300 Hz and 2700–2800 Hz zones)
 
 ### v2.2.1 (February 2026)
-- **FIXED:** Local decode competition incorrectly triggering hidden pileup warnings
+* **FIXED:** Local decode competition incorrectly triggering hidden pileup warnings when PSK Reporter had no target-area data
 
 ### v2.2.0 (February 2026)
-- **NEW:** Tactical observation toasts — real-time alerts for hidden pileups, path changes, competition shifts
-- **NEW:** Pileup contrast intelligence — cross-references local vs target-side competition, warns of hidden pileups
-- **NEW:** Column header tooltips — hover headers for data source info
-- **NEW:** Local decode competition fallback — shows caller count from local decodes when PSK Reporter has no data
-- **IMPROVED:** Effective path status — near-me evidence upgrades predictions when PSK Reporter shows no path
-- **IMPROVED:** Target-side competition feeds into strategy recommendations and success predictions
-- **FIXED:** Critical substring matching bug — "Not Reported in Region" incorrectly matched as "Reported in Region" in 4 code locations
-- **FIXED:** Path Intelligence / Path column data reconciliation
-- **FIXED:** Toast bar readability and band map label spacing
+* **NEW:** Tactical observation toasts
+* **NEW:** Pileup contrast intelligence
+* **NEW:** Column header tooltips
+* **FIXED:** Critical substring matching bug in path status
 
 ### v2.1.4 (February 2026)
-- **FIXED:** JTDX detection in auto-paste scripts (JTDX title contains "WSJT-X")
-- **FIXED:** Band map frequency scale too dim on Windows
-- **NEW:** Auto-paste scripts click Enable TX automatically after callsign paste
+* Fixed JTDX detection, band map scale, auto-paste Enable TX
 
 ### v2.1.3 (February 2026)
-- **NEW:** Click-to-copy target callsign from either panel
-- **NEW:** Local decode evidence for path detection (no PSK Reporter lag)
-- **IMPROVED:** Path column relabeled for clarity
-- **FIXED:** AP codes handled correctly (stripped instead of shown as callsign)
+* Click-to-copy callsign, local decode path evidence, path column clarity
 
 ### v2.1.2 (February 2026)
-- **FIXED:** Critical bug where Target Perspective never populated — PSK Reporter spots rejected as stale due to timestamp comparison using decode time instead of receipt time (reported by Brian KB1OPD)
-- **FIXED:** FT8 tokens (`RR73`) misidentified as Maidenhead grid squares, causing incorrect tiering
-- **FIXED:** ICMP "connection reset" log spam — rate-limited to single message with periodic count summary
+* **FIXED:** Target Perspective stale data rejection bug (Brian KB1OPD)
+* Grid square validation fix
 
 ### v2.1.1 (February 2026)
-- **NEW:** Band map hover tooltips — callsign, SNR, grid, tier (suggested by Brian KB1OPD)
-- **NEW:** Frequency scale with Hz labels on band map (suggested by Brian KB1OPD)
-- **NEW:** Resilient data source monitoring — status bar warns if UDP/MQTT data stops
-- **NEW:** Diagnostic logging in analyzer for troubleshooting empty Target Perspective
-- **FIXED:** Silent exception handler in analyzer that could cause empty band map with no error
+* Band map tooltips, frequency scale, resilient data monitoring
 
 ### v2.1.0 (January 2026)
-- **NEW:** Hunt Mode — track stations/prefixes/countries with alerts
-- **NEW:** Path Intelligence — see who from your area is getting through and why
-- **NEW:** Undockable panels — customize layout for multi-monitor
-- **NEW:** Click-to-clipboard for frequencies
-- **NEW:** Auto-clear on QSY option
-- **FIXED:** Windows UDP Error 10054 crashes
-- **FIXED:** Layout issues with right dock panel
-
-### v2.0.10 (December 2025)
-- **FIXED:** Critical Windows UDP Error 10054 causing crashes
-- Improved error handling for network disruptions
-
-### v2.0.9 (December 2025)
-- **NEW:** Debug logging toggle (Help menu)
-- **NEW:** Connection Help dialog
-- **NEW:** Open Log Folder menu item
-- Improved troubleshooting capabilities
-
-### v2.0.3 (December 2025)
-- **NEW:** Clear Target button and Ctrl+R shortcut
-- **NEW:** Auto-clear on QSO logged
-- **NEW:** Window/column size persistence
-- **FIXED:** QSO Logged message parsing
+* Hunt Mode, Path Intelligence, undockable panels
 
 ### v2.0.0 (November 2025)
-- **NEW:** Local Intelligence — behavior prediction from log analysis
-- **NEW:** Insights Panel — pileup status, behavior, strategy recommendations
-- **NEW:** Multicast UDP support (JTAlert, N3FJP compatibility)
-- **NEW:** Persona-based prediction (Contest Op, Casual, DX Hunter, etc.)
+* Local Intelligence, Insights Panel, Multicast UDP, persona prediction
 
-### v1.3.0
-- Smart frequency scoring (proven > empty)
-- Score graph visualization
-- Click-to-set frequency with dwell timer
-
-### v1.2.0
-- Geographic perspective engine (tiered by proximity)
-- Path status column
-- WSJT-X/JTDX double-click integration
-
-### v1.0.0
-- Initial release
-- Real-time MQTT streaming from PSK Reporter
-- Basic band map visualization
+### v1.x
+* Band map, path status, WSJT-X/JTDX integration, frequency scoring
 
 ## Contributing
 
 Contributions welcome! Please open an issue first to discuss proposed changes.
 
 ### Contributors
-- **Warren KC0GU** — Hunt Mode concept, Clear Target workflow, UI persistence suggestions
-- **Brian KB1OPD** — Band map tooltips and frequency scale requests, auto-clear on QSY, Fox/Hound mode feature request, testing and feedback
-- **Jallu OH4NDU** — First Linux bug reports (missing menus, tooltip styling on Ubuntu)
-- **Doug McDonald, CaptainBucko, Bill K3CDY, Edgar K9RE** — Beta testing and feedback
+
+* **Brian KB1OPD** — SuperFox/SuperHound live testing (CY0S), F/H false positive report, band map and tooltip requests, extensive beta testing
+* **Warren KC0GU** — Hunt Mode concept, Clear Target workflow, UI persistence suggestions
+* **Doug McDonald, CaptainBucko, Bill K3CDY, Edgar K9RE** — Beta testing and feedback
+* **Jallu OH4NDU** — Linux testing
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
+GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- **Issues:** [GitHub Issues](https://github.com/wu2c-peter/qso-predictor/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/wu2c-peter/qso-predictor/discussions)
+* **Issues:** [GitHub Issues](https://github.com/wu2c-peter/qso-predictor/issues)
+* **Discussions:** [GitHub Discussions](https://github.com/wu2c-peter/qso-predictor/discussions)
 
 ---
 

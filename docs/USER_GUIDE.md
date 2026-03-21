@@ -1,6 +1,6 @@
 # QSO Predictor User Guide
 
-**Version 2.3.0**  
+**Version 2.3.1**  
 **By Peter Hirst (WU2C)**
 
 > 📋 **See [README](https://github.com/wu2c-peter/qso-predictor/blob/main/README.md) for What's New, Version History, and Installation**
@@ -16,10 +16,11 @@
 5. [Path Intelligence](#5-path-intelligence)
 6. [Local Intelligence](#6-local-intelligence)
 7. [Hunt Mode](#7-hunt-mode)
-8. [Workflows & Tips](#8-workflows--tips)
-9. [Settings](#9-settings)
-10. [Troubleshooting](#10-troubleshooting)
-11. [FAQ](#11-faq)
+8. [Fox/Hound & SuperFox Mode](#8-foxhound--superfox-mode)
+9. [Workflows & Tips](#9-workflows--tips)
+10. [Settings](#10-settings)
+11. [Troubleshooting](#11-troubleshooting)
+12. [FAQ](#12-faq)
 
 ---
 
@@ -156,6 +157,21 @@ The decode table's **Path** column shows whether your signal is reaching each st
 | **Not Heard in Region** | Orange | Reporters exist but haven't heard you yet |
 | **Not Transmitting** | Gray | You haven't transmitted recently |
 | **No Reporters in Region** | Dark gray | No PSK Reporter data from that area |
+
+### Target Activity State (v2.3.0)
+
+The dashboard shows what the target station is doing **right now**, parsed from your local FT8 decodes:
+
+| Status | Meaning |
+|--------|---------|
+| **CQing** | Target is calling CQ — open for contacts, call now |
+| **Working YOU** | Target is in QSO with you — Fox is controlling TX |
+| **Working [call]** | Target is in QSO with another station |
+| **Idle** | No target activity in last 2 minutes |
+
+This is derived entirely from local decodes — no internet required. It updates in real time as the target's transmissions are decoded.
+
+**In Fox/Hound mode:** When "Working YOU" is detected during F/H operation, QSOP automatically disables click-to-set (since the Fox controls your TX frequency at that point) and shows "FOX CONTROLLING TX FREQUENCY" in the recommendation area.
 
 ### Tactical Observation Toasts (v2.2.0)
 
@@ -337,7 +353,83 @@ When a hunt target is spotted:
 
 ---
 
-## 8. Workflows & Tips
+## 8. Fox/Hound & SuperFox Mode
+
+QSO Predictor is aware of Fox/Hound operating modes and adjusts its recommendations accordingly.
+
+### What Is Fox/Hound Mode?
+
+Fox/Hound (F/H) is a special FT8 operating mode used by rare DXpeditions to handle high pileup rates. The DX station (Fox) transmits in a reserved low-frequency zone; calling stations (Hounds) transmit above it.
+
+There are two variants:
+
+| Mode | Fox transmits | Hounds transmit | Max simultaneous QSOs |
+|------|--------------|-----------------|----------------------|
+| **F/H** (old style) | 300–900 Hz | ≥1000 Hz | 5 |
+| **SuperFox** | ~750–2262 Hz (1512 Hz wide) | ≥200 Hz (anywhere) | 9 |
+
+**SuperFox** is used by major DXpeditions from 2024 onward (CY0S, TX5EU, etc.) and produces a visibly different wide signal on the waterfall.
+
+### Setting F/H Mode in QSOP
+
+The toolbar has a three-state combo box:
+
+| Setting | Use when |
+|---------|----------|
+| **F/H Off** | Normal FT8 operation |
+| **F/H** | Old-style Fox/Hound |
+| **SuperF/H** | SuperFox/SuperHound |
+
+**Auto-detection:** QSOP detects F/H from three sources:
+1. **WSJT-X UDP** — when WSJT-X reports Hound mode via the special_mode field
+2. **Layer 2 inference** — when QSOP sees 4+ target decodes below 950 Hz with callers above, it infers Fox pattern
+3. **Manual selection** — always available via the combo box
+
+When auto-detection fires, a **disambiguation dialog** appears asking you to confirm which mode you're in — because WSJT-X cannot distinguish old-style Hound from SuperHound in UDP. Select F/H, SuperF/H, or Ignore.
+
+> **JTDX note:** JTDX does not populate the UDP special mode field. For JTDX users, manual selection and Layer 2 inference are the only detection paths.
+
+### What Changes in F/H Mode
+
+**Old-style F/H:**
+- Frequency recommendations clamped to ≥1000 Hz
+- Fox zone (0–1000 Hz) dimmed red on band map with boundary marker
+- Click-to-set below 1000 Hz is blocked
+
+**SuperF/H:**
+- No frequency clamping (Hounds may call anywhere ≥200 Hz)
+- Fox zone overlay not shown (SuperFox occupies 750–2262 Hz)
+
+**Both modes:**
+- When Fox picks you up ("Working YOU" detected), click-to-set is fully disabled
+- "FOX CONTROLLING TX FREQUENCY" replaces the green recommendation line
+- Returns to normal when Fox moves to another station
+
+### Working a SuperFox DXpedition — Step by Step
+
+SuperFox DXpeditions operate on **non-standard frequencies** — the 1512 Hz wide signal would obliterate normal FT8 traffic if transmitted on 14.074.
+
+1. **Find the frequency** — check the DXpedition's website or DX cluster for their published FT8 frequency (e.g. CY0S on 20m uses **14.091 MHz**, not 14.074)
+2. **Tune your rig** to that exact frequency — even 1 kHz off means no decodes
+3. **Set RX audio offset** to ~750 Hz in WSJT-X
+4. **Set QSOP combo** to SuperF/H
+5. **Watch the waterfall** — you'll see a massive wide block of signal (1512 Hz wide), nothing like normal FT8
+6. **Wait for a Fox decode** to appear in WSJT-X Band Activity window — the SuperHound label turns **green** when verified
+7. **Double-click the Fox decode line** — WSJT-X starts transmitting automatically
+8. **Do not touch Enable TX** manually — it flashes momentarily if no Fox decoded yet, which is normal
+9. **Let WSJT-X auto-sequence** — once in QSO, it handles everything including sending your R+report and receiving RR73
+10. **QSO logs automatically** on RR73
+
+> **WSJT-X SuperHound quirks:** The TX frequency field is locked by WSJT-X — AHK scripts cannot set it. Decode window clicks do not send target-selection UDP packets. Set your target manually in QSOP when operating SuperHound.
+
+### Known Limitations
+
+- WSJT-X UDP reports `special_mode=7` for both old-style Hound AND SuperHound — there is no automatic distinction. The disambiguation dialog handles this.
+- JTDX always returns `special_mode=0` — manual selection is required for JTDX users.
+
+---
+
+## 9. Workflows & Tips
 
 ### Tactical Scenarios
 
@@ -632,7 +724,7 @@ end
 
 ---
 
-## 9. Settings
+## 10. Settings
 
 ### File → Settings
 
@@ -660,7 +752,7 @@ See Troubleshooting section for multi-app setups.
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### No Decodes Appearing
 
@@ -765,9 +857,23 @@ Then run bootstrap again.
 rmdir /s /q "%USERPROFILE%\.qso-predictor"
 ```
 
+### SuperFox — Enable TX Flashes But Won't Transmit
+
+WSJT-X prevents transmitting in SuperHound mode until you have decoded the Fox. Enable TX flashing momentarily then returning to white means no Fox decode has been received yet.
+
+**Check:**
+1. Is your rig on the DXpedition's exact published frequency (not 14.074)?
+2. Is the RX audio offset set to ~750 Hz?
+3. Can you see a wide block signal on the waterfall? If not, the Fox may not be transmitting on your current band or the path may be closed.
+4. Once a Fox decode appears in the Band Activity window, double-click it — WSJT-X will then enable TX.
+
+### SuperFox — Clicking Decodes Does Nothing
+
+In SuperHound mode, WSJT-X suppresses decode window clicks and does not send target-selection UDP packets. This is intentional WSJT-X behaviour. Set your target manually in QSOP's target field.
+
 ---
 
-## 11. FAQ
+## 12. FAQ
 
 **Q: Does QSO Predictor transmit for me?**  
 A: No. It's advisory only. You control your radio through WSJT-X/JTDX.
@@ -779,7 +885,7 @@ A: Currently FT8/FT4 only. The algorithms are designed for these modes.
 A: Partially. Local Intelligence works offline. Target Perspective requires PSK Reporter (internet).
 
 **Q: Does it work on Mac/Linux?**  
-A: Running from Python source works. The .exe is Windows only.
+A: Yes — Windows (.exe) and macOS (.dmg) builds are available on the Releases page. Linux users should run from Python source.
 
 **Q: Is my data uploaded anywhere?**  
 A: No. QSO Predictor only downloads PSK Reporter data. Your logs stay local.
@@ -795,6 +901,21 @@ A: It compares your target to peer stations. Works best with 3+ peers. Can't dis
 
 **Q: Why do I see "Similar pattern to nearby stations"?**  
 A: All near-me stations show the same directional pattern. This is normal — it's likely propagation, not antenna differences.
+
+**Q: What is SuperFox mode and how is it different from Fox/Hound?**  
+A: SuperFox is an enhanced DXpedition mode introduced in WSJT-X 2.7.0. Instead of up to 5 simultaneous narrow FT8 signals, the Fox transmits a single 1512 Hz wide constant-envelope signal that can work up to 9 Hounds simultaneously with no signal-strength penalty. It also includes a digital signature that WSJT-X verifies to confirm the Fox is a legitimate DXpedition. Most major DXpeditions from 2024 onward use SuperFox.
+
+**Q: Why can't I click on decodes in WSJT-X when in SuperHound mode?**  
+A: WSJT-X intentionally suppresses decode window interaction in SuperHound mode — the protocol is almost fully automated. Double-click only works on the Fox's own decode line, which triggers WSJT-X to start calling. All other clicks are blocked.
+
+**Q: Why won't Enable TX stay on in SuperHound mode?**  
+A: WSJT-X prevents blind calling in SuperHound mode to keep the bands clean. You must first receive and decode a transmission from the Fox, then double-click that decode. Enable TX will then latch on properly.
+
+**Q: The SuperFox is on 14.091 but I'm tuned to 14.074 — why does this matter?**  
+A: SuperFox stations must use non-standard frequencies because their 1512 Hz wide signal would obliterate all normal FT8 traffic if transmitted on 14.074. Always check the DXpedition's published frequency on their website or the DX cluster before trying to work them on FT8.
+
+**Q: How do I know if a DXpedition is using SuperFox or old-style Fox/Hound?**  
+A: Check their website — it will be stated explicitly. Visual clues: SuperFox produces a wide block signal on the waterfall; old-style Fox produces narrow multiple streams. In WSJT-X, the SuperHound label turns green when the Fox signal is verified (old-style Hound shows red).
 
 **Q: What is a "hidden pileup"?**  
 A: When you see few or no callers on your waterfall but PSK Reporter shows heavy competition at the target's location. This happens because propagation is often asymmetric — stations from other regions can reach the target but their signals don't reach you. The v2.2.0 pileup contrast feature detects this and warns you.
