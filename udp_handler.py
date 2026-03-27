@@ -89,27 +89,60 @@ class UDPHandler(QObject):
             except (AttributeError, OSError, ValueError) as e:
                 logger.debug(f"UDP: Could not disable ICMP errors (non-critical): {e}")
         
+        # v2.3.2: Separate bind and multicast join so failures are survivable.
+        # Previously, multicast join failure (e.g. WinError 10065) crashed the app
+        # at startup, leaving users unable to fix their settings via the UI.
+        self._bind_ok = False
+        
         try:
             if self.is_multicast:
-                # Multicast setup
-                # Bind to INADDR_ANY on the port
+                # Multicast setup: bind first, then try to join group
                 self.sock.bind(('', self.port))
-                # Join the multicast group
-                mreq = struct.pack("4sl", socket.inet_aton(self.ip), socket.INADDR_ANY)
-                self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                logger.info(f"UDP: Multicast joined {self.ip}:{self.port}")
+                try:
+                    mreq = struct.pack("4sl", socket.inet_aton(self.ip), socket.INADDR_ANY)
+                    self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+                    logger.info(f"UDP: Multicast joined {self.ip}:{self.port}")
+                    self._bind_ok = True
+                except OSError as e:
+                    # Multicast join failed (e.g. no route, VPN, adapter issue)
+                    # Socket is bound but won't receive multicast — user can fix in Settings
+                    logger.error(
+                        f"UDP: Multicast join failed for {self.ip} - {e}. "
+                        f"No UDP data will be received. "
+                        f"Go to Settings → Network and switch to 'Standard (localhost)' "
+                        f"if you don't need multicast."
+                    )
             else:
                 # Standard unicast
                 self.sock.bind(('0.0.0.0', self.port))
                 logger.info(f"UDP: Bound to port {self.port}")
+                self._bind_ok = True
                 
-            # Log forward ports if configured
-            if self.forward_ports:
-                logger.info(f"UDP: Forwarding enabled to ports: {self.forward_ports}")
+        except OSError as e:
+            # Bind itself failed — try unicast fallback
+            logger.error(f"UDP: Bind failed on port {self.port} - {e}")
+            if self.is_multicast:
+                logger.warning("UDP: Attempting unicast fallback on 0.0.0.0...")
+                try:
+                    # Need a fresh socket — the old one may be in a bad state
+                    self.sock.close()
+                    self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    self.sock.bind(('0.0.0.0', self.port))
+                    self.is_multicast = False  # Clear flag so stop() doesn't try to leave group
+                    logger.warning(
+                        f"UDP: Fell back to unicast on port {self.port}. "
+                        f"Update Settings → Network to match your WSJT-X/JTDX configuration."
+                    )
+                    self._bind_ok = True
+                except OSError as e2:
+                    logger.error(f"UDP: Unicast fallback also failed - {e2}. No UDP data available.")
+            else:
+                logger.error("UDP: Cannot listen for data. Check Settings → Network.")
                 
-        except Exception as e:
-            logger.error(f"UDP: Bind error - {e}")
-            raise
+        # Log forward ports if configured
+        if self.forward_ports:
+            logger.info(f"UDP: Forwarding enabled to ports: {self.forward_ports}")
     
     def _is_multicast_address(self, ip: str) -> bool:
         """Check if IP is in multicast range (224.0.0.0 - 239.255.255.255)"""
