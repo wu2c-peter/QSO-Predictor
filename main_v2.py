@@ -1060,8 +1060,6 @@ class MainWindow(QMainWindow):
         self._fh_source = None            # What triggered F/H: 'manual', 'udp', 'inferred'
         self._fh_type = None              # 'fh' (old-style) or 'superfh' — controls clamping behavior
         self._fh_fox_qso = False          # Fox is controlling our TX frequency
-        self._fh_target_tx_below_1000 = 0 # Count of target decodes below 1000 Hz (for Layer 2)
-        self._fh_target_tx_above_1000 = 0 # Count of callers above 1000 Hz (for Layer 2)
         self._fh_dialog_shown = False     # Prevent repeated dialogs in same session
         
         # --- UPDATE CHECK STATE ---
@@ -1713,9 +1711,7 @@ class MainWindow(QMainWindow):
         self._target_activity_time = 0
         self._inferred_competitors.clear()
         
-        # v2.3.0: Reset F/H inference counters (keep manual/UDP state)
-        self._fh_target_tx_below_1000 = 0
-        self._fh_target_tx_above_1000 = 0
+        # v2.3.0: Reset F/H state (keep manual/UDP state)
         self._fh_fox_qso = False
         self._fh_dialog_shown = False
         self.band_map.set_fox_qso(False)
@@ -1855,11 +1851,8 @@ class MainWindow(QMainWindow):
                 if state:
                     self._update_target_activity(state, other)
             
-            # --- v2.3.0: LAYER 2 FOX DETECTION ---
-            self._check_fox_from_decodes(
-                item.get('message', ''),
-                item.get('freq', 0)
-            )
+            # v2.3.0: SuperFox auto-detection from decode content
+            self._check_superfox_from_decodes(item.get('message', ''))
         
         # Disable sorting during batch add to prevent jitter
         self.table_view.setSortingEnabled(False)
@@ -2134,11 +2127,11 @@ class MainWindow(QMainWindow):
     def _show_fh_disambiguation_dialog(self, source):
         """Show dialog asking user to choose between old F/H and SuperF/H.
         
-        Called when UDP or Layer 2 detects Hound mode but can't tell which type.
+        Called when UDP detects Hound mode but can't tell which type.
         Only shown once per session (reset on target change or manual override).
         
         Args:
-            source: 'udp' or 'inferred' — what triggered the detection
+            source: 'udp' — what triggered the detection
         """
         if self._fh_dialog_shown:
             return
@@ -2146,12 +2139,8 @@ class MainWindow(QMainWindow):
         
         logger.info(f"Fox/Hound: Disambiguation dialog triggered (source={source})")
         
-        if source == 'udp':
-            title = "Hound Mode Detected"
-            text = "WSJT-X reports Hound mode is active."
-        else:
-            title = "Fox Station Detected"
-            text = "Target appears to be operating as Fox."
+        title = "Hound Mode Detected"
+        text = "WSJT-X reports Hound mode is active."
         
         msg = QMessageBox(self)
         msg.setWindowTitle(title)
@@ -2233,60 +2222,27 @@ class MainWindow(QMainWindow):
             self._fh_dialog_shown = False
             logger.info("Fox/Hound: DEACTIVATED")
     
-    def _check_fox_from_decodes(self, message, freq):
-        """v2.3.0 Layer 2: Infer Fox mode from decode patterns.
+    def _check_superfox_from_decodes(self, message):
+        """v2.3.0: Detect SuperFox from decode content.
         
-        If target consistently TXes below 1000 Hz while callers are above,
-        that's a Fox pattern. Called from process_buffer for each decode.
+        Looks for "verified" or "$VERIFY$" tokens in decoded messages,
+        which are definitive SuperFox indicators. Only works with WSJT-X
+        (JTDX cannot decode SuperFox).
+        
+        Note: Layer 2 F/H inference (frequency counting) was removed in v2.3.2.
+        On standard frequencies nobody runs Fox, and on non-standard frequencies
+        the frequency itself is sufficient — the counting logic was either
+        wrong (false positive on standard freq) or redundant (non-standard freq).
+        F/H detection now relies on manual combo box and UDP field 18 only.
         
         Args:
             message: Raw decoded message string
-            freq: Audio frequency offset of the decode
         """
-        if not self.current_target_call:
+        if not self.current_target_call or not message:
             return
         
-        target = self.current_target_call.upper()
-        parts = message.split() if message else []
-        
-        if len(parts) < 2:
-            return
-        
-        # Target is transmitting (appears as caller in message)
-        # Pattern: "OTHERCALL TARGET payload" — target in position 2
-        # Fox TX range is 300-900 Hz; threshold at 950 Hz to avoid false positives
-        # from normal stations near the bottom of the band (e.g. 973 Hz)
-        if len(parts) >= 3 and parts[1] == target:
-            if freq < 950:
-                self._fh_target_tx_below_1000 += 1
-                if self._fh_target_tx_below_1000 in (1, 4):  # Log first hit and threshold
-                    logger.info(f"Fox/Hound Layer 2: Target TX at {freq} Hz (<950), "
-                                f"count={self._fh_target_tx_below_1000}")
-            else:
-                # Target TXing above Fox range — not Fox pattern
-                self._fh_target_tx_below_1000 = max(0, self._fh_target_tx_below_1000 - 2)
-        
-        # Someone calling target above 1000 Hz
-        # Pattern: "TARGET CALLER payload" — target in position 1
-        if len(parts) >= 2 and parts[0] == target and freq > 1000:
-            self._fh_target_tx_above_1000 += 1
-            if self._fh_target_tx_above_1000 in (1, 3):  # Log first hit and threshold
-                logger.info(f"Fox/Hound Layer 2: Caller above 1000 Hz at {freq} Hz, "
-                            f"count={self._fh_target_tx_above_1000}")
-        
-        # Inference: 4+ target decodes below 950 Hz AND callers above = Fox pattern
-        if (not self._fh_active and 
-            self._fh_target_tx_below_1000 >= 4 and 
-            self._fh_target_tx_above_1000 >= 3):
-            self._show_fh_disambiguation_dialog('inferred')
-        
-        # SuperFox auto-detection: "verified" or "$VERIFY$" in decode = definitive SuperFox
-        # e.g. "CY0S verified" or "$VERIFY$ CY0S 687863" as decode lines
-        # This fires even if F/H is already active (to upgrade from old F/H to SuperFox)
-        # Note: only works with WSJT-X (JTDX cannot decode SuperFox)
         msg_lower = message.lower()
         if (('verified' in msg_lower or '$verify$' in msg_lower) and 
-            self.current_target_call and
             self.current_target_call.upper() in message.upper() and
             self._fh_type != 'superfh'):
             logger.info(f"Fox/Hound: SuperFox detected — 'verified' in decode for {self.current_target_call}")
