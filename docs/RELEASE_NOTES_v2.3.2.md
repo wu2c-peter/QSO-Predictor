@@ -52,6 +52,24 @@ The disambiguation dialog remains — it fires when UDP detects Hound mode (sinc
 
 ---
 
+## Improvements
+
+### UDP Silence Detection
+
+The status bar now provides context-specific warnings when no UDP data is being received:
+
+| Condition | Message |
+|-----------|---------|
+| Bind/multicast failed | `⚠ UDP bind failed — check Settings → Network` |
+| No data after 30s | `⚠ No UDP data received — check WSJT-X/JTDX is running and UDP settings match` |
+| Data was flowing, then stopped | `⚠ No data from WSJT-X/JTDX for Xs — is it running?` |
+
+Previously, the "never received any data" case was not detected — the health check only warned when data flow *stopped*, not when it never started. The bind failure case (from the multicast crash fix) also now surfaces a specific message.
+
+Warnings clear automatically when data resumes.
+
+---
+
 ## What Was Removed
 
 | Removed | Reason | Replacement |

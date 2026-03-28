@@ -157,6 +157,7 @@ class UDPHandler(QObject):
 
     def start(self):
         self.running = True
+        self._start_time = time.time()
         self.thread = threading.Thread(target=self._listen_loop, daemon=True)
         self.thread.start()
         logger.info("UDP: Listener thread started")
@@ -529,18 +530,26 @@ class UDPHandler(QObject):
         """v2.1.1: Check if UDP data is flowing. Returns (is_healthy, message).
         
         Called periodically by main window to detect data source failures.
+        v2.3.2: Now warns if no data ever received after grace period,
+        and gives specific message if multicast bind failed.
+        
         Returns:
-            (True, "") if data is flowing or not yet started
-            (False, "warning message") if data has stopped
+            (True, "") if data is flowing or still in startup grace period
+            (False, "warning message") if data has stopped or never arrived
         """
         if not self.running:
             return (True, "")  # Not started yet, don't warn
         
+        # v2.3.2: Specific message if bind/multicast failed
+        if not self._bind_ok:
+            return (False, "⚠ UDP bind failed — check Settings → Network")
+        
         if self._last_packet_time is None:
             # Never received any data
-            if self.messages_received == 0:
-                # Might still be starting up - don't warn for first 30s
-                return (True, "")
+            start = getattr(self, '_start_time', None)
+            if start and (time.time() - start) > self._timeout_threshold:
+                return (False, "⚠ No UDP data received — check WSJT-X/JTDX is running and UDP settings match")
+            # Still in startup grace period
             return (True, "")
         
         age = time.time() - self._last_packet_time

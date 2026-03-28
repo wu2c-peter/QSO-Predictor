@@ -32,6 +32,16 @@ Fixed a crash at startup when multicast UDP was configured but the system couldn
 
 Fixed an issue where switching targets could leave stale data in the dashboard, band map perspective, or Local Intelligence panel. All target-change paths (table click, WSJT-X/JTDX double-click, Fetch Target button, Clear Target) now go through a single unified handler, ensuring everything updates consistently.
 
+### UDP Silence Detection
+
+The status bar now warns when no UDP data is being received, with context-specific messages:
+
+- **Bind failed** — if the UDP socket couldn't bind (e.g. multicast failure), tells you to check Settings → Network
+- **Never received** — if WSJT-X/JTDX hasn't sent any data after 30 seconds, prompts you to check it's running and UDP settings match
+- **Data stopped** — if data was flowing but has gone silent, shows how long it's been quiet
+
+The warning clears automatically when data resumes.
+
 ---
 
 ## Previous Releases
@@ -218,6 +228,7 @@ Never miss a wanted station:
 * **REMOVED:** Layer 2 F/H inference — either false positive or redundant; detection now via manual combo box, UDP, and SuperFox auto-detect only
 * **FIXED:** Multicast UDP crash at startup (WinError 10065) — app now starts gracefully and falls back to unicast (Bob K7TM)
 * **FIXED:** Target change state inconsistency — dashboard, band map, and insights panel could show stale data from previous target. All target-change paths now unified through single handler.
+* **IMPROVED:** UDP silence detection — status bar now warns with specific messages when no data is being received (bind failed, never received, data stopped)
 
 ### v2.3.1 (March 2026)
 * **NEW:** Three-state F/H combo box — Off / F/H / SuperF/H

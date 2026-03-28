@@ -135,3 +135,17 @@ Added `_bind_ok` flag for potential future UI warning banner.
 All four callers reduced to single-line calls. Future features that need target-change hooks have exactly one place to add code.
 
 **Design decision:** `_set_new_target` auto-searches the decode table if `row_data` is not provided, filling in grid/freq from the table. This means `sync_to_jtdx` and `on_status` don't need to duplicate the table-scanning logic.
+
+### UDP Silence Detection Improvement
+
+**Problem:** `check_data_health()` only warned when data *stopped* flowing (tracked via `_last_packet_time`). If data never arrived at all — e.g. WSJT-X not running, wrong port, or multicast bind failure — the "never received" path returned `(True, "")` forever after startup.
+
+**Fix:** Three distinct cases now handled:
+
+1. `_bind_ok == False` → immediate specific warning about bind failure
+2. `_last_packet_time is None` and `_start_time` exceeds threshold → "never received" warning
+3. `_last_packet_time` stale → existing "data stopped" warning
+
+Added `_start_time` tracking in `start()` to measure time since listener began (previously only tracked time since last packet).
+
+The existing `_check_data_health` timer in main_v2.py (10-second interval) and `_check_startup_health` (20-second one-shot) already surface these to the status bar — no main_v2.py changes needed.
