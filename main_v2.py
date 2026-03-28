@@ -1691,57 +1691,107 @@ class MainWindow(QMainWindow):
         if self.hunt_manager:
             self.analyzer.spot_received.connect(self._check_hunt_spot)
     
-    # --- v2.0.3: Clear Target functionality (suggested by KC0GU) ---
-    def clear_target(self):
-        """Clear the current target selection.
+    # --- v2.3.2: Unified target-change handler ---
+    def _set_new_target(self, call, grid="", freq=0, row_data=None):
+        """Unified target-change handler. All target changes flow through here.
         
-        Clears all target-related state and resets the UI to "NO TARGET" mode.
-        Can be triggered via Ctrl+R shortcut or Clear Target button.
+        v2.3.2: Centralized to fix inconsistent state updates across four
+        separate code paths (clear_target, sync_to_jtdx, on_status,
+        on_row_click). Previously, some paths missed updating analyzer grid,
+        activity state, F/H state, tactical toast, or perspective display.
         
-        Feature suggested by: Warren KC0GU (Dec 2025)
+        Args:
+            call: Target callsign (empty string to clear)
+            grid: Target grid square
+            freq: Target audio frequency offset
+            row_data: Decode table row dict (if available; otherwise searched)
         """
-        # Clear internal state
-        self.current_target_call = ""
-        self.current_target_grid = ""
-        self.analyzer.current_target_grid = ""  # v2.2.0: clear near-target count
+        is_clearing = not call
         
-        # v2.3.0: Clear target activity state
+        # --- Find row data if not provided ---
+        if call and not row_data:
+            for row in self.model._data:
+                if row.get('call') == call:
+                    row_data = row
+                    if not grid:
+                        grid = row.get('grid', '')
+                    if not freq:
+                        freq = row.get('freq', 0)
+                    break
+        
+        prev_target = self.current_target_call
+        logger.info(f"Target: '{prev_target}' → '{call or '(cleared)'}'")
+        
+        # --- 1. Core state ---
+        self.current_target_call = call
+        self.current_target_grid = grid
+        self.analyzer.current_target_grid = grid
+        
+        # --- 2. Reset per-target tracking ---
         self._target_activity_state = 'unknown'
         self._target_activity_other = None
         self._target_activity_time = 0
         self._inferred_competitors.clear()
         
-        # v2.3.0: Reset F/H state (keep manual/UDP state)
+        # --- 3. F/H per-target state (keep manual/UDP mode setting) ---
         self._fh_fox_qso = False
         self._fh_dialog_shown = False
         self.band_map.set_fox_qso(False)
-        # If F/H was inferred from previous target, deactivate
         if self._fh_source == 'inferred':
             self._set_fox_hound_active(False, None, None)
         
-        # Clear table highlight
-        self.model.set_target_call(None)
+        # --- 4. Table highlighting ---
+        self.model.set_target_call(call if call else None)
         
-        # Clear dashboard
-        self.dashboard.update_data(None)
+        # --- 5. Dashboard ---
+        if is_clearing:
+            self.dashboard.update_data(None)
+        elif row_data:
+            # Re-analyze with full perspective before displaying
+            self.analyzer.analyze_decode(row_data, use_perspective=True)
+            self.dashboard.update_data(row_data)
+        else:
+            # Have call but no row data yet — show call, clear other fields
+            self.dashboard.lbl_target.setText(call)
         
-        # Clear band map target indicators
-        self.band_map.set_target_call("")
-        self.band_map.set_target_grid("")
-        self.band_map.set_target_freq(0)
-        self.band_map.update_perspective({
-            'tier1': [], 'tier2': [], 'tier3': [], 'global': []
-        })
+        # --- 6. Band map ---
+        self.band_map.set_target_freq(freq)
+        self.band_map.set_target_call(call)
+        self.band_map.set_target_grid(grid)
+        if is_clearing:
+            self.band_map.update_perspective({
+                'tier1': [], 'tier2': [], 'tier3': [], 'global': []
+            })
         
-        # Clear Local Intelligence target (use empty string, not None)
+        # --- 7. Local Intelligence ---
         if self.local_intel:
             try:
-                self.local_intel.set_target("", "")
+                self.local_intel.set_target(call if call else "", grid)
+                if row_data and not is_clearing:
+                    self._update_local_intel_path_status(row_data)
+                    comp_str = str(row_data.get('competition', ''))
+                    if hasattr(self.local_intel, 'insights_panel'):
+                        self.local_intel.insights_panel.set_target_competition(comp_str)
             except Exception as e:
-                logger.debug(f"Error clearing local intel target: {e}")
+                logger.debug(f"Error updating local intel target: {e}")
         
-        # v2.2.0: Reset tactical toast state
+        # --- 8. Tactical toast ---
         self.tactical_toast.reset_state()
+        
+        # --- 9. Perspective update (fetches PSK Reporter data for new target) ---
+        if not is_clearing:
+            self._update_perspective_display()
+    
+    # --- v2.0.3: Clear Target functionality (suggested by KC0GU) ---
+    def clear_target(self):
+        """Clear the current target selection.
+        
+        Resets all target-related state and UI to "NO TARGET" mode.
+        Can be triggered via Ctrl+R shortcut or Clear Target button.
+        
+        Feature suggested by: Warren KC0GU (Dec 2025)
+        """
+        self._set_new_target("", "", 0, None)
     
     # --- v2.0.3: QSO Logged handler (suggested by KC0GU) ---
     def on_qso_logged(self, data):
@@ -1775,39 +1825,12 @@ class MainWindow(QMainWindow):
         Feature suggested by: Warren KC0GU (Dec 2025)
         """
         if not self.jtdx_last_dx_call:
-            # No DX call from JTDX yet
             return
-        
-        # If already on this target, nothing to do
         if self.jtdx_last_dx_call == self.current_target_call:
             return
         
-        dx_call = self.jtdx_last_dx_call
-        logger.info(f"Sync: Syncing to JTDX target: {dx_call}")
-        
-        # Set target (same logic as on_status)
-        self.dashboard.lbl_target.setText(dx_call)
-        self.model.set_target_call(dx_call)
-        
-        # Find grid from decode table if available
-        target_grid = ""
-        for row in self.model._data:
-            if row.get('call') == dx_call:
-                target_grid = row.get('grid', '')
-                self.dashboard.update_data(row)
-                break
-        
-        self.current_target_call = dx_call
-        self.current_target_grid = target_grid
-        
-        # Update band map
-        self.band_map.set_target_call(dx_call)
-        if target_grid:
-            self.band_map.set_target_grid(target_grid)
-        
-        # Update Local Intelligence
-        if self.local_intel:
-            self.local_intel.set_target(dx_call, target_grid)
+        logger.info(f"Sync: Syncing to JTDX target: {self.jtdx_last_dx_call}")
+        self._set_new_target(self.jtdx_last_dx_call)
 
     def handle_decode(self, data):
         self.buffer.append(data)
@@ -1949,48 +1972,8 @@ class MainWindow(QMainWindow):
             # JTDX user selected something NEW (or cleared selection)
             self.jtdx_last_dx_call = dx_call
             
-            # Also skip if it's the same as our current target (set via table click)
-            if dx_call and dx_call == self.current_target_call:
-                logger.debug(f"UDP dx_call {dx_call} matches current target, skipping")
-                return
-            
-            if dx_call:
-                # Update to the new JTDX target
-                self.dashboard.lbl_target.setText(dx_call)
-                self.model.set_target_call(dx_call)
-                
-                # Find target in decode list and analyze with full perspective
-                target_grid = ""
-                target_freq = 0
-                target_row = None
-                for row in self.model._data:
-                    if row.get('call') == dx_call:
-                        target_freq = row.get('freq', 0)
-                        target_grid = row.get('grid', '')
-                        # Re-analyze with full perspective for accurate competition
-                        self.analyzer.analyze_decode(row, use_perspective=True)
-                        self.dashboard.update_data(row)
-                        target_row = row
-                        break
-                
-                # Store target state for perspective refresh
-                self.current_target_call = dx_call
-                self.current_target_grid = target_grid
-                self.analyzer.current_target_grid = target_grid  # v2.2.0: for near-target count
-                
-                # Update band map
-                self.band_map.set_target_freq(target_freq)
-                self.band_map.set_target_call(dx_call)
-                self.band_map.set_target_grid(target_grid)
-                
-                # --- LOCAL INTELLIGENCE: Update target ---
-                if self.local_intel:
-                    self.local_intel.set_target(dx_call, target_grid)
-                    if target_row:
-                        self._update_local_intel_path_status(target_row)
-                
-                # Trigger immediate perspective update
-                self._update_perspective_display()
+            if dx_call and dx_call != self.current_target_call:
+                self._set_new_target(dx_call)
             # Note: If JTDX clears dx_call, we don't clear our target
             # (user may have manually selected something in the table)
 
@@ -2000,49 +1983,19 @@ class MainWindow(QMainWindow):
         row = index.row()
         if row < len(self.model._data):
             data = self.model._data[row]
-            
             target_call = data.get('call', '')
-            target_grid = data.get('grid', '')
-            target_freq = data.get('freq', 0)
             
             # Skip if clicking same target (avoid redundant processing)
             if target_call == self.current_target_call:
                 logger.debug(f"Same target {target_call}, skipping")
                 return
             
-            # --- STORE TARGET STATE FOR PERIODIC REFRESH ---
-            self.current_target_call = target_call
-            self.current_target_grid = target_grid
-            self.analyzer.current_target_grid = target_grid  # v2.2.0: for near-target count
-            
-            # v2.2.0: Reset tactical toast state for new target
-            self.tactical_toast.reset_state()
-            
-            # Update dashboard and table highlighting
-            self.dashboard.lbl_target.setText(target_call)
-            self.model.set_target_call(target_call)
-            
-            # 1. Update Target Info on Band Map
-            self.band_map.set_target_freq(target_freq)
-            self.band_map.set_target_call(target_call)
-            self.band_map.set_target_grid(target_grid)
-            
-            # 2. Re-analyze with FULL target perspective (for accurate competition)
-            self.analyzer.analyze_decode(data, use_perspective=True)
-            self.dashboard.update_data(data)
-            
-            # --- LOCAL INTELLIGENCE: Update target ---
-            if self.local_intel:
-                self.local_intel.set_target(target_call, target_grid)
-                self._update_local_intel_path_status(data)
-                
-                # v2.2.0: Forward target competition to insights panel immediately
-                comp_str = str(data.get('competition', ''))
-                if hasattr(self.local_intel, 'insights_panel'):
-                    self.local_intel.insights_panel.set_target_competition(comp_str)
-            
-            # 3. Update band map perspective display
-            self._update_perspective_display()
+            self._set_new_target(
+                target_call,
+                data.get('grid', ''),
+                data.get('freq', 0),
+                data
+            )
 
     def _update_target_activity(self, state, other_call):
         """v2.3.0: Update target activity state from decoded message.

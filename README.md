@@ -28,6 +28,10 @@ Fixed a crash at startup when multicast UDP was configured but the system couldn
 
 *Thanks to Bob K7TM for the bug report.*
 
+### Target Change Consistency Fix
+
+Fixed an issue where switching targets could leave stale data in the dashboard, band map perspective, or Local Intelligence panel. All target-change paths (table click, WSJT-X/JTDX double-click, Fetch Target button, Clear Target) now go through a single unified handler, ensuring everything updates consistently.
+
 ---
 
 ## Previous Releases
@@ -213,6 +217,7 @@ Never miss a wanted station:
 ### v2.3.2 (March 2026)
 * **REMOVED:** Layer 2 F/H inference — either false positive or redundant; detection now via manual combo box, UDP, and SuperFox auto-detect only
 * **FIXED:** Multicast UDP crash at startup (WinError 10065) — app now starts gracefully and falls back to unicast (Bob K7TM)
+* **FIXED:** Target change state inconsistency — dashboard, band map, and insights panel could show stale data from previous target. All target-change paths now unified through single handler.
 
 ### v2.3.1 (March 2026)
 * **NEW:** Three-state F/H combo box — Off / F/H / SuperF/H

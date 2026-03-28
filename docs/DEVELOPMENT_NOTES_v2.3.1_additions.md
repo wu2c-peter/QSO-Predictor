@@ -106,3 +106,32 @@ Added `_bind_ok` flag for potential future UI warning banner.
 **Reporter:** Bob K7TM
 
 ---
+
+### Unified Target-Change Handler (_set_new_target)
+
+**Problem:** Four separate code paths changed the current target, each with inline state management:
+
+| Path | Source | Issues |
+|------|--------|--------|
+| `clear_target()` | Ctrl+R / button | Most complete, but still missed perspective update |
+| `sync_to_jtdx()` | Fetch Target button | Missing: analyzer grid, activity state, F/H reset, band map freq, perspective, toast, path status |
+| `on_status()` | UDP dx_call change | Missing: activity state reset, competitor clear, F/H reset, toast reset |
+| `on_row_click()` | Decode table click | Missing: activity state reset, F/H reset |
+
+**Symptom:** Switching targets could leave stale data in the dashboard, band map perspective, insights panel, or status bar. The "near target" count in the status bar only reset on QSO completion, not on target change.
+
+**Fix:** Single `_set_new_target(call, grid, freq, row_data)` method handles all 9 state update categories:
+
+1. Core state (current_target_call, current_target_grid, analyzer.current_target_grid)
+2. Per-target tracking reset (activity state, inferred competitors)
+3. F/H per-target state reset (fox_qso, dialog_shown)
+4. Table highlighting
+5. Dashboard update (with re-analyze if row_data available)
+6. Band map (freq, call, grid, perspective clear)
+7. Local Intelligence (target, path status, competition forwarding)
+8. Tactical toast state reset
+9. Perspective display update (PSK Reporter fetch)
+
+All four callers reduced to single-line calls. Future features that need target-change hooks have exactly one place to add code.
+
+**Design decision:** `_set_new_target` auto-searches the decode table if `row_data` is not provided, filling in grid/freq from the table. This means `sync_to_jtdx` and `on_status` don't need to duplicate the table-scanning logic.

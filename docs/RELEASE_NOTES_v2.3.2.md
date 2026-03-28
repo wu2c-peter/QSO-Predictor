@@ -42,6 +42,14 @@ The disambiguation dialog remains — it fires when UDP detects Hound mode (sinc
 
 *Thanks to Bob K7TM for the bug report.*
 
+### Target Change State Inconsistency
+
+**Symptom:** After changing target, dashboard, band map perspective, or Local Intelligence panel could show stale data from the previous target.
+
+**Root cause:** Four separate code paths handled target changes (table click, WSJT-X/JTDX double-click, Fetch Target button, Clear Target), each with its own inline state management. They were inconsistent — some paths missed updating analyzer grid, activity state, F/H state, tactical toast, perspective display, or competition forwarding.
+
+**Fix:** Unified all target changes into a single `_set_new_target()` method. All four code paths now call this one method, ensuring every state update happens regardless of how the target was changed. The near-target status bar count also now resets correctly on target change (previously only reset on QSO completion).
+
 ---
 
 ## What Was Removed
