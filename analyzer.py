@@ -903,7 +903,7 @@ class QSOAnalyzer(QObject):
 
     def analyze_decode(self, decode_data, update_callback=None, use_perspective=False):
         """
-        Analyze a decode and calculate probability, path status, and competition.
+        Analyze a decode and calculate opportunity score, path status, and competition.
         
         Args:
             decode_data: The decode dict to analyze (modified in place)
@@ -913,7 +913,7 @@ class QSOAnalyzer(QObject):
         
         Sets:
             'path': Path status for table column (Heard by Target, Reported in Region, etc.)
-            'prob': Success probability percentage
+            'prob': Opportunity score (0-99, higher = better prospect)
             'competition': Full competition analysis (only when use_perspective=True)
         """
         snr = decode_data.get('snr', -20)
@@ -1117,7 +1117,7 @@ class QSOAnalyzer(QObject):
             decode_data['competition'] = path_str if path_str else ""
 
         final_prob = max(5, min(99, base_prob + geo_bonus))
-        decode_data['prob'] = f"{final_prob}%"
+        decode_data['prob'] = str(final_prob)
         
         if update_callback:
             update_callback(decode_data)

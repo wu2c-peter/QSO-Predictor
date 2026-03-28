@@ -191,7 +191,7 @@ Toasts auto-dismiss after 8 seconds, or click ✕ to dismiss immediately. Rate-l
 
 ### Column Header Tooltips (v2.2.0)
 
-Hover over any column header in the decode table to see what it means and where the data comes from. Particularly useful for **Prob %** and **Path** columns, which combine multiple data sources.
+Hover over any column header in the decode table to see what it means and where the data comes from. Particularly useful for **Score** and **Path** columns, which combine multiple data sources.
 
 ### Click-to-Set Frequency
 
@@ -494,7 +494,7 @@ You can set up one-click transfer of **frequencies** and **callsigns** using Aut
 
 **The workflow:**
 1. Click band map → frequency auto-pastes to TX field
-2. Click target callsign → callsign auto-pastes to DX Call field
+2. Click target callsign → callsign auto-pastes to DX Call field, generates standard messages, and clicks Enable TX
 
 **Quick setup:**
 
@@ -523,6 +523,8 @@ JTDX_TX_X := 800     ; TX frequency field
 JTDX_TX_Y := 630
 JTDX_DX_X := 130     ; DX Call field (text box under "DX Call")
 JTDX_DX_Y := 630
+JTDX_GEN_X := 480    ; Generate Std Msgs button
+JTDX_GEN_Y := 440
 JTDX_ENTX_X := 480   ; Enable TX button
 JTDX_ENTX_Y := 365
 
@@ -531,6 +533,8 @@ WSJTX_TX_X := 800    ; TX frequency field
 WSJTX_TX_Y := 630
 WSJTX_DX_X := 130    ; DX Call field
 WSJTX_DX_Y := 630
+WSJTX_GEN_X := 480   ; Generate Std Msgs button
+WSJTX_GEN_Y := 440
 WSJTX_ENTX_X := 480  ; Enable TX button
 WSJTX_ENTX_Y := 365
 
@@ -551,23 +555,23 @@ ClipboardChanged(dataType)
     if RegExMatch(clip, "^\d{3,4}$") && clip >= 300 && clip <= 3000 {
         ; JTDX first — its title contains "WSJT-X" so must check first!
         if WinExist("JTDX")
-            PasteToField("JTDX", JTDX_TX_X, JTDX_TX_Y, clip, false, 0, 0)
+            PasteToField("JTDX", JTDX_TX_X, JTDX_TX_Y, clip)
         else if WinExist("WSJT-X")
-            PasteToField("WSJT-X", WSJTX_TX_X, WSJTX_TX_Y, clip, false, 0, 0)
+            PasteToField("WSJT-X", WSJTX_TX_X, WSJTX_TX_Y, clip)
         return
     }
 
-    ; Callsign: 3-10 chars, has letter AND digit — Enter + Enable TX
+    ; Callsign: 3-10 chars, has letter AND digit — Enter + Gen Msgs + Enable TX
     if RegExMatch(clip, "^[A-Z0-9/]{3,10}$") && RegExMatch(clip, "[A-Z]") && RegExMatch(clip, "\d") {
         if WinExist("JTDX")
-            PasteToField("JTDX", JTDX_DX_X, JTDX_DX_Y, clip, true, JTDX_ENTX_X, JTDX_ENTX_Y)
+            PasteCallsign("JTDX", JTDX_DX_X, JTDX_DX_Y, clip, JTDX_GEN_X, JTDX_GEN_Y, JTDX_ENTX_X, JTDX_ENTX_Y)
         else if WinExist("WSJT-X")
-            PasteToField("WSJT-X", WSJTX_DX_X, WSJTX_DX_Y, clip, true, WSJTX_ENTX_X, WSJTX_ENTX_Y)
+            PasteCallsign("WSJT-X", WSJTX_DX_X, WSJTX_DX_Y, clip, WSJTX_GEN_X, WSJTX_GEN_Y, WSJTX_ENTX_X, WSJTX_ENTX_Y)
         return
     }
 }
 
-PasteToField(windowTitle, clickX, clickY, text, pressEnter, enTxX, enTxY)
+PasteToField(windowTitle, clickX, clickY, text)
 {
     try {
         WinActivate windowTitle
@@ -579,18 +583,42 @@ PasteToField(windowTitle, clickX, clickY, text, pressEnter, enTxX, enTxY)
         Send "^a"
         Sleep 20
         Send text
-        if pressEnter
-            Send "{Enter}"
 
-        ; Click Enable TX after setting callsign
+        ; Confirmation tooltip
+        ToolTip "TX Freq → " text
+        SetTimer () => ToolTip(), -1500
+    } catch {
+        ToolTip "Could not paste to " windowTitle
+        SetTimer () => ToolTip(), -2000
+    }
+}
+
+PasteCallsign(windowTitle, dxX, dxY, text, genX, genY, enTxX, enTxY)
+{
+    try {
+        WinActivate windowTitle
+        WinWaitActive windowTitle,, 2
+
+        ; 1. Click DX Call field and type callsign
+        Click dxX, dxY
+        Sleep 50
+        Send "^a"
+        Sleep 20
+        Send text
+        Send "{Enter}"
+
+        ; 2. Click Generate Std Msgs to populate TX message sequence
+        Sleep 100
+        Click genX, genY
+
+        ; 3. Click Enable TX to start calling
         if (enTxX > 0 && enTxY > 0) {
             Sleep 100
             Click enTxX, enTxY
         }
 
         ; Confirmation tooltip
-        label := pressEnter ? "DX Call" : "TX Freq"
-        ToolTip label " → " text
+        ToolTip "DX Call → " text
         SetTimer () => ToolTip(), -1500
     } catch {
         ToolTip "Could not paste to " windowTitle
@@ -622,11 +650,13 @@ PasteToField(windowTitle, clickX, clickY, text, pressEnter, enTxX, enTxY)
 -- JTDX coordinates
 local JTDX_TX_X, JTDX_TX_Y = 800, 630       -- TX frequency field
 local JTDX_DX_X, JTDX_DX_Y = 130, 630       -- DX Call field
+local JTDX_GEN_X, JTDX_GEN_Y = 480, 440     -- Generate Std Msgs button
 local JTDX_ENTX_X, JTDX_ENTX_Y = 480, 365   -- Enable TX button
 
 -- WSJT-X coordinates
 local WSJTX_TX_X, WSJTX_TX_Y = 800, 630      -- TX frequency field
 local WSJTX_DX_X, WSJTX_DX_Y = 130, 630      -- DX Call field
+local WSJTX_GEN_X, WSJTX_GEN_Y = 480, 440    -- Generate Std Msgs button
 local WSJTX_ENTX_X, WSJTX_ENTX_Y = 480, 365  -- Enable TX button
 
 local lastClip = ""
@@ -642,18 +672,18 @@ hs.timer.doEvery(0.5, function()
         local freq = tonumber(clip)
         if freq >= 300 and freq <= 3000 then
             local app, x, y = findAppCoords("TX")
-            if app then pasteToField(app, clip, x, y, false, 0, 0) end
+            if app then pasteToField(app, clip, x, y) end
             return
         end
     end
 
-    -- Callsign: 3-10 chars, has letter AND digit — Enter + Enable TX
+    -- Callsign: 3-10 chars, has letter AND digit — Enter + Gen Msgs + Enable TX
     if #clip >= 3 and #clip <= 10
        and clip:match("^[A-Z0-9/]+$")
        and clip:match("[A-Z]")
        and clip:match("%d") then
-        local app, x, y, ex, ey = findAppCoords("DX")
-        if app then pasteToField(app, clip, x, y, true, ex, ey) end
+        local app, x, y, gx, gy, ex, ey = findAppCoords("DX")
+        if app then pasteCallsign(app, clip, x, y, gx, gy, ex, ey) end
     end
 end)
 
@@ -664,15 +694,15 @@ function findAppCoords(fieldType)
     local name = app:name()
     local isJTDX = name:find("JTDX")
     if fieldType == "TX" then
-        if isJTDX then return app, JTDX_TX_X, JTDX_TX_Y, 0, 0 end
-        return app, WSJTX_TX_X, WSJTX_TX_Y, 0, 0
+        if isJTDX then return app, JTDX_TX_X, JTDX_TX_Y, 0, 0, 0, 0 end
+        return app, WSJTX_TX_X, WSJTX_TX_Y, 0, 0, 0, 0
     else
-        if isJTDX then return app, JTDX_DX_X, JTDX_DX_Y, JTDX_ENTX_X, JTDX_ENTX_Y end
-        return app, WSJTX_DX_X, WSJTX_DX_Y, WSJTX_ENTX_X, WSJTX_ENTX_Y
+        if isJTDX then return app, JTDX_DX_X, JTDX_DX_Y, JTDX_GEN_X, JTDX_GEN_Y, JTDX_ENTX_X, JTDX_ENTX_Y end
+        return app, WSJTX_DX_X, WSJTX_DX_Y, WSJTX_GEN_X, WSJTX_GEN_Y, WSJTX_ENTX_X, WSJTX_ENTX_Y
     end
 end
 
-function pasteToField(app, text, x, y, pressEnter, enTxX, enTxY)
+function pasteToField(app, text, x, y)
     app:activate()
     hs.timer.doAfter(0.3, function()
         local win = app:mainWindow()
@@ -682,18 +712,34 @@ function pasteToField(app, text, x, y, pressEnter, enTxX, enTxY)
         hs.timer.doAfter(0.1, function()
             hs.eventtap.keyStroke({"cmd"}, "a")
             hs.eventtap.keyStrokes(text)
-            if pressEnter then
-                hs.eventtap.keyStroke({}, "return")
-            end
-            -- Click Enable TX after setting callsign
-            if enTxX > 0 and enTxY > 0 then
-                hs.timer.doAfter(0.1, function()
-                    hs.eventtap.leftClick({x = frame.x + enTxX, y = frame.y + enTxY})
-                end)
-            end
-            -- Confirmation
-            local label = pressEnter and "DX Call" or "TX Freq"
-            hs.alert.show(label .. " → " .. text, 1.5)
+            hs.alert.show("TX Freq → " .. text, 1.5)
+        end)
+    end)
+end
+
+function pasteCallsign(app, text, dxX, dxY, genX, genY, enTxX, enTxY)
+    app:activate()
+    hs.timer.doAfter(0.3, function()
+        local win = app:mainWindow()
+        if not win then return end
+        local frame = win:frame()
+        -- 1. Click DX Call field and type callsign
+        hs.eventtap.leftClick({x = frame.x + dxX, y = frame.y + dxY})
+        hs.timer.doAfter(0.1, function()
+            hs.eventtap.keyStroke({"cmd"}, "a")
+            hs.eventtap.keyStrokes(text)
+            hs.eventtap.keyStroke({}, "return")
+            -- 2. Click Generate Std Msgs to populate TX message sequence
+            hs.timer.doAfter(0.1, function()
+                hs.eventtap.leftClick({x = frame.x + genX, y = frame.y + genY})
+                -- 3. Click Enable TX to start calling
+                if enTxX > 0 and enTxY > 0 then
+                    hs.timer.doAfter(0.1, function()
+                        hs.eventtap.leftClick({x = frame.x + enTxX, y = frame.y + enTxY})
+                    end)
+                end
+            end)
+            hs.alert.show("DX Call → " .. text, 1.5)
         end)
     end)
 end
@@ -703,7 +749,7 @@ end
 
 > **Note:** Both scripts check for JTDX first because JTDX's title bar contains "WSJT-X" (it's a fork). If you check WSJT-X first, it will match JTDX and use the wrong coordinates. You can also skip the scripts entirely and just Ctrl+V / ⌘+V manually.
 
-📖 **Finding coordinates:** In AutoHotkey use Window Spy; in Hammerspoon use `hs.mouse.absolutePosition()` while hovering over each field.
+📖 **Finding coordinates:** In AutoHotkey use Window Spy; in Hammerspoon use `hs.mouse.absolutePosition()` while hovering over each field. You need coordinates for: TX frequency field, DX Call field, Generate Std Msgs button, and Enable TX button.
 
 ### Keyboard Shortcuts
 

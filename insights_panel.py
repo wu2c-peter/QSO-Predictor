@@ -814,10 +814,11 @@ class PredictionWidget(QGroupBox):
     """Display success prediction."""
     
     def __init__(self, parent=None):
-        super().__init__("Success Prediction", parent)
+        super().__init__("Opportunity Score", parent)
         self.setToolTip(
-            "Overall probability estimate combining signal strength,\n"
-            "path status, competition, and behavior prediction."
+            "Opportunity score combining signal strength,\n"
+            "path status, competition, and behavior analysis.\n"
+            "Higher = better prospect. Not a statistical probability."
         )
         self._setup_ui()
     
@@ -856,7 +857,7 @@ class PredictionWidget(QGroupBox):
         prob = prediction.probability
         prob_pct = int(prob * 100)
         
-        self.prob_label.setText(f"{prob_pct}%")
+        self.prob_label.setText(f"{prob_pct}")
         
         # Color by probability
         if prob >= 0.5:

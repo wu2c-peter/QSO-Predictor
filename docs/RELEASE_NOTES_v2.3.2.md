@@ -23,8 +23,6 @@ v2.3.0 introduced a three-layer F/H detection system: manual, UDP, and "Layer 2"
 
 > **JTDX note:** JTDX does not populate the UDP special mode field (always 0). For JTDX users, manual selection via the combo box is the reliable detection path.
 
-The disambiguation dialog remains — it fires when UDP detects Hound mode (since WSJT-X can't distinguish old-style Hound from SuperHound). It no longer fires from decode inference.
-
 ---
 
 ## Bug Fixes
@@ -42,50 +40,11 @@ The disambiguation dialog remains — it fires when UDP detects Hound mode (sinc
 
 *Thanks to Bob K7TM for the bug report.*
 
-### Target Change State Inconsistency
-
-**Symptom:** After changing target, dashboard, band map perspective, or Local Intelligence panel could show stale data from the previous target.
-
-**Root cause:** Four separate code paths handled target changes (table click, WSJT-X/JTDX double-click, Fetch Target button, Clear Target), each with its own inline state management. They were inconsistent — some paths missed updating analyzer grid, activity state, F/H state, tactical toast, perspective display, or competition forwarding.
-
-**Fix:** Unified all target changes into a single `_set_new_target()` method. All four code paths now call this one method, ensuring every state update happens regardless of how the target was changed. The near-target status bar count also now resets correctly on target change (previously only reset on QSO completion).
-
----
-
-## Improvements
-
-### UDP Silence Detection
-
-The status bar now provides context-specific warnings when no UDP data is being received:
-
-| Condition | Message |
-|-----------|---------|
-| Bind/multicast failed | `⚠ UDP bind failed — check Settings → Network` |
-| No data after 30s | `⚠ No UDP data received — check WSJT-X/JTDX is running and UDP settings match` |
-| Data was flowing, then stopped | `⚠ No data from WSJT-X/JTDX for Xs — is it running?` |
-
-Previously, the "never received any data" case was not detected — the health check only warned when data flow *stopped*, not when it never started. The bind failure case (from the multicast crash fix) also now surfaces a specific message.
-
-Warnings clear automatically when data resumes.
-
----
-
-## What Was Removed
-
-| Removed | Reason | Replacement |
-|---------|--------|-------------|
-| Layer 2 F/H inference | False positive on standard frequencies, redundant on non-standard | Manual combo box + UDP detection |
-| `_fh_target_tx_below_1000` counter | Part of Layer 2 | — |
-| `_fh_target_tx_above_1000` counter | Part of Layer 2 | — |
-| `'inferred'` branch in disambiguation dialog | No longer triggered | Dialog only fires from UDP |
-
 ---
 
 ## Upgrade Notes
 
 Drop-in replacement for v2.3.1. No config file changes required.
-
-If you had Layer 2 trigger F/H detection in a previous version, you'll now need to set the combo box manually — but in practice this is clearer and more reliable than the automatic inference was.
 
 ---
 

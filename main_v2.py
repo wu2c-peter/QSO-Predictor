@@ -266,7 +266,7 @@ class TargetDashboard(QFrame):
         self.lbl_target.setObjectName("target")
         self.lbl_target.setFlat(True)
         self.lbl_target.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.lbl_target.setToolTip("Click to copy callsign to clipboard")
+        self.lbl_target.setToolTip("Click to copy callsign to clipboard.\nWith auto-paste script: sends to DX Call field in WSJT-X/JTDX")
         self.lbl_target.clicked.connect(self._copy_target_to_clipboard)
         layout.addWidget(self.lbl_target)
         
@@ -305,7 +305,7 @@ class TargetDashboard(QFrame):
         self.val_msg = add_field("Message", stretch=True, tooltip="Target's most recent decoded message") 
         self.val_msg.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.val_grid = add_field("Grid", 60, tooltip="Target's Maidenhead grid locator")
-        self.val_prob = add_field("Prob %", 70, tooltip="Your estimated probability of completing\na QSO with this target")
+        self.val_prob = add_field("Score", 70, tooltip="Opportunity score for this target.\nCombines signal strength + path status - competition.\nHigher = better prospect. Not a statistical probability.")
         
         # Stacked Path / Competition field
         path_comp_container = QWidget()
@@ -366,7 +366,7 @@ class TargetDashboard(QFrame):
         self.lbl_rec = ClickableCopyLabel()
         self.lbl_rec.setObjectName("rec")
         self.lbl_rec.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_rec.setToolTip("Recommended TX frequency based on target perspective analysis.\nClick to copy. Rec = recommended, Cur = your current TX frequency.")
+        self.lbl_rec.setToolTip("Recommended TX frequency based on target perspective analysis.\nClick to copy. Rec = recommended, Cur = your current TX frequency.\nWith auto-paste script: sends to TX frequency field in WSJT-X/JTDX")
         self.lbl_rec.copied.connect(self.status_message.emit)  # Bubble up to main window
         self.update_rec("----", "----") 
         layout.addWidget(self.lbl_rec)
@@ -421,7 +421,7 @@ class TargetDashboard(QFrame):
         prob = str(data.get('prob', '--'))
         self.val_prob.setText(prob)
         try:
-            val = int(prob.replace('%', ''))
+            val = int(prob)
             col = "#00FF00" if val > 75 else ("#FF5555" if val < 30 else "#DDDDDD")
             self.val_prob.setStyleSheet(f"color: {col}; font-weight: bold;")
         except: self.val_prob.setStyleSheet("")
@@ -750,7 +750,7 @@ class DecodeTableModel(QAbstractTableModel):
         key_map = {
             "UTC": "time", "Call": "call", "Grid": "grid", "dB": "snr",
             "DT": "dt", "Freq": "freq", "Message": "message",
-            "Prob %": "prob", "Competition": "competition", "Global Activity": "competition",
+            "Score": "prob", "Competition": "competition", "Global Activity": "competition",
             "Path": "path"
         }
         key = key_map.get(col_name, col_name.lower())
@@ -776,8 +776,7 @@ class DecodeTableModel(QAbstractTableModel):
                 except: pass
             if key == "prob":
                 try:
-                    val_str = str(row_item.get('prob', '0')).replace('%', '')
-                    val = int(val_str)
+                    val = int(row_item.get('prob', '0'))
                     if val > 75: return QColor("#00FF00")
                     elif val < 30: return QColor("#FF5555")
                 except: pass
@@ -851,7 +850,7 @@ class DecodeTableModel(QAbstractTableModel):
                     "Call": "Station callsign",
                     "Grid": "Maidenhead grid locator",
                     "Message": "Decoded FT8/FT4 message",
-                    "Prob %": "Estimated success probability.\nBased on signal strength + PSK Reporter path data.",
+                    "Score": "Opportunity score (higher = better prospect).\nCombines signal strength + path status - competition.\nNot a statistical probability.",
                     "Path": "Propagation status to this station.\nSources: PSK Reporter spots + local decode analysis.",
                 }
                 col_name = self._headers[section]
@@ -863,7 +862,7 @@ class DecodeTableModel(QAbstractTableModel):
         key_map = {
             "UTC": "time", "Call": "call", "Grid": "grid", "dB": "snr",
             "DT": "dt", "Freq": "freq", "Message": "message", 
-            "Prob %": "prob", "Competition": "competition", "Path": "path"
+            "Score": "prob", "Competition": "competition", "Path": "path"
         }
         key = key_map.get(col_name, col_name.lower())
         reverse = (order == Qt.SortOrder.DescendingOrder)
@@ -872,8 +871,7 @@ class DecodeTableModel(QAbstractTableModel):
             val = row.get(key, "")
             if key in ['snr', 'prob', 'freq', 'dt', 'time']:
                 try: 
-                    s = str(val).replace('%', '')
-                    return float(s)
+                    return float(val)
                 except: return -99999.0
             return str(val).lower()
 
@@ -1310,7 +1308,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         
         # --- DECODE TABLE (Central Widget) ---
-        cols = ["UTC", "dB", "DT", "Freq", "Call", "Grid", "Message", "Prob %", "Path"]
+        cols = ["UTC", "dB", "DT", "Freq", "Call", "Grid", "Message", "Score", "Path"]
         self.model = DecodeTableModel(cols, self.config)
         
         # v2.1.0: Give model access to hunt manager for highlighting
@@ -1691,11 +1689,11 @@ class MainWindow(QMainWindow):
         if self.hunt_manager:
             self.analyzer.spot_received.connect(self._check_hunt_spot)
     
-    # --- v2.3.2: Unified target-change handler ---
+    # --- v2.3.3: Unified target-change handler ---
     def _set_new_target(self, call, grid="", freq=0, row_data=None):
         """Unified target-change handler. All target changes flow through here.
         
-        v2.3.2: Centralized to fix inconsistent state updates across four
+        v2.3.3: Centralized to fix inconsistent state updates across four
         separate code paths (clear_target, sync_to_jtdx, on_status,
         on_row_click). Previously, some paths missed updating analyzer grid,
         activity state, F/H state, tactical toast, or perspective display.

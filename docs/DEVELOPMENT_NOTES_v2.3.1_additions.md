@@ -107,6 +107,8 @@ Added `_bind_ok` flag for potential future UI warning banner.
 
 ---
 
+## v2.3.3 — Target Handler, Score Rename, Script Fix (March 2026)
+
 ### Unified Target-Change Handler (_set_new_target)
 
 **Problem:** Four separate code paths changed the current target, each with inline state management:
@@ -149,3 +151,24 @@ All four callers reduced to single-line calls. Future features that need target-
 Added `_start_time` tracking in `start()` to measure time since listener began (previously only tracked time since last packet).
 
 The existing `_check_data_health` timer in main_v2.py (10-second interval) and `_check_startup_health` (20-second one-shot) already surface these to the status bar — no main_v2.py changes needed.
+
+### "Prob %" Renamed to "Score"
+
+The decode table column "Prob %" and insights panel "Success Prediction" were renamed to "Score" and "Opportunity Score" respectively. The values (0–99) are a heuristic combining SNR base score + path geo_bonus - competition penalty, not a statistical probability. The `%` suffix was removed from the output in `analyzer.py`.
+
+**Files changed:**
+- `analyzer.py` — output format changed from `f"{final_prob}%"` to `str(final_prob)`
+- `main_v2.py` — column header "Prob %" → "Score", dashboard label, sort key mappings, tooltips, `%`-stripping logic removed from sort/display code
+- `insights_panel.py` — group box title "Success Prediction" → "Opportunity Score", tooltip updated, `%` removed from display
+
+Internal key name `'prob'` unchanged — renaming the dict key across the whole codebase was unnecessary churn.
+
+### Auto-Paste Script: Generate Std Msgs
+
+**Problem:** The AHK/Hammerspoon scripts pasted a callsign into the DX Call field and clicked Enable TX, but did not click "Generate Std Msgs". Without this step, the TX message sequence (Tx1–Tx5) remained populated for the previous station. Both WSJT-X and JTDX require Generate Std Msgs to be clicked after manually entering a callsign.
+
+**Fix:** Added `GEN_X`/`GEN_Y` coordinates for both JTDX and WSJT-X. Split the old `PasteToField` function into two: `PasteToField` (frequency only, simple) and `PasteCallsign` (callsign + Gen Std Msgs + Enable TX). Sequence is now: type callsign → Enter → click Gen Std Msgs → click Enable TX.
+
+**Also added:** Tooltips on clickable dashboard elements (target callsign, recommended frequency) mentioning auto-paste script integration.
+
+---

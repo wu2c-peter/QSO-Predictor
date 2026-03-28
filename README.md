@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.3.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.3.3-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,23 +10,7 @@
 
 ---
 
-## 🆕 What's New in v2.3.2
-
-### Simplified Fox/Hound Detection
-
-Removed Layer 2 F/H inference (automatic Fox detection from decode frequency patterns). Analysis showed it was either a false positive (on standard FT8 frequencies, where nobody runs Fox) or redundant (on non-standard frequencies, where the frequency alone is sufficient). F/H detection is now cleaner and more reliable:
-
-- **Manual combo box** — Off / F/H / SuperF/H (always available)
-- **WSJT-X UDP** — automatic detection when WSJT-X reports Hound mode
-- **SuperFox auto-detect** — automatic when "verified" / "$VERIFY$" appears in decodes
-
-> **JTDX note:** JTDX does not populate the UDP special mode field. For JTDX users, manual selection via the combo box is the reliable detection path.
-
-### Multicast Crash Fix
-
-Fixed a crash at startup when multicast UDP was configured but the system couldn't join the multicast group (e.g. VPN, missing network adapter, firewall). Previously the app died before you could reach Settings to fix the config. Now it logs a warning, attempts unicast fallback, and starts regardless — so you can fix your network settings from inside the app.
-
-*Thanks to Bob K7TM for the bug report.*
+## 🆕 What's New in v2.3.3
 
 ### Target Change Consistency Fix
 
@@ -42,9 +26,23 @@ The status bar now warns when no UDP data is being received, with context-specif
 
 The warning clears automatically when data resumes.
 
+### "Prob %" Renamed to "Score"
+
+The decode table column and insights panel previously displayed values as "Prob %" — implying a statistical probability, which it isn't. It's a heuristic opportunity score combining signal strength, path status, and competition. Now labelled **Score** (decode table) and **Opportunity Score** (insights panel), without the misleading `%` suffix. Sort by Score descending to see your best prospects at the top.
+
+### Auto-Paste Script Improvements
+
+- **Generate Std Msgs** — the AutoHotkey and Hammerspoon scripts now click the "Generate Std Msgs" button after pasting a callsign to the DX Call field. Without this step, the TX message sequence wasn't populated for the new callsign. Both WSJT-X and JTDX require this.
+- **Tooltips** — clickable elements (target callsign, recommended frequency) now show tooltips explaining that with the auto-paste scripts installed, clicking sends the value directly to WSJT-X/JTDX.
+
 ---
 
 ## Previous Releases
+
+### v2.3.2
+
+* **REMOVED:** Layer 2 F/H inference — either false positive or redundant; detection now via manual combo box, UDP, and SuperFox auto-detect only
+* **FIXED:** Multicast UDP crash at startup (WinError 10065) — app now starts gracefully and falls back to unicast (Bob K7TM)
 
 ### v2.3.1
 
@@ -224,11 +222,16 @@ Never miss a wanted station:
 
 ## Version History
 
+### v2.3.3 (March 2026)
+* **FIXED:** Target change state inconsistency — dashboard, band map, and insights panel could show stale data from previous target. All target-change paths now unified through single handler.
+* **IMPROVED:** UDP silence detection — status bar now warns with specific messages when no data is being received (bind failed, never received, data stopped)
+* **CHANGED:** "Prob %" column renamed to "Score" — it's an opportunity score, not a statistical probability. "Success Prediction" panel renamed to "Opportunity Score"
+* **IMPROVED:** Auto-paste scripts now click "Generate Std Msgs" after pasting callsign to DX Call field
+* **IMPROVED:** Tooltips on clickable elements mention auto-paste script integration
+
 ### v2.3.2 (March 2026)
 * **REMOVED:** Layer 2 F/H inference — either false positive or redundant; detection now via manual combo box, UDP, and SuperFox auto-detect only
 * **FIXED:** Multicast UDP crash at startup (WinError 10065) — app now starts gracefully and falls back to unicast (Bob K7TM)
-* **FIXED:** Target change state inconsistency — dashboard, band map, and insights panel could show stale data from previous target. All target-change paths now unified through single handler.
-* **IMPROVED:** UDP silence detection — status bar now warns with specific messages when no data is being received (bind failed, never received, data stopped)
 
 ### v2.3.1 (March 2026)
 * **NEW:** Three-state F/H combo box — Off / F/H / SuperF/H

@@ -530,7 +530,7 @@ class UDPHandler(QObject):
         """v2.1.1: Check if UDP data is flowing. Returns (is_healthy, message).
         
         Called periodically by main window to detect data source failures.
-        v2.3.2: Now warns if no data ever received after grace period,
+        v2.3.3: Now warns if no data ever received after grace period,
         and gives specific message if multicast bind failed.
         
         Returns:
@@ -540,7 +540,7 @@ class UDPHandler(QObject):
         if not self.running:
             return (True, "")  # Not started yet, don't warn
         
-        # v2.3.2: Specific message if bind/multicast failed
+        # v2.3.3: Specific message if bind/multicast failed
         if not self._bind_ok:
             return (False, "⚠ UDP bind failed — check Settings → Network")
         
