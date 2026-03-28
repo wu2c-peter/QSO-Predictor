@@ -380,14 +380,15 @@ The toolbar has a three-state combo box:
 | **F/H** | Old-style Fox/Hound |
 | **SuperF/H** | SuperFox/SuperHound |
 
-**Auto-detection:** QSOP detects F/H from three sources:
+**Auto-detection:** QSOP detects F/H from two sources:
 1. **WSJT-X UDP** — when WSJT-X reports Hound mode via the special_mode field
-2. **Layer 2 inference** — when QSOP sees 4+ target decodes below 950 Hz with callers above, it infers Fox pattern
-3. **Manual selection** — always available via the combo box
+2. **Manual selection** — always available via the combo box
 
-When auto-detection fires, a **disambiguation dialog** appears asking you to confirm which mode you're in — because WSJT-X cannot distinguish old-style Hound from SuperHound in UDP. Select F/H, SuperF/H, or Ignore.
+When UDP auto-detection fires, a **disambiguation dialog** appears asking you to confirm which mode you're in — because WSJT-X cannot distinguish old-style Hound from SuperHound in UDP. Select F/H, SuperF/H, or Ignore.
 
-> **JTDX note:** JTDX does not populate the UDP special mode field. For JTDX users, manual selection and Layer 2 inference are the only detection paths.
+Additionally, QSOP auto-detects **SuperFox** when "verified" or "$VERIFY$" appears in decoded messages — this upgrades F/H to SuperF/H automatically.
+
+> **JTDX note:** JTDX does not populate the UDP special mode field. For JTDX users, manual selection via the combo box is the reliable detection path.
 
 ### What Changes in F/H Mode
 

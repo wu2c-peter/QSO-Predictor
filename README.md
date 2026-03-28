@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.3.1-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.3.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,42 +10,39 @@
 
 ---
 
-## 🆕 What's New in v2.3.1
+## 🆕 What's New in v2.3.2
 
-### 🦊 SuperFox/SuperHound Support
+### Simplified Fox/Hound Detection
 
-v2.3.0 introduced Fox/Hound mode awareness. v2.3.1 properly handles the **SuperFox/SuperHound** protocol used by major DXpeditions (CY0S, TX5EU, etc.).
+Removed Layer 2 F/H inference (automatic Fox detection from decode frequency patterns). Analysis showed it was either a false positive (on standard FT8 frequencies, where nobody runs Fox) or redundant (on non-standard frequencies, where the frequency alone is sufficient). F/H detection is now cleaner and more reliable:
 
-**Three-state F/H combo box** replaces the old checkbox:
+- **Manual combo box** — Off / F/H / SuperF/H (always available)
+- **WSJT-X UDP** — automatic detection when WSJT-X reports Hound mode
+- **SuperFox auto-detect** — automatic when "verified" / "$VERIFY$" appears in decodes
 
-| Setting | Use when |
-|---------|----------|
-| **F/H Off** | Normal FT8 operation |
-| **F/H** | Old-style Fox/Hound (Fox 300–900 Hz, Hounds above 1000 Hz) |
-| **SuperF/H** | SuperFox/SuperHound (wide 1512 Hz Fox signal, Hounds anywhere ≥200 Hz) |
+> **JTDX note:** JTDX does not populate the UDP special mode field. For JTDX users, manual selection via the combo box is the reliable detection path.
 
-**Disambiguation dialog** — when WSJT-X UDP or Layer 2 inference detects a Fox/Hound situation, QSOP now asks you to confirm which mode you're in rather than guessing. Prevents false activations.
+### Multicast Crash Fix
 
-**Tightened Layer 2 threshold** — false positive fix: frequency threshold moved to 950 Hz, 4+ observations now required (was 3 at 1000 Hz). Fixes incorrect detection of stations calling near the bottom of the Hound window.
+Fixed a crash at startup when multicast UDP was configured but the system couldn't join the multicast group (e.g. VPN, missing network adapter, firewall). Previously the app died before you could reach Settings to fix the config. Now it logs a warning, attempts unicast fallback, and starts regardless — so you can fix your network settings from inside the app.
 
-### SuperFox Operating Notes
-
-If you're chasing a SuperFox DXpedition:
-
-1. Tune your rig to the DXpedition's **published FT8 frequency** (e.g. 14.091 MHz — NOT the standard 14.074)
-2. Set RX audio offset to ~750 Hz in WSJT-X
-3. Set QSOP combo box to **SuperF/H**
-4. Watch for the wide 1512 Hz signal block on the waterfall — nothing like normal FT8
-5. Double-click the Fox decode in WSJT-X to start calling — WSJT-X auto-sequences from there
+*Thanks to Bob K7TM for the bug report.*
 
 ---
 
 ## Previous Releases
 
+### v2.3.1
+
+* **NEW:** Three-state F/H combo box — Off / F/H / SuperF/H (replaces checkbox)
+* **NEW:** Disambiguation dialog when UDP detects Hound mode
+* **FIXED:** 1000 Hz clamping now applies to F/H only, not SuperF/H
+* **FIXED:** Path field truncation for long SNR labels
+
 ### v2.3.0
 
 * **NEW:** Target Activity State — real-time status showing whether target is CQing, Working YOU, Working other, or Idle
-* **NEW:** Fox/Hound Mode Awareness — three-layer detection (manual, WSJT-X UDP field 18, Layer 2 decode-pattern inference)
+* **NEW:** Fox/Hound Mode Awareness — manual combo box + WSJT-X UDP auto-detection
 * **NEW:** Fox zone overlay on band map, recommendation clamping to ≥1000 Hz in F/H mode
 * **NEW:** SNR at Target — surfaces PSK Reporter signal strength in Path field and Path Intelligence panel
 * **NEW:** Band Edge Score Softening — gentle score ramp in 200–300 Hz and 2700–2800 Hz zones
@@ -163,7 +160,7 @@ Real-time status of what the target station is doing:
 
 ### Fox/Hound Mode Awareness
 
-* Three-layer detection: manual combo box, WSJT-X UDP, Layer 2 decode inference
+* Detection via manual combo box, WSJT-X UDP, and SuperFox auto-detect
 * Fox zone overlay on band map (0–1000 Hz dimmed)
 * Recommendations clamped to ≥1000 Hz in F/H mode
 * Full SuperFox/SuperHound support with disambiguation dialog
@@ -213,16 +210,19 @@ Never miss a wanted station:
 
 ## Version History
 
+### v2.3.2 (March 2026)
+* **REMOVED:** Layer 2 F/H inference — either false positive or redundant; detection now via manual combo box, UDP, and SuperFox auto-detect only
+* **FIXED:** Multicast UDP crash at startup (WinError 10065) — app now starts gracefully and falls back to unicast (Bob K7TM)
+
 ### v2.3.1 (March 2026)
 * **NEW:** Three-state F/H combo box — Off / F/H / SuperF/H
 * **NEW:** Disambiguation dialog for F/H mode detection
-* **IMPROVED:** Layer 2 inference threshold tightened to 950 Hz, 4+ observations required
 * **FIXED:** 1000 Hz clamping now applies to F/H only, not SuperF/H
 * **FIXED:** Path field truncation for long SNR labels
 
 ### v2.3.0 (March 2026)
 * **NEW:** Target Activity State (CQing/Working YOU/Working other/Idle)
-* **NEW:** Fox/Hound Mode Awareness — 3-layer detection
+* **NEW:** Fox/Hound Mode Awareness — manual combo box + WSJT-X UDP auto-detection
 * **NEW:** SNR at Target in Path field and Path Intelligence
 * **NEW:** Band Edge Score Softening (200–300 Hz and 2700–2800 Hz zones)
 
@@ -265,6 +265,7 @@ Contributions welcome! Please open an issue first to discuss proposed changes.
 
 * **Brian KB1OPD** — SuperFox/SuperHound live testing (CY0S), F/H false positive report, band map and tooltip requests, extensive beta testing
 * **Warren KC0GU** — Hunt Mode concept, Clear Target workflow, UI persistence suggestions
+* **Bob K7TM** — Multicast crash bug report
 * **Doug McDonald, CaptainBucko, Bill K3CDY, Edgar K9RE** — Beta testing and feedback
 * **Jallu OH4NDU** — Linux testing
 

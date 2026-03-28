@@ -101,7 +101,7 @@ Confirmed through testing (March 2026): JTDX sends the extended UDP status field
 
 JTDX also does not enforce the 1000 Hz Hound TX boundary — "Use hound TX frequency control" checkbox is intermittently grayed out, and even when available, TX below 1000 Hz is not blocked. This may be related to using Ham Radio Deluxe as a CAT middleman; direct CAT to the radio may work better.
 
-**Impact:** Fox/Hound auto-detection via UDP (Layer 1) only works with WSJT-X. For JTDX users, QSOP provides a manual F/H checkbox and Layer 2 inference (auto-detecting Fox from decode patterns) as alternatives.
+**Impact:** Fox/Hound auto-detection via UDP (Layer 1) only works with WSJT-X. For JTDX users, QSOP provides a manual F/H combo box as the reliable detection path. (Layer 2 decode-pattern inference was removed in v2.3.2 — it was either a false positive on standard frequencies or redundant on non-standard frequencies.)
 
 ---
 

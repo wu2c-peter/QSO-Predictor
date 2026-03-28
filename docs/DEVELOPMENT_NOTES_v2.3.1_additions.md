@@ -68,3 +68,41 @@ Documented from live CY0S 2026 testing on WSJT-X 3.0.0 Improved PLUS:
 9. After RR73 received, QSO is logged automatically
 
 ---
+
+## v2.3.2 — Layer 2 Removal & Multicast Fix (March 2026)
+
+### Layer 2 F/H Inference Removed
+
+The frequency-counting Layer 2 inference (added in v2.3.0, tightened in v2.3.1) was removed entirely in v2.3.2.
+
+**Reasoning:** On standard FT8 frequencies (14.074 MHz, etc.), nobody operates as Fox — so any Layer 2 trigger there was a false positive. On non-standard frequencies (14.090 MHz, etc.), the frequency alone is a strong indicator of F/H — the counting logic was redundant. Layer 2 was either wrong or unnecessary.
+
+**Updated detection summary:**
+
+| Detection path | WSJT-X | JTDX |
+|---------------|--------|------|
+| UDP special_mode (field 18) | Works (returns 6 or 7) | Always 0 — unusable |
+| Manual combo box | Works | Works (primary path) |
+| SuperFox "verified" auto-detect | Works | N/A (JTDX can't decode SuperFox) |
+| ~~Layer 2 decode inference~~ | ~~Removed v2.3.2~~ | ~~Removed v2.3.2~~ |
+
+**Code removed:** `_fh_target_tx_below_1000` and `_fh_target_tx_above_1000` counters, `_check_fox_from_decodes()` function (replaced by `_check_superfox_from_decodes()`), `'inferred'` branch in disambiguation dialog.
+
+**What remains:** SuperFox auto-detection from "verified" / "$VERIFY$" decode content is preserved — this is a definitive signal, not a statistical inference. The `'inferred'` source value is still used for this SuperFox auto-detect path.
+
+### Multicast UDP Crash Fix
+
+**Bug:** `OSError: [WinError 10065]` at startup when multicast UDP configured but system can't join group. App crashed in `udp_handler.__init__` at `setsockopt(IP_ADD_MEMBERSHIP)`, preventing user from reaching Settings to fix config.
+
+**Root cause:** Single try/except wrapped both `bind()` and `setsockopt(IP_ADD_MEMBERSHIP)`, with unconditional `raise` on any failure.
+
+**Fix:** Separated bind and multicast join into nested try/except blocks. Three fallback layers:
+1. Multicast join fails → socket stays bound, app starts, user can fix in Settings → Network
+2. Bind fails for multicast → attempts fresh unicast socket on 0.0.0.0
+3. Everything fails → app starts with no UDP, user can still access Settings
+
+Added `_bind_ok` flag for potential future UI warning banner.
+
+**Reporter:** Bob K7TM
+
+---
