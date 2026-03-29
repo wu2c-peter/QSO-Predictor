@@ -1210,6 +1210,46 @@ class QSOAnalyzer(QObject):
         decode_data['path'] = path_str
         decode_data['my_snr_at_target'] = my_snr_at_target
         decode_data['my_snr_reporter'] = my_snr_reporter
+        
+        # v2.3.3: Recalculate score when path changes — previously score was
+        # only set on initial decode, so stale path data left scores out of sync
+        snr = decode_data.get('snr', -20)
+        if snr > 0: base_prob = 80
+        elif snr > -10: base_prob = 60
+        elif snr > -15: base_prob = 40
+        elif snr > -20: base_prob = 20
+        else: base_prob = 5
+        
+        # Derive geo_bonus from path status (mirrors analyze_decode logic)
+        direct_hit = (path_str == "Heard by Target")
+        if direct_hit:
+            geo_bonus = 100
+        elif path_str == "Reported in Region":
+            # Check grid vs field match for bonus
+            if target_grid and my_snr_reporter:
+                for my_rep in my_reception_snapshot:
+                    if my_rep.get('receiver', '') == my_snr_reporter:
+                        r_grid = my_rep.get('grid', '')
+                        if len(r_grid) >= 4 and len(target_grid) >= 4 and r_grid[:4] == target_grid[:4]:
+                            geo_bonus = 25  # Same grid
+                        else:
+                            geo_bonus = 15  # Same field
+                        break
+                else:
+                    geo_bonus = 15
+            else:
+                geo_bonus = 15
+        else:
+            geo_bonus = 0
+        
+        # SNR adjustment when no path data
+        if not direct_hit and geo_bonus == 0:
+            if snr > -5: geo_bonus = 10
+            elif snr > -12: geo_bonus = 0
+            else: geo_bonus = -15
+        
+        final_prob = max(5, min(99, base_prob + geo_bonus))
+        decode_data['prob'] = str(final_prob)
 
     def stop(self):
         self.running = False
