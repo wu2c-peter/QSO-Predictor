@@ -930,6 +930,7 @@ class StrategyWidget(QGroupBox):
         action = strategy.recommended_action
         action_display = {
             'call_now': '▶ CALL NOW',
+            'call_blind': '▶ CALL (no intel)',
             'wait': '⏸ WAIT',
             'try_later': '⏭ TRY LATER',
         }
@@ -938,6 +939,8 @@ class StrategyWidget(QGroupBox):
         # Color by action
         if action == 'call_now':
             self.action_label.setStyleSheet("color: #00ff00;")
+        elif action == 'call_blind':
+            self.action_label.setStyleSheet("color: #88bbff;")  # Muted blue — go ahead, but unguided
         elif action == 'wait':
             self.action_label.setStyleSheet("color: #ffff00;")
         else:
