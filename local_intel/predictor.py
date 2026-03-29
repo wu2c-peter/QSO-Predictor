@@ -368,6 +368,9 @@ class BayesianPredictor:
             reasons.append("Target hears you!")
         elif path_status == PathStatus.PATH_OPEN:
             reasons.append("Path is open")
+        elif path_status == PathStatus.UNKNOWN:
+            recommended_action = "call_blind"
+            reasons.append("No target area data")
         
         # v2.2.0: Determine effective competition (max of local and target-side)
         # v2.2.1: If target_competition is from local decodes (suffix "local"),
@@ -378,7 +381,7 @@ class BayesianPredictor:
         effective_size = max(local_size, target_count)
         
         # Check pileup state using effective competition (only if path is OK)
-        if recommended_action != "try_later":
+        if recommended_action not in ("try_later", "call_blind"):
             if effective_size == 0:
                 reasons.append("No competition")
             elif effective_size > 10:
@@ -410,7 +413,7 @@ class BayesianPredictor:
                     reasons.append(f"You're #{rank}/{local_size} - consider waiting")
         
         # Check behavior pattern
-        if behavior_info and behavior_info.get('pattern') and recommended_action != "try_later":
+        if behavior_info and behavior_info.get('pattern') and recommended_action not in ("try_later",):
             pattern: PickingPattern = behavior_info['pattern']
             
             if pattern.style == PickingStyle.LOUDEST_FIRST:
@@ -602,6 +605,9 @@ class HeuristicPredictor:
         elif path_status == PathStatus.PATH_OPEN:
             action = 'call_now'
             reasons.append("Path is open")
+        elif path_status == PathStatus.UNKNOWN:
+            action = 'call_blind'
+            reasons.append("No target area data")
         
         # v2.2.0: Effective competition = max of local and target-side
         # v2.2.1: If target_competition is from local decodes (suffix "local"),
@@ -616,7 +622,7 @@ class HeuristicPredictor:
                 pass
         effective_size = max(local_size, target_count)
         
-        if action != 'try_later':  # Don't override no-path
+        if action not in ('try_later', 'call_blind'):  # Don't override no-path or no-data
             if effective_size == 0:
                 reasons.append("No competition")
             elif effective_size <= 3:
