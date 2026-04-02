@@ -24,6 +24,10 @@ class SolarClient:
     def get_solar_data(self):
         """
         Returns a dict with SFI, K-Index, and a simple Condition text.
+        
+        v2.3.3 hotfix: NOAA changed JSON formats on March 31, 2026 (SCN 26-21).
+        - 10cm-flux.json: now array of objects, key "flux" (was "Flux"), numeric values
+        - noaa-planetary-k-index.json: now array of objects with "Kp" key (was positional)
         """
         data = {'sfi': 0, 'k': 0, 'condx': 'Unknown'}
         
@@ -32,16 +36,25 @@ class SolarClient:
             r = requests.get(self.URL_FLUX, timeout=5)
             if r.status_code == 200:
                 json_data = r.json()
-                data['sfi'] = int(json_data.get('Flux', 0))
+                # New format (March 2026): [{"flux": 130, "time_tag": "..."}]
+                # Old format: {"Flux": "130", "TimeStamp": "..."}
+                if isinstance(json_data, list) and len(json_data) > 0:
+                    data['sfi'] = int(json_data[0].get('flux', 0))
+                elif isinstance(json_data, dict):
+                    data['sfi'] = int(json_data.get('Flux', json_data.get('flux', 0)))
 
             # 2. Get K-Index - Lower is better
             r = requests.get(self.URL_PLANETARY_K, timeout=5)
             if r.status_code == 200:
                 json_data = r.json()
-                # Get last entry, index 1 is K-index
                 if len(json_data) > 1:
                     last_entry = json_data[-1]
-                    data['k'] = int(float(last_entry[1]))
+                    # New format (March 2026): {"Kp": 3.33, "time_tag": "..."}
+                    # Old format: ["2026-02-19 00:00:00", "3.33", ...]
+                    if isinstance(last_entry, dict):
+                        data['k'] = int(float(last_entry.get('Kp', 0)))
+                    elif isinstance(last_entry, list):
+                        data['k'] = int(float(last_entry[1]))
             
             # 3. Determine Conditions
             data['condx'] = self._calc_condition(data['sfi'], data['k'])
