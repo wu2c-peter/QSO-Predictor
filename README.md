@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.3.3-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.3.4-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,34 +10,33 @@
 
 ---
 
-## 🆕 What's New in v2.3.3
+## 🆕 What's New in v2.3.4
 
-### Target Change Consistency Fix
+### Solar Data Fix (NOAA API Change)
 
-Fixed an issue where switching targets could leave stale data in the dashboard, band map perspective, or Local Intelligence panel. All target-change paths (table click, WSJT-X/JTDX double-click, Fetch Target button, Clear Target) now go through a single unified handler, ensuring everything updates consistently.
+NOAA changed the format of their space weather JSON data feeds on March 31, 2026 (SCN 26-21). The SFI and K-index fields were renamed and restructured. QSOP now handles both the old and new formats, so "Solar: SFI 0 | K 0 (Unknown)" is resolved.
 
-### UDP Silence Detection
+*Thanks to Brian KB1OPD for spotting this.*
 
-The status bar now warns when no UDP data is being received, with context-specific messages:
+### Score/Path Desync Fix
 
-- **Bind failed** — if the UDP socket couldn't bind (e.g. multicast failure), tells you to check Settings → Network
-- **Never received** — if WSJT-X/JTDX hasn't sent any data after 30 seconds, prompts you to check it's running and UDP settings match
-- **Data stopped** — if data was flowing but has gone silent, shows how long it's been quiet
+The Score column in the decode table was only calculated when a decode first arrived — it was never updated when the Path status changed. If a PSK Reporter spot aged out and Path changed from "Reported in Region" to "Not Reported in Region", the Score retained its original high value. Now Score is recalculated on every path refresh (every 2 seconds), staying in sync with the current path status.
 
-The warning clears automatically when data resumes.
+### Misleading "CALL NOW" With No Target Data
 
-### "Prob %" Renamed to "Score"
-
-The decode table column and insights panel previously displayed values as "Prob %" — implying a statistical probability, which it isn't. It's a heuristic opportunity score combining signal strength, path status, and competition. Now labelled **Score** (decode table) and **Opportunity Score** (insights panel), without the misleading `%` suffix. Sort by Score descending to see your best prospects at the top.
-
-### Auto-Paste Script Improvements
-
-- **Generate Std Msgs** — the AutoHotkey and Hammerspoon scripts now click the "Generate Std Msgs" button after pasting a callsign to the DX Call field. Without this step, the TX message sequence wasn't populated for the new callsign. Both WSJT-X and JTDX require this.
-- **Tooltips** — clickable elements (target callsign, recommended frequency) now show tooltips explaining that with the auto-paste scripts installed, clicking sends the value directly to WSJT-X/JTDX.
+When PSK Reporter had no coverage at the target's location (PathStatus UNKNOWN), the recommendation engine defaulted to "CALL NOW" with "No competition" — treating absence of data as favorable conditions. Now correctly shows **"▶ CALL (no intel)"** in muted blue with "No target area data" as the reason. Both heuristic and ML predictors fixed.
 
 ---
 
 ## Previous Releases
+
+### v2.3.3
+
+* **FIXED:** Target change state inconsistency — all target-change paths unified through single `_set_new_target()` handler
+* **IMPROVED:** UDP silence detection — context-specific status bar warnings (bind failed, never received, data stopped)
+* **CHANGED:** "Prob %" renamed to "Score", "Success Prediction" renamed to "Opportunity Score"
+* **IMPROVED:** Auto-paste scripts now click "Generate Std Msgs" after pasting callsign
+* **IMPROVED:** Tooltips on clickable elements mention auto-paste script integration
 
 ### v2.3.2
 
@@ -221,6 +220,11 @@ Never miss a wanted station:
 * Internet connection (for PSK Reporter data)
 
 ## Version History
+
+### v2.3.4 (April 2026)
+* **FIXED:** Solar data (SFI/K-index) showing zeros — NOAA changed JSON format on March 31 (SCN 26-21). Now handles both old and new formats. (Brian KB1OPD)
+* **FIXED:** Score/Path desync — Score column now recalculated on every path refresh, no more stale 99s on stations whose path degraded
+* **FIXED:** Misleading "CALL NOW" when no PSK Reporter coverage at target — now shows "CALL (no intel)" in muted blue
 
 ### v2.3.3 (March 2026)
 * **FIXED:** Target change state inconsistency — dashboard, band map, and insights panel could show stale data from previous target. All target-change paths now unified through single handler.

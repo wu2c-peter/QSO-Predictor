@@ -172,3 +172,37 @@ Internal key name `'prob'` unchanged — renaming the dict key across the whole 
 **Also added:** Tooltips on clickable dashboard elements (target callsign, recommended frequency) mentioning auto-paste script integration.
 
 ---
+
+## v2.3.4 — Solar API Fix, Score/Path Desync, CALL NOW Fix (April 2026)
+
+### NOAA SWPC JSON Format Change (SCN 26-21)
+
+NOAA changed their JSON data feeds effective March 31, 2026. Both endpoints used by solar_client.py were affected.
+
+**10cm-flux.json:**
+- Old: `{"Flux": "130", "TimeStamp": "2026-02-26 20:00:00 UTC"}`
+- New: `[{"flux": 130, "time_tag": "2026-02-26T20:00:00"}]`
+- Changes: key `Flux` → `flux`, wrapped in array, values numeric not quoted
+
+**noaa-planetary-k-index.json:**
+- Old: `[["time_tag", "Kp", ...], ["2026-02-19 00:00:00", "3.33", ...]]` (header + rows)
+- New: `[{"time_tag": "...", "Kp": 3.33, "a_running": 18, "station_count": 8}, ...]`
+- Changes: positional arrays → keyed objects, values numeric
+
+**Fix:** Type-check response (list vs dict, dict vs list entries) and handle both formats. Reference: https://www.weather.gov/media/notification/pdf_2026/scn26-21_Data_Format_Changes_Impacting_SWPC_Products.pdf
+
+**Reporter:** Brian KB1OPD
+
+### Score/Path Desync in update_path_only
+
+Documented in post-v2.3.3 memory. `update_path_only()` ran every 2s via `refresh_paths()` but only updated the Path column. Score was set once in `analyze_decode()` when the decode first arrived and never recalculated.
+
+Fix: Added full score recalculation (SNR base + geo_bonus derivation from path status) at the end of `update_path_only()`. Same logic as `analyze_decode()` but without the expensive competition/perspective analysis.
+
+### Misleading "CALL NOW" on PathStatus.UNKNOWN
+
+Both `HeuristicPredictor.get_strategy()` and the ML predictor's `get_strategy()` defaulted `recommended_action = "call_now"` and had no `elif` for `PathStatus.UNKNOWN`. The competition check at `effective_size == 0` added "No competition" — conflating "no data" with "verified empty."
+
+Fix: Added `PathStatus.UNKNOWN → action = "call_blind"` with reason "No target area data". Competition check skipped for `call_blind`. Display: "▶ CALL (no intel)" in muted blue (#88bbff) in insights_panel.py StrategyWidget.
+
+---
