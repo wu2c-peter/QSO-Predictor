@@ -462,6 +462,8 @@ class TargetDashboard(QFrame):
             self.val_comp.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
         elif "Unknown" in comp:
             self.val_comp.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
+        elif comp == "In QSO":
+            self.val_comp.setStyleSheet("color: #FFA500; font-weight: bold;")  # Amber — target mid-QSO
         elif "Clear" in comp:
             self.val_comp.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
         else:
@@ -2269,6 +2271,11 @@ class MainWindow(QMainWindow):
                                 row['competition'] = f"Low ({inferred_count}) inferred"
                             else:
                                 row['competition'] = f"Moderate ({inferred_count}) inferred"
+                    
+                    # v2.3.5: Override competition when target is mid-QSO
+                    # Prevents misleading "Clear" when Activity shows "Working [CALL]"
+                    if self._target_activity_state in ('working_other', 'completing_with_other'):
+                        row['competition'] = 'In QSO'
                     
                     self.dashboard.update_data(row)
                     
