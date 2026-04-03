@@ -208,6 +208,8 @@ class TargetDashboard(QFrame):
     
     def __init__(self):
         super().__init__()
+        self._activity_state = 'unknown'    # v2.3.5: Track for competition override
+        self._raw_competition = ''           # v2.3.5: Real competition before override
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setFixedHeight(120) 
         self.setStyleSheet("""
@@ -302,7 +304,7 @@ class TargetDashboard(QFrame):
         self.val_snr = add_field("dB", 40, tooltip="How strong target's signal is at YOUR receiver")
         self.val_dt = add_field("DT", 40, tooltip="Target's time offset (seconds)")
         self.val_freq = add_field("Freq", 50, tooltip="Target's transmit audio frequency offset (Hz)")
-        self.val_msg = add_field("Message", stretch=True, tooltip="Target's most recent decoded message") 
+        self.val_msg = add_field("Last Msg", stretch=True, tooltip="Last decoded message from/to this target.\nMay be several cycles old — check UTC timestamp.") 
         self.val_msg.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.val_grid = add_field("Grid", 60, tooltip="Target's Maidenhead grid locator")
         self.val_prob = add_field("Score", 70, tooltip="Opportunity score for this target.\nCombines signal strength + path status - competition.\nHigher = better prospect. Not a statistical probability.")
@@ -400,6 +402,8 @@ class TargetDashboard(QFrame):
             self.val_comp.setStyleSheet("")
             self.val_activity.setText("--")
             self.val_activity.setStyleSheet("")
+            self._raw_competition = ''       # v2.3.5: Reset cached state
+            self._activity_state = 'unknown'
             return
 
         self.lbl_target.setText(data.get('call', '???'))
@@ -452,22 +456,8 @@ class TargetDashboard(QFrame):
             self.val_path.setStyleSheet("color: #DDDDDD;")
         
         comp = str(data.get('competition', ''))
-        self.val_comp.setText(comp)
-        # Color-code competition status
-        if "Heard by Target" in comp:
-            self.val_comp.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
-        elif "PILEUP" in comp:
-            self.val_comp.setStyleSheet("color: #FF5555; font-weight: bold;")  # Red
-        elif "High" in comp:
-            self.val_comp.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
-        elif "Unknown" in comp:
-            self.val_comp.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
-        elif comp == "In QSO":
-            self.val_comp.setStyleSheet("color: #FFA500; font-weight: bold;")  # Amber — target mid-QSO
-        elif "Clear" in comp:
-            self.val_comp.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
-        else:
-            self.val_comp.setStyleSheet("color: #DDDDDD;")
+        self._raw_competition = comp  # v2.3.5: Cache real value for override logic
+        self._refresh_competition_display()
 
     def update_rec(self, rec_freq, cur_freq):
         if str(rec_freq) == str(cur_freq) and str(rec_freq) != "----":
@@ -501,6 +491,9 @@ class TargetDashboard(QFrame):
             state: Activity state string
             other_call: Callsign of station target is working (if applicable)
         """
+        prev_state = self._activity_state   # v2.3.5
+        self._activity_state = state         # v2.3.5: Cache for competition override
+        
         if state == 'cqing':
             self.val_activity.setText("CQing")
             self.val_activity.setStyleSheet("color: #00FF00; font-weight: bold;")
@@ -526,6 +519,44 @@ class TargetDashboard(QFrame):
         else:
             self.val_activity.setText("--")
             self.val_activity.setStyleSheet("color: #666666;")
+        
+        # v2.3.5: If activity state changed in a way that affects the competition
+        # override, refresh competition display immediately (don't wait for 3s timer)
+        in_qso_states = ('working_other', 'completing_with_other')
+        if (state in in_qso_states) != (prev_state in in_qso_states):
+            self._refresh_competition_display()
+
+    def _refresh_competition_display(self):
+        """v2.3.5: Render competition with activity-state override.
+        
+        When target is mid-QSO (working_other / completing_with_other),
+        shows "In QSO" in amber instead of misleading "Clear" or stale
+        pileup data. Called from both update_data() and update_activity()
+        so competition display stays in sync with both data streams.
+        """
+        # Apply override when target is in QSO with someone else
+        if self._activity_state in ('working_other', 'completing_with_other'):
+            comp = 'In QSO'
+        else:
+            comp = self._raw_competition if self._raw_competition else '--'
+        
+        self.val_comp.setText(comp)
+        
+        # Color-code competition status
+        if comp == 'In QSO':
+            self.val_comp.setStyleSheet("color: #FFA500; font-weight: bold;")  # Amber — target mid-QSO
+        elif "Heard by Target" in comp:
+            self.val_comp.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
+        elif "PILEUP" in comp:
+            self.val_comp.setStyleSheet("color: #FF5555; font-weight: bold;")  # Red
+        elif "High" in comp:
+            self.val_comp.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
+        elif "Unknown" in comp:
+            self.val_comp.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
+        elif "Clear" in comp:
+            self.val_comp.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
+        else:
+            self.val_comp.setStyleSheet("color: #DDDDDD;")
 
 
 # --- DELEGATE: Custom painting for hunt highlighting ---
@@ -1732,6 +1763,7 @@ class MainWindow(QMainWindow):
         self._target_activity_other = None
         self._target_activity_time = 0
         self._inferred_competitors.clear()
+        self.dashboard.update_activity('unknown')  # v2.3.5: Reset dashboard cached state too
         
         # --- 3. F/H per-target state (keep manual/UDP mode setting) ---
         self._fh_fox_qso = False
@@ -2271,11 +2303,6 @@ class MainWindow(QMainWindow):
                                 row['competition'] = f"Low ({inferred_count}) inferred"
                             else:
                                 row['competition'] = f"Moderate ({inferred_count}) inferred"
-                    
-                    # v2.3.5: Override competition when target is mid-QSO
-                    # Prevents misleading "Clear" when Activity shows "Working [CALL]"
-                    if self._target_activity_state in ('working_other', 'completing_with_other'):
-                        row['competition'] = 'In QSO'
                     
                     self.dashboard.update_data(row)
                     
