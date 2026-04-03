@@ -350,11 +350,11 @@ class HuntManager(QObject):
         alert_type = 'active'
         details = f"Active on {self._freq_to_band(spot.get('freq', 0))}"
         
-        # Check if working nearby (receiver is in similar grid to user)
+        # Check if heard nearby (receiver is in similar grid to user)
         if self._my_grid and receiver_grid:
             if receiver_grid[:2] == self._my_grid[:2]:  # Same field
                 alert_type = 'working_nearby'
-                details = f"Working {receiver_grid[:4]} stations!"
+                details = f"Spotted near you ({receiver_grid[:4]})"
         
         # Update cooldown
         self._recent_alerts[sender] = current_time

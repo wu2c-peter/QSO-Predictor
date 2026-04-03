@@ -31,7 +31,7 @@
 #   - Right-click context menu to add/remove from hunt list
 #   - Gold highlighting for hunted stations in decode table
 #   - System tray alerts when hunted station active
-#   - "Working nearby" alerts when hunted station works your region
+#   - "Heard nearby" alerts when hunted station's signal reaches your region
 #   - Country/DXCC support with autocomplete (type "Japan" to hunt all JA stations)
 # - Added: Click-to-clipboard - click band map or Rec frequency to copy to clipboard
 # - Added: Auto-clear on QSY - clear target when changing bands (Brian's request)
@@ -2860,8 +2860,8 @@ class MainWindow(QMainWindow):
             return
         
         if alert_type == 'working_nearby':
-            # High priority - they're working your region!
-            title = f"🎯 {call} Working Nearby!"
+            # High priority - propagation path to your region confirmed!
+            title = f"🎯 {call} Heard Nearby!"
             message = f"{call} on {band}: {details}"
             icon = QSystemTrayIcon.MessageIcon.Warning
             duration = 5000
