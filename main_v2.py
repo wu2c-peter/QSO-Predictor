@@ -1937,8 +1937,21 @@ class MainWindow(QMainWindow):
         self.model.update_data_in_place(self.analyzer.analyze_decode)
 
     def handle_status_update(self, status):
-        # Throttle: JTDX sends status many times per second, we only need ~2Hz
         now = time.time()
+        
+        # --- TARGET HANDLING (before throttle) ---
+        # dx_call changes must be processed immediately — double-clicking a station
+        # in WSJT-X/JTDX should update QSOP's target without waiting for the next
+        # un-throttled status message. This is just a string comparison, no perf cost.
+        dx_call = status.get('dx_call', '')
+        if dx_call != self.jtdx_last_dx_call:
+            self.jtdx_last_dx_call = dx_call
+            if dx_call and dx_call != self.current_target_call:
+                self._set_new_target(dx_call)
+            # Note: If JTDX clears dx_call, we don't clear our target
+            # (user may have manually selected something in the table)
+        
+        # Throttle remaining UI updates: JTDX sends status many times per second
         if hasattr(self, '_last_status_time') and (now - self._last_status_time) < 0.5:
             return
         self._last_status_time = now
@@ -1994,20 +2007,6 @@ class MainWindow(QMainWindow):
         # Update Dashboard Text Immediately
         rec = self.band_map.best_offset
         self.dashboard.update_rec(rec, cur_tx)
-        
-        # --- TARGET HANDLING ---
-        # Only update our target when JTDX sends a NEW dx_call
-        # (not just repeating the same one, which would override manual table selection)
-        dx_call = status.get('dx_call', '')
-        
-        if dx_call != self.jtdx_last_dx_call:
-            # JTDX user selected something NEW (or cleared selection)
-            self.jtdx_last_dx_call = dx_call
-            
-            if dx_call and dx_call != self.current_target_call:
-                self._set_new_target(dx_call)
-            # Note: If JTDX clears dx_call, we don't clear our target
-            # (user may have manually selected something in the table)
 
  
     def on_row_click(self, index):
