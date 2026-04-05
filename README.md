@@ -28,6 +28,10 @@ The model runs entirely locally (no internet required for predictions) using cur
 
 When a target was set from a WSJT-X/JTDX status message before decodes arrived, the target grid could remain empty, affecting PSK Reporter perspective accuracy. Now backfilled automatically from the decode table.
 
+## v2.4.1
+
+Removed misleading "dB" prediction in IONIS panel and added "strong" to "open", "marginal" and "closed" predictions.
+
 ---
 
 ## Previous Releases
