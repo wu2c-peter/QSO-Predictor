@@ -2877,7 +2877,9 @@ class MainWindow(QMainWindow):
         psk_has_spots = False
         try:
             if hasattr(self, 'analyzer') and self.analyzer:
-                perspective = self.analyzer.get_target_perspective()
+                perspective = self.analyzer.get_target_perspective(
+                    self.current_target_call, self.current_target_grid
+                )
                 if perspective:
                     tier1 = perspective.get('tier1', [])
                     tier2 = perspective.get('tier2', [])
