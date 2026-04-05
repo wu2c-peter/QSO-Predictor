@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.4.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,31 +10,31 @@
 
 ---
 
-## 🆕 What's New in v2.4.0
+## 🆕 What's New in v2.4.2
 
-### Path Prediction (IONIS)
+### Path Prediction Fixes
 
-QSO Predictor now includes embedded HF propagation predictions powered by the [IONIS](https://ionis-ai.com) model by Greg Beam (KI7MT). A new **"Path Prediction"** section in the Insights Panel shows:
-
-- **Current prediction** — is the path from your station to the target open, marginal, or closed?
-- **12-hour forecast strip** — color-coded bar showing when the path opens and closes based on sun position
-- **vs-Reality check** — compares the prediction against live PSK Reporter observations. Flags unusual conditions like unexpected openings or better-than-expected propagation.
-
-The model runs entirely locally (no internet required for predictions) using current SFI, Kp, and sun position. Enable or disable in **Edit → Settings → Features**.
-
-*Propagation model by Greg Beam, KI7MT — [ionis-ai.com](https://ionis-ai.com) — GPLv3*
-
-### Target Grid Backfill Fix
-
-When a target was set from a WSJT-X/JTDX status message before decodes arrived, the target grid could remain empty, affecting PSK Reporter perspective accuracy. Now backfilled automatically from the decode table.
-
-## v2.4.1
-
-Removed misleading "dB" prediction in IONIS panel and added "strong" to "open", "marginal" and "closed" predictions.
+* **FIXED:** vs-Reality comparison was checking for *any* spots at the target's location instead of spots *from your area*. Now correctly filters by sender grid — consistent with Path Intelligence panel.
+* **IMPROVED:** Removed misleading dB value from prediction display — IONIS outputs are model-internal (WSPR-normalized), not real SNR
+* **IMPROVED:** Added **STRONG** status tier for paths well above the decode threshold (STRONG / OPEN / MARGINAL / CLOSED)
+* **IMPROVED:** Shows "Awaiting target grid…" when target is selected but grid not yet available from decodes
+* **IMPROVED:** Widget hides when target is cleared instead of showing blank
 
 ---
 
 ## Previous Releases
+
+### v2.4.1
+
+* **IMPROVED:** Removed misleading dB prediction in IONIS panel
+* **IMPROVED:** Added STRONG status to OPEN, MARGINAL, and CLOSED predictions
+
+### v2.4.0
+
+**Path Prediction (IONIS)** — QSO Predictor now includes embedded HF propagation predictions powered by the [IONIS](https://ionis-ai.com) model by Greg Beam (KI7MT). A new "Path Prediction" section in the Insights Panel shows current prediction, 12-hour forecast strip, and vs-reality comparison against live PSK Reporter data. Pure numpy inference, no PyTorch dependency, runs entirely locally.
+
+* **NEW:** Settings → Features tab with IONIS enable/disable toggle
+* **FIXED:** Target grid not backfilled when set from UDP status before decodes arrive
 
 ### v2.3.5
 
@@ -246,6 +246,13 @@ Physics-based HF propagation prediction powered by [IONIS](https://ionis-ai.com)
 * Internet connection (for PSK Reporter data; Path Prediction works offline)
 
 ## Version History
+
+### v2.4.2 (April 2026)
+* **FIXED:** vs-Reality comparison now checks spots from your area, not just any activity at the target
+* **IMPROVED:** Removed misleading dB value, added STRONG status tier, shows waiting message when grid unavailable
+
+### v2.4.1 (April 2026)
+* **IMPROVED:** Removed dB from IONIS prediction display, added STRONG status
 
 ### v2.4.0 (April 2026)
 * **NEW:** Path Prediction — embedded IONIS V22-gamma propagation model by KI7MT. Predicts HF path viability using SFI, Kp, and sun position. 12-hour forecast strip, vs-reality comparison against PSK Reporter data. Pure numpy inference, no PyTorch dependency.

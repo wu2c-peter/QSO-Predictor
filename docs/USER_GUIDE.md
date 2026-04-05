@@ -363,19 +363,22 @@ QSO Predictor includes embedded HF propagation predictions powered by the IONIS 
 When you select a target, the Path Prediction section displays:
 
 **Current Prediction:** The band, path (your grid → target grid), and status:
-- **OPEN** (green) — FT8 should be decodable on this path
-- **MARGINAL** (yellow) — near the decode threshold, could go either way
-- **CLOSED** (red) — physics says this path is not viable right now
+- **STRONG** (bright green) — ionosphere is robustly supporting this path
+- **OPEN** (green) — path is viable
+- **MARGINAL** (yellow) — near the edge, could go either way
+- **CLOSED** (red) — no ionospheric support for this path right now
+
+**Important:** These statuses describe the *ionosphere*, not your specific signal. "STRONG" means even modest stations have a shot; "OPEN" means the path exists but you still need adequate power and antenna to close the link. Your station's power and antenna are not modeled.
 
 **Solar Context:** Sun elevation at each endpoint (☀ for daylight, ☽ for night) and path distance. This helps you understand *why* a path is open or closed — for example, high bands close when both endpoints are dark because the F-layer collapses.
 
 **12-Hour Forecast Strip:** A color-coded bar showing how the path is expected to evolve. Each cell is one hour, colored from green (open) to red (closed). Tick marks appear every hour, with labels every 3 hours. The forecast is based on sun position (deterministic) and assumes current SFI/Kp hold constant.
 
-**vs-Reality Check:** Compares the IONIS prediction against what PSK Reporter is actually observing:
-- **✓ Confirmed by spots** — prediction matches reality
-- **⚠ Predicted open, no spots** — IONIS says open but no PSK Reporter confirmation
+**vs-Reality Check:** Compares the IONIS prediction against what PSK Reporter is actually observing *for your specific path corridor* (spots from your area arriving at the target's area):
+- **✓ Path confirmed by spots** — stations from your area are being heard near the target
+- **⚠ Predicted open, not confirmed** — IONIS says the ionosphere supports the path but no spots from your area have been seen at the target
 - **★ Better than expected** — conditions are beating the prediction
-- **★ Unexpected opening!** — path is open when physics says it shouldn't be (rare — act fast!)
+- **★ Unexpected opening!** — path is working when physics says it shouldn't be (rare — act fast!)
 - **— Closed** — both IONIS and PSK Reporter agree: no path
 
 **Conditions:** The SFI and Kp values used for the prediction.
@@ -389,7 +392,7 @@ The prediction refreshes automatically when you:
 
 ### How It Works
 
-IONIS is a neural network (205,621 parameters) trained on 20 million WSPR observations. It takes 17 input features — all derived from two grid squares, a frequency, the time, SFI, and Kp — and predicts the expected SNR for the path. A deterministic physics override layer then clamps physically impossible predictions (e.g., 10m open when both endpoints are in deep night).
+IONIS is a neural network (205,621 parameters) trained on 20 million WSPR observations. It takes 17 input features — all derived from two grid squares, a frequency, the time, SFI, and Kp — and predicts whether the ionosphere can support a signal on this path. A deterministic physics override layer then clamps physically impossible predictions (e.g., 10m open when both endpoints are in deep night).
 
 The model runs entirely locally with no internet connection required. It uses pure numpy (no PyTorch) and completes a prediction in about 0.1 milliseconds.
 
@@ -400,9 +403,11 @@ Go to **Edit → Settings → Features** and toggle "Enable IONIS propagation pr
 ### Tips
 
 1. **The forecast strip is most useful for planning.** If you see the path closing in 2 hours, prioritize this target now.
-2. **"Unexpected opening!" is the money signal.** When IONIS says closed but PSK Reporter shows spots, conditions are unusually good. These windows tend to be short.
-3. **Watch for high Kp.** The model accounts for geomagnetic storms, but Kp can spike suddenly. If Kp jumps, the forecast updates automatically on the next solar refresh.
-4. **Low bands vs high bands are opposite.** Low bands (40m, 80m) open at night when D-layer absorption vanishes. High bands (15m, 10m) need sunlit ionosphere for F-layer refraction. The forecast strip makes this visible.
+2. **"Unexpected opening!" is the money signal.** When IONIS says closed but PSK Reporter shows spots from your area, conditions are unusually good. These windows tend to be short.
+3. **"Predicted open, not confirmed" is normal.** It means the ionosphere should support the path but PSK Reporter hasn't seen spots from your area at the target yet. This could mean the path just opened, or that nobody from your area is transmitting on that band. It doesn't mean the prediction is wrong.
+4. **STRONG means even modest stations have a shot.** If you see STRONG and you're not getting through, the issue is likely at your end (power, antenna, noise floor) rather than the ionosphere.
+5. **Watch for high Kp.** The model accounts for geomagnetic storms, but Kp can spike suddenly. If Kp jumps, the forecast updates automatically on the next solar refresh.
+6. **Low bands vs high bands are opposite.** Low bands (40m, 80m) open at night when D-layer absorption vanishes. High bands (15m, 10m) need sunlit ionosphere for F-layer refraction. The forecast strip makes this visible.
 
 ---
 
