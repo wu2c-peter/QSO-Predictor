@@ -2843,6 +2843,10 @@ class MainWindow(QMainWindow):
                 my_grid, self.current_target_grid, band, sfi, kp
             )
             
+            if prediction:
+                prediction['tx_grid'] = my_grid[:4].upper()
+                prediction['rx_grid'] = self.current_target_grid[:4].upper()
+            
             # 12-hour forecast
             forecast = self._ionis_engine.predict_range(
                 my_grid, self.current_target_grid, band, sfi, kp, hours=12

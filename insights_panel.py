@@ -1094,11 +1094,12 @@ class PropagationWidget(QGroupBox):
     }
     
     def __init__(self, parent=None):
-        super().__init__("Propagation (IONIS)", parent)
+        super().__init__("Path Prediction (IONIS)", parent)
         self.setToolTip(
             "HF path prediction from the IONIS V22-gamma model.\n"
-            "Uses current SFI, Kp, and sun position to predict\n"
-            "whether FT8 signals can travel this path.\n\n"
+            "Predicts whether FT8 signals can travel from your\n"
+            "station to the selected target, using current SFI,\n"
+            "Kp, and sun position.\n\n"
             "Forecast assumes current conditions hold.\n"
             "Model by Greg Beam, KI7MT — ionis-ai.com"
         )
@@ -1153,6 +1154,8 @@ class PropagationWidget(QGroupBox):
         tx_solar = prediction.get('tx_solar_deg', 0)
         rx_solar = prediction.get('rx_solar_deg', 0)
         distance = prediction.get('distance_km', 0)
+        tx_grid = prediction.get('tx_grid', '')
+        rx_grid = prediction.get('rx_grid', '')
         
         # Main prediction line
         status_colors = {
@@ -1161,8 +1164,9 @@ class PropagationWidget(QGroupBox):
             'CLOSED': '#ff4444',
         }
         color = status_colors.get(status, '#ffffff')
+        path_str = f"{tx_grid}→{rx_grid} " if tx_grid and rx_grid else ""
         self.prediction_label.setText(
-            f"{band}:  {status}  ({snr_db:+.0f} dB)"
+            f"{band} {path_str}{status}  ({snr_db:+.0f} dB)"
         )
         self.prediction_label.setStyleSheet(f"color: {color};")
         
