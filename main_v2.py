@@ -2820,9 +2820,11 @@ class MainWindow(QMainWindow):
         
         # Need target grid and current band
         if not self.current_target_grid or not hasattr(self, '_current_band'):
+            self._show_ionis_waiting("Awaiting target grid…")
             return
         band = getattr(self, '_current_band', None)
         if not band:
+            self._show_ionis_waiting("Awaiting band info…")
             return
         
         # Need our own grid
@@ -2921,11 +2923,23 @@ class MainWindow(QMainWindow):
         return 'unknown'
     
     def _clear_ionis_prediction(self):
-        """Clear the IONIS propagation display."""
+        """Clear and hide the IONIS propagation display."""
         if (self.local_intel and
                 hasattr(self.local_intel, 'insights_panel') and
                 self.local_intel.insights_panel):
-            self.local_intel.insights_panel.propagation_widget.clear()
+            panel = self.local_intel.insights_panel
+            panel.propagation_widget.clear()
+            panel.propagation_widget.hide()
+    
+    def _show_ionis_waiting(self, message: str):
+        """Show a waiting message in the IONIS widget."""
+        if (self.local_intel and
+                hasattr(self.local_intel, 'insights_panel') and
+                self.local_intel.insights_panel):
+            panel = self.local_intel.insights_panel
+            panel.propagation_widget.show()
+            panel.propagation_widget.prediction_label.setText(message)
+            panel.propagation_widget.prediction_label.setStyleSheet("color: #888888;")
     
     # --- v2.1.0: HUNT MODE METHODS ---
     
