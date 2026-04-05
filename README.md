@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.4.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.4.3-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,19 +10,24 @@
 
 ---
 
-## 🆕 What's New in v2.4.2
+## 🆕 What's New in v2.4.3
 
-### Path Prediction Fixes
+### Pileup Status Clarity
 
-* **FIXED:** vs-Reality comparison was checking for *any* spots at the target's location instead of spots *from your area*. Now correctly filters by sender grid — consistent with Path Intelligence panel.
-* **IMPROVED:** Removed misleading dB value from prediction display — IONIS outputs are model-internal (WSPR-normalized), not real SNR
-* **IMPROVED:** Added **STRONG** status tier for paths well above the decode threshold (STRONG / OPEN / MARGINAL / CLOSED)
-* **IMPROVED:** Shows "Awaiting target grid…" when target is selected but grid not yet available from decodes
-* **IMPROVED:** Widget hides when target is cleared instead of showing blank
+Pileup status wording rewritten to eliminate ambiguity about data sources:
+* "Calling (clear)" → **"Calling — no other callers decoded"** (unambiguous: your radio's decodes)
+* "Calling (+5)" → **"Calling — 5 other callers decoded"**
+* Rank preserved when available: **"Calling — #1 loudest of 5 callers"**
+* Resolves the contradiction where "clear" appeared alongside a hidden pileup warning
 
 ---
 
 ## Previous Releases
+
+### v2.4.2
+
+* **FIXED:** vs-Reality comparison now checks spots from your area, not just any activity at target
+* **IMPROVED:** Removed misleading dB value, added STRONG status tier, shows waiting message when grid unavailable
 
 ### v2.4.1
 
@@ -246,6 +251,9 @@ Physics-based HF propagation prediction powered by [IONIS](https://ionis-ai.com)
 * Internet connection (for PSK Reporter data; Path Prediction works offline)
 
 ## Version History
+
+### v2.4.3 (April 2026)
+* **IMPROVED:** Pileup status wording — "Calling (clear)" replaced with unambiguous "Calling — no other callers decoded" to eliminate contradiction with hidden pileup warnings
 
 ### v2.4.2 (April 2026)
 * **FIXED:** vs-Reality comparison now checks spots from your area, not just any activity at the target

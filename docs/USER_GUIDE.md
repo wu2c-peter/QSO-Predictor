@@ -312,11 +312,15 @@ Based on all available data:
 
 ### Pileup Contrast (v2.2.0)
 
-The Insights panel now shows target-side competition from PSK Reporter alongside your local pileup count. This reveals **hidden pileups** — situations where you see a clear band locally but the target has heavy competition you can't hear.
+The Insights panel shows target-side competition from PSK Reporter alongside your local decode count. This reveals **hidden pileups** — situations where your radio decodes no other callers but the target has heavy competition from stations you can't decode.
 
-When a hidden pileup is detected, you'll see:
-- A yellow warning in the Insights panel: "⚠️ Hidden pileup — you can't hear your competition!"
-- A tactical toast notification bar above the decode table
+The pileup status line shows your local situation unambiguously:
+- **"Calling — no other callers decoded"** — your radio hasn't decoded anyone else calling the target
+- **"Calling — 3 other callers decoded"** — your radio sees 3 others
+- **"Calling — #1 loudest of 5 callers"** — your SNR rank among decoded callers (useful for targets that pick loudest-first)
+
+When a hidden pileup is detected, a yellow warning appears below:
+- "⚠️ Hidden pileup — you can't hear your competition!"
 - Strategy recommendation adjusted to account for the real competition level
 
 This is one of the most common reasons calls go unanswered — now you can see it happening.
@@ -521,9 +525,9 @@ SuperFox DXpeditions operate on **non-standard frequencies** — the 1512 Hz wid
 
 #### Hidden Pileup (v2.2.0)
 
-**Signs:** Orange toast "Hidden pileup", yellow warning in Insights panel, few callers visible locally but high competition shown at target
+**Signs:** Orange toast "Hidden pileup", yellow warning in Insights panel showing "no other callers decoded" but target has high competition
 
-**What's happening:** You can't hear the stations competing with you because propagation is one-way — they can reach the target but not you. This is extremely common on long paths.
+**What's happening:** You can't decode the stations competing with you because propagation is one-way — they can reach the target but their signals don't reach you. This is extremely common on long paths.
 
 **Your strategy:**
 - Don't assume the band is clear just because your waterfall looks empty

@@ -70,11 +70,11 @@ class PileupStatusWidget(QGroupBox):
         size_layout.addStretch()
         layout.addLayout(size_layout)
         
-        # Your rank
+        # Your status
         rank_layout = QHBoxLayout()
-        rank_layout.addWidget(QLabel("Your rank:"))
         self.rank_label = QLabel("—")
-        self.rank_label.setFont(QFont("Consolas", 12))
+        self.rank_label.setFont(QFont("Consolas", 10))
+        self.rank_label.setWordWrap(True)
         rank_layout.addWidget(self.rank_label)
         rank_layout.addStretch()
         layout.addLayout(rank_layout)
@@ -129,20 +129,20 @@ class PileupStatusWidget(QGroupBox):
             total = your_status.get('total', size)
             
             if rank == '?':
-                # We're calling but can't see ourselves
+                # We're calling but can't determine our rank
                 if total == 0:
-                    self.rank_label.setText("Calling (clear)")
+                    self.rank_label.setText("Calling — no other callers decoded")
                 else:
-                    self.rank_label.setText(f"Calling (+{total})")
+                    self.rank_label.setText(f"Calling — {total} other callers decoded")
                 self.rank_label.setStyleSheet("color: #00ffff;")  # Cyan
             elif rank == 1:
-                self.rank_label.setText(f"#1 of {total}")
+                self.rank_label.setText(f"Calling — #1 loudest of {total} callers")
                 self.rank_label.setStyleSheet("color: #00ff00;")
             elif isinstance(rank, int) and rank <= 3:
-                self.rank_label.setText(f"#{rank} of {total}")
+                self.rank_label.setText(f"Calling — #{rank} of {total} callers")
                 self.rank_label.setStyleSheet("color: #88ff88;")
             else:
-                self.rank_label.setText(f"#{rank} of {total}")
+                self.rank_label.setText(f"Calling — #{rank} of {total} callers")
                 self.rank_label.setStyleSheet("color: #ffffff;")
         else:
             self.rank_label.setText("Not calling")
@@ -1085,12 +1085,12 @@ class PropagationWidget(QGroupBox):
     
     # vs-reality display strings and colors
     VS_REALITY_DISPLAY = {
-        'confirmed':          ('✓ Path confirmed by spots',       '#00dd00'),
-        'unconfirmed':        ('⚠ Predicted open, not confirmed', '#dddd00'),
-        'better_than_expected': ('★ Better than expected',         '#00dddd'),
-        'closed':             ('— Closed',                         '#666666'),
-        'unexpected_opening': ('★ Unexpected opening!',            '#00ffff'),
-        'unknown':            ('',                                  '#888888'),
+        'confirmed':          ('✓ Path confirmed',           '#00dd00'),
+        'unconfirmed':        ('⚠ Open, not confirmed',      '#dddd00'),
+        'better_than_expected': ('★ Better than expected',    '#00dddd'),
+        'closed':             ('— Closed',                    '#666666'),
+        'unexpected_opening': ('★ Unexpected opening!',       '#00ffff'),
+        'unknown':            ('',                             '#888888'),
     }
     
     def __init__(self, parent=None):
@@ -1114,7 +1114,7 @@ class PropagationWidget(QGroupBox):
         self.prediction_label.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
         layout.addWidget(self.prediction_label)
         
-        # Solar/path context: "TX ☀ +38°  RX ☀ +36°   5,981 km"
+        # Solar/path context: "TX ☀ +38°  RX ☀ +36°   5,981 km · SFI 142 Kp 2"
         self.context_label = QLabel("")
         self.context_label.setStyleSheet("color: #999999; font-size: 10px;")
         layout.addWidget(self.context_label)
@@ -1127,11 +1127,6 @@ class PropagationWidget(QGroupBox):
         self.vs_reality_label = QLabel("")
         self.vs_reality_label.setStyleSheet("font-size: 10px;")
         layout.addWidget(self.vs_reality_label)
-        
-        # Conditions line
-        self.conditions_label = QLabel("")
-        self.conditions_label.setStyleSheet("color: #888888; font-size: 9px;")
-        layout.addWidget(self.conditions_label)
     
     def update_display(self, prediction: dict = None,
                        forecast: list = None,
@@ -1199,8 +1194,10 @@ class PropagationWidget(QGroupBox):
         # Conditions (set separately via set_conditions)
     
     def set_conditions(self, sfi: int, kp: int):
-        """Update the conditions display line."""
-        self.conditions_label.setText(f"SFI {sfi} · Kp {kp}")
+        """Append conditions to the context display line."""
+        current = self.context_label.text()
+        if current and 'SFI' not in current:
+            self.context_label.setText(f"{current} · SFI {sfi} Kp {kp}")
     
     def clear(self):
         """Clear all displays."""
@@ -1209,7 +1206,6 @@ class PropagationWidget(QGroupBox):
         self.context_label.setText("")
         self.forecast_strip.clear()
         self.vs_reality_label.setText("")
-        self.conditions_label.setText("")
 
 
 class InsightsPanel(QWidget):
