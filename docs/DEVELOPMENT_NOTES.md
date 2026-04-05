@@ -216,7 +216,28 @@ Multiple sessions showed the same pattern: AI overcomplicates the analysis while
 
 ---
 
-*Consolidated from 8 session notes files spanning v2.0.6 through v2.2.0.*  
-*Last updated: March 2026*
+## v2.4.0: IONIS Propagation Prediction
+
+### Numpy over PyTorch for Model Inference
+
+The IONIS model (IonisGate V22-gamma, 205K parameters) was trained in PyTorch, but PyTorch adds 150-800 MB to the install. The model uses only standard operations: Linear layers, Mish activation, Softplus, Sigmoid, and absolute value for monotonicity constraints. The forward pass is ~40 lines of numpy matrix multiplications. Inference: 0.13 ms per prediction. Zero new heavy dependencies.
+
+The `safetensors` library (~500 KB) loads the weights directly into numpy arrays — no PyTorch needed. This is the recommended approach for deploying small models in applications that can't afford a large ML framework dependency.
+
+### Grid Backfill Bug
+
+`current_target_grid` was only set in `_set_new_target()`. When a target was selected from a UDP status message (before decodes arrived), the grid was empty and never got filled in. The 3-second perspective refresh found the grid in the decode table but never copied it back to the main window's state variable.
+
+This is a pre-existing bug affecting PSK Reporter perspective accuracy — not just IONIS. Fix: backfill the grid in `refresh_target_perspective()` when the decode table has it but the main state doesn't.
+
+**Lesson:** State that's set in one place but read in many is fragile. When adding new consumers of shared state (like IONIS reading `current_target_grid`), verify the state is actually populated by tracing all the write paths.
+
+### Lazy Re-trigger Pattern
+
+IONIS predictions need data that arrives asynchronously (grid from decodes, SFI/Kp from NOAA). Rather than complex event wiring, the `_ionis_shown` flag tracks whether the prediction has been successfully displayed. The 3-second perspective refresh re-attempts if not shown. Once shown, it stops re-attempting (band change and solar refresh handle subsequent updates). Simple, robust, no wasted computation.
+
+---
+
+*Last updated: April 2026*
 
 **73 de WU2C**

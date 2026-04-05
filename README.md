@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.3.4-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,37 +10,37 @@
 
 ---
 
-## 🆕 What's New in v2.3.5 (minor improvements)
+## 🆕 What's New in v2.4.0
 
-### "Working nearby" >> "Heard nearby"
+### Path Prediction (IONIS)
 
-### Fixed sync issue in "Competition" field
+QSO Predictor now includes embedded HF propagation predictions powered by the [IONIS](https://ionis-ai.com) model by Greg Beam (KI7MT). A new **"Path Prediction"** section in the Insights Panel shows:
 
-### Target "Message" header changed to "Last Message" (since could not be current)
+- **Current prediction** — is the path from your station to the target open, marginal, or closed?
+- **12-hour forecast strip** — color-coded bar showing when the path opens and closes based on sun position
+- **vs-Reality check** — compares the prediction against live PSK Reporter observations. Flags unusual conditions like unexpected openings or better-than-expected propagation.
 
-### Selecting target in WSJT-X/JTDX immeditately updates target in QSOP
+The model runs entirely locally (no internet required for predictions) using current SFI, Kp, and sun position. Enable or disable in **Edit → Settings → Features**.
 
+*Propagation model by Greg Beam, KI7MT — [ionis-ai.com](https://ionis-ai.com) — GPLv3*
 
+### Target Grid Backfill Fix
 
-## 🆕 What's New in v2.3.4
-
-### Solar Data Fix (NOAA API Change)
-
-NOAA changed the format of their space weather JSON data feeds on March 31, 2026 (SCN 26-21). The SFI and K-index fields were renamed and restructured. QSOP now handles both the old and new formats, so "Solar: SFI 0 | K 0 (Unknown)" is resolved.
-
-*Thanks to Brian KB1OPD for spotting this.*
-
-### Score/Path Desync Fix
-
-The Score column in the decode table was only calculated when a decode first arrived — it was never updated when the Path status changed. If a PSK Reporter spot aged out and Path changed from "Reported in Region" to "Not Reported in Region", the Score retained its original high value. Now Score is recalculated on every path refresh (every 2 seconds), staying in sync with the current path status.
-
-### Misleading "CALL NOW" With No Target Data
-
-When PSK Reporter had no coverage at the target's location (PathStatus UNKNOWN), the recommendation engine defaulted to "CALL NOW" with "No competition" — treating absence of data as favorable conditions. Now correctly shows **"▶ CALL (no intel)"** in muted blue with "No target area data" as the reason. Both heuristic and ML predictors fixed.
+When a target was set from a WSJT-X/JTDX status message before decodes arrived, the target grid could remain empty, affecting PSK Reporter perspective accuracy. Now backfilled automatically from the decode table.
 
 ---
 
 ## Previous Releases
+
+### v2.3.5
+
+* **FIXED:** Competition field shows "In QSO" in amber when target is working/completing with another station
+
+### v2.3.4
+
+* **FIXED:** NOAA solar API format change (SCN 26-21, Brian KB1OPD)
+* **FIXED:** Score/Path desync — Score now recalculated on every path refresh
+* **FIXED:** Misleading "CALL NOW" on UNKNOWN PathStatus → "▶ CALL (no intel)"
 
 ### v2.3.3
 
@@ -210,6 +210,16 @@ Never miss a wanted station:
 * **Score graph** — Visual scoring across the band
 * **Solid vs dotted** — Confidence indicator (proven vs estimated)
 
+### Path Prediction (IONIS)
+
+Physics-based HF propagation prediction powered by [IONIS](https://ionis-ai.com) (KI7MT):
+
+* Predicts whether FT8 can travel from your station to the target
+* 12-hour forecast strip shows when the path opens and closes
+* Compares prediction against live PSK Reporter data — flags unexpected openings
+* Runs entirely locally — no internet required for predictions
+* Enable/disable in Settings → Features
+
 ## Documentation
 
 📖 **[User Guide](docs/USER_GUIDE.md)** — Complete usage documentation
@@ -229,9 +239,17 @@ Never miss a wanted station:
 * Windows 10/11, macOS, or Linux
 * Python 3.10+ (if running from source)
 * WSJT-X or JTDX
-* Internet connection (for PSK Reporter data)
+* Internet connection (for PSK Reporter data; Path Prediction works offline)
 
 ## Version History
+
+### v2.4.0 (April 2026)
+* **NEW:** Path Prediction — embedded IONIS V22-gamma propagation model by KI7MT. Predicts HF path viability using SFI, Kp, and sun position. 12-hour forecast strip, vs-reality comparison against PSK Reporter data. Pure numpy inference, no PyTorch dependency.
+* **NEW:** Settings → Features tab with IONIS enable/disable toggle
+* **FIXED:** Target grid not backfilled when set from UDP status before decodes arrive
+
+### v2.3.5 (April 2026)
+* **FIXED:** Competition field shows "In QSO" in amber when target is working/completing with another station
 
 ### v2.3.4 (April 2026)
 * **FIXED:** Solar data (SFI/K-index) showing zeros — NOAA changed JSON format on March 31 (SCN 26-21). Now handles both old and new formats. (Brian KB1OPD)
