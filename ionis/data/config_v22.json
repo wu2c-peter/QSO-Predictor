@@ -1,0 +1,86 @@
+{
+  "version": "v22",
+  "variant": "gamma",
+  "phase": "Production (Phase 4.0)",
+  "checkpoint": "ionis_v22_gamma.safetensors",
+
+  "model": {
+    "architecture": "IonisGate",
+    "dnn_dim": 15,
+    "hidden_dim": 256,
+    "sidecar_hidden": 8,
+    "input_dim": 17,
+    "sfi_idx": 15,
+    "kp_penalty_idx": 16,
+    "gate_init_bias": -0.693
+  },
+
+  "data": {
+    "wspr_sample": 20000000,
+    "rbn_full_sample": 0,
+    "rbn_dx_upsample": 50,
+    "contest_upsample": 1,
+    "storm_upsample": 0,
+    "contest_norm_source": "wspr",
+    "normalization": "per_source_per_band"
+  },
+
+  "training": {
+    "epochs": 100,
+    "batch_size": 65536,
+    "val_split": 0.2,
+    "trunk_lr": 1e-5,
+    "scaler_lr": 5e-5,
+    "sidecar_lr": 1e-3,
+    "weight_decay": 1e-5,
+    "lambda_var": 0.001,
+    "huber_delta": 1.0
+  },
+
+  "features": [
+    "distance", "freq_log", "hour_sin", "hour_cos",
+    "az_sin", "az_cos", "lat_diff", "midpoint_lat",
+    "season_sin", "season_cos", "vertex_lat",
+    "tx_solar_dep", "rx_solar_dep",
+    "freq_x_tx_dark", "freq_x_rx_dark",
+    "sfi", "kp_penalty"
+  ],
+
+  "band_to_hz": {
+    "102": 1836600,
+    "103": 3568600,
+    "104": 5287200,
+    "105": 7038600,
+    "106": 10138700,
+    "107": 14097100,
+    "108": 18104600,
+    "109": 21094600,
+    "110": 24924600,
+    "111": 28124600
+  },
+
+  "norm_constants_per_band": {
+    "102": { "wspr": { "mean": -18.04, "std": 6.9 }, "rbn": { "mean": 11.86, "std": 6.23 } },
+    "103": { "wspr": { "mean": -17.90, "std": 6.9 }, "rbn": { "mean": 16.94, "std": 6.71 } },
+    "104": { "wspr": { "mean": -17.60, "std": 7.1 }, "rbn": { "mean": 16.91, "std": 7.1  } },
+    "105": { "wspr": { "mean": -17.34, "std": 6.6 }, "rbn": { "mean": 18.36, "std": 6.6  } },
+    "106": { "wspr": { "mean": -18.07, "std": 6.5 }, "rbn": { "mean": 16.96, "std": 6.5  } },
+    "107": { "wspr": { "mean": -17.53, "std": 6.7 }, "rbn": { "mean": 18.47, "std": 6.7  } },
+    "108": { "wspr": { "mean": -18.35, "std": 7.0 }, "rbn": { "mean": 16.66, "std": 7.0  } },
+    "109": { "wspr": { "mean": -18.32, "std": 6.6 }, "rbn": { "mean": 16.37, "std": 6.6  } },
+    "110": { "wspr": { "mean": -18.76, "std": 6.6 }, "rbn": { "mean": 15.07, "std": 6.6  } },
+    "111": { "wspr": { "mean": -17.86, "std": 6.5 }, "rbn": { "mean": 15.79, "std": 6.5  } }
+  },
+
+  "validation": {
+    "pearson_min": 0.46,
+    "kp_storm_min": 1.0,
+    "sfi_benefit_min": 0.4,
+    "tst900_min": 8
+  },
+
+  "clickhouse": {
+    "host": "10.60.1.1",
+    "port": 8123
+  }
+}
