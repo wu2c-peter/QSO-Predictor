@@ -10,6 +10,18 @@
 
 ---
 
+## 🆕 What's New in v2.3.5 (minor improvements)
+
+### "Working nearby" >> "Heard nearby"
+
+### Fixed sync issue in "Competition" field
+
+### Target "Message" header changed to "Last Message" (since could not be current)
+
+### Selecting target in WSJT-X/JTDX immeditately updates target in QSOP
+
+
+
 ## 🆕 What's New in v2.3.4
 
 ### Solar Data Fix (NOAA API Change)
