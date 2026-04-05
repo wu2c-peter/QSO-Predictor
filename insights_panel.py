@@ -1159,6 +1159,7 @@ class PropagationWidget(QGroupBox):
         
         # Main prediction line
         status_colors = {
+            'STRONG': '#00ff00',
             'OPEN': '#00dd00',
             'MARGINAL': '#dddd00',
             'CLOSED': '#ff4444',
@@ -1166,7 +1167,7 @@ class PropagationWidget(QGroupBox):
         color = status_colors.get(status, '#ffffff')
         path_str = f"{tx_grid}→{rx_grid} " if tx_grid and rx_grid else ""
         self.prediction_label.setText(
-            f"{band} {path_str}{status}  ({snr_db:+.0f} dB)"
+            f"{band} {path_str}{status}"
         )
         self.prediction_label.setStyleSheet(f"color: {color};")
         

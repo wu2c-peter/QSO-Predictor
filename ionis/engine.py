@@ -245,7 +245,7 @@ class IonisEngine:
                 sigma: Raw model output in z-score units
                 snr_db: Predicted SNR in dB (denormalized for band)
                 ft8_open: bool — is FT8 predicted decodable?
-                ft8_status: str — 'OPEN', 'MARGINAL', or 'CLOSED'
+                ft8_status: str — 'STRONG', 'OPEN', 'MARGINAL', or 'CLOSED'
                 overridden: bool — was physics override applied?
                 tx_solar_deg: TX solar elevation
                 rx_solar_deg: RX solar elevation
@@ -302,7 +302,9 @@ class IonisEngine:
         # FT8 status
         ft8_threshold = MODE_THRESHOLDS_DB["FT8"]
         ft8_open = snr_db >= ft8_threshold
-        if snr_db >= ft8_threshold:
+        if snr_db >= ft8_threshold + 7.0:  # 7+ dB above threshold
+            ft8_status = "STRONG"
+        elif snr_db >= ft8_threshold:
             ft8_status = "OPEN"
         elif snr_db >= ft8_threshold - 4.0:  # Within 4 dB of threshold
             ft8_status = "MARGINAL"
