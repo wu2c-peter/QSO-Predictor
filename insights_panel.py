@@ -1085,12 +1085,12 @@ class PropagationWidget(QGroupBox):
     
     # vs-reality display strings and colors
     VS_REALITY_DISPLAY = {
-        'confirmed':          ('✓ Confirmed by spots',      '#00dd00'),
-        'unconfirmed':        ('⚠ Predicted open, no spots', '#dddd00'),
-        'better_than_expected': ('★ Better than expected',   '#00dddd'),
-        'closed':             ('— Closed',                   '#666666'),
-        'unexpected_opening': ('★ Unexpected opening!',      '#00ffff'),
-        'unknown':            ('',                            '#888888'),
+        'confirmed':          ('✓ Path confirmed by spots',       '#00dd00'),
+        'unconfirmed':        ('⚠ Predicted open, not confirmed', '#dddd00'),
+        'better_than_expected': ('★ Better than expected',         '#00dddd'),
+        'closed':             ('— Closed',                         '#666666'),
+        'unexpected_opening': ('★ Unexpected opening!',            '#00ffff'),
+        'unknown':            ('',                                  '#888888'),
     }
     
     def __init__(self, parent=None):

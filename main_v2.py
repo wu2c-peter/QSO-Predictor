@@ -2874,9 +2874,9 @@ class MainWindow(QMainWindow):
     def _compute_ionis_vs_reality(self, prediction: dict) -> str:
         """Compare IONIS prediction against PSK Reporter observations.
         
-        Checks whether we have recent spots from our field to target's
-        field on the current band — this averages out individual station
-        variation and gives a path-level reality check.
+        Checks whether there are recent spots from our field arriving
+        at the target's area — not just any activity at the target.
+        This confirms the specific path IONIS is predicting.
         
         Args:
             prediction: dict from IonisEngine.predict()
@@ -2891,34 +2891,43 @@ class MainWindow(QMainWindow):
         ionis_open = prediction.get('ft8_open', False)
         ionis_snr = prediction.get('snr_db', -40)
         
-        # Check PSK Reporter data: do we have tier 1-3 spots for this path?
-        # The analyzer tracks spots by tier. If we have any tier 1-3 spots
-        # for the current target, there's real RF activity on this path.
-        psk_has_spots = False
+        # Check PSK Reporter data: are there spots FROM OUR AREA
+        # arriving at the target's area? Filter tier 1-3 spots by
+        # sender grid matching our field (first 2 chars).
+        psk_has_path_spots = False
         try:
-            if hasattr(self, 'analyzer') and self.analyzer:
+            my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
+            my_field = my_grid[:2].upper() if len(my_grid) >= 2 else ''
+            
+            if my_field and hasattr(self, 'analyzer') and self.analyzer:
                 perspective = self.analyzer.get_target_perspective(
                     self.current_target_call, self.current_target_grid
                 )
                 if perspective:
-                    tier1 = perspective.get('tier1', [])
-                    tier2 = perspective.get('tier2', [])
-                    tier3 = perspective.get('tier3', [])
-                    psk_has_spots = len(tier1) + len(tier2) + len(tier3) > 0
+                    # Count spots where sender is from our field
+                    for tier_key in ('tier1', 'tier2', 'tier3'):
+                        for spot in perspective.get(tier_key, []):
+                            sender_grid = spot.get('sender_grid', '')
+                            if (len(sender_grid) >= 2 and
+                                    sender_grid[:2].upper() == my_field):
+                                psk_has_path_spots = True
+                                break
+                        if psk_has_path_spots:
+                            break
         except Exception:
             pass
         
         MARGINAL_THRESHOLD = -25.0
         
-        if ionis_open and psk_has_spots:
+        if ionis_open and psk_has_path_spots:
             return 'confirmed'
-        elif ionis_open and not psk_has_spots:
+        elif ionis_open and not psk_has_path_spots:
             return 'unconfirmed'
-        elif not ionis_open and ionis_snr >= MARGINAL_THRESHOLD and psk_has_spots:
+        elif not ionis_open and ionis_snr >= MARGINAL_THRESHOLD and psk_has_path_spots:
             return 'better_than_expected'
-        elif not ionis_open and not psk_has_spots:
+        elif not ionis_open and not psk_has_path_spots:
             return 'closed'
-        elif not ionis_open and psk_has_spots:
+        elif not ionis_open and psk_has_path_spots:
             return 'unexpected_opening'
         return 'unknown'
     
