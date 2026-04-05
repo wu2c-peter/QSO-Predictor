@@ -1128,6 +1128,7 @@ class MainWindow(QMainWindow):
         
         # --- v2.4.0: IONIS PROPAGATION ---
         self._ionis_engine = None
+        self._ionis_shown = False  # Track whether prediction is displayed
         if IONIS_AVAILABLE:
             self._init_ionis()
             
@@ -1846,6 +1847,7 @@ class MainWindow(QMainWindow):
             self._update_perspective_display()
         
         # --- 10. IONIS propagation prediction (v2.4.0) ---
+        self._ionis_shown = False
         if is_clearing:
             self._clear_ionis_prediction()
         elif self._ionis_engine:
@@ -2332,6 +2334,12 @@ class MainWindow(QMainWindow):
             # Find and re-analyze the selected target with full perspective
             for row in self.model._data:
                 if row.get('call') == self.current_target_call:
+                    # v2.4.0: Backfill grid if it wasn't available on target set
+                    if not self.current_target_grid and row.get('grid'):
+                        self.current_target_grid = row['grid']
+                        self.analyzer.current_target_grid = row['grid']
+                        logger.debug(f"Backfilled target grid: {row['grid']}")
+                    
                     self.analyzer.analyze_decode(row, use_perspective=True)
                     
                     # v2.3.0: Augment competition with inferred competitors
@@ -2378,6 +2386,11 @@ class MainWindow(QMainWindow):
             
             # Update band map perspective
             self._update_perspective_display()
+            
+            # v2.4.0: Re-attempt IONIS prediction if not yet shown
+            # (grid may not have been available when target was first set)
+            if self._ionis_engine and not self._ionis_shown:
+                self._update_ionis_prediction()
 
     def _update_perspective_display(self):
         """Fetch and display target perspective data on band map."""
@@ -2847,6 +2860,7 @@ class MainWindow(QMainWindow):
                 panel.propagation_widget.update_display(
                     prediction, forecast, vs_reality)
                 panel.propagation_widget.set_conditions(sfi, kp)
+                self._ionis_shown = True
                 
         except Exception as e:
             logger.debug(f"IONIS prediction error: {e}")
