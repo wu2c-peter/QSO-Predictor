@@ -310,17 +310,17 @@ class IonisEngine:
             ft8_status = "CLOSED"
 
         return {
-            "sigma": sigma,
-            "raw_sigma": raw_sigma,
-            "snr_db": snr_db,
+            "sigma": float(sigma),
+            "raw_sigma": float(raw_sigma),
+            "snr_db": float(snr_db),
             "ft8_open": ft8_open,
             "ft8_status": ft8_status,
             "overridden": overridden,
-            "tx_solar_deg": tx_solar,
-            "rx_solar_deg": rx_solar,
-            "distance_km": distance_km,
+            "tx_solar_deg": float(tx_solar),
+            "rx_solar_deg": float(rx_solar),
+            "distance_km": float(distance_km),
             "band": band,
-            "hour_utc": hour_utc,
+            "hour_utc": float(hour_utc),
         }
 
     def predict_range(self, tx_grid: str, rx_grid: str, band: str,

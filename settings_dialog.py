@@ -15,7 +15,7 @@ import logging
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QTabWidget, QWidget, 
                              QFormLayout, QMessageBox, QComboBox, QGroupBox,
-                             QSpinBox)
+                             QSpinBox, QCheckBox)
 from PyQt6.QtCore import Qt
 
 logger = logging.getLogger(__name__)
@@ -160,6 +160,38 @@ class SettingsDialog(QDialog):
         form_app.addRow("Low Prob Color:", self.inp_lo)
         tab_app.setLayout(form_app)
         tabs.addTab(tab_app, "Appearance")
+
+        # Tab 4: Features (v2.4.0)
+        tab_features = QWidget()
+        features_layout = QVBoxLayout(tab_features)
+        
+        # IONIS group
+        ionis_group = QGroupBox("Propagation Prediction")
+        ionis_layout = QVBoxLayout(ionis_group)
+        
+        self.chk_ionis = QCheckBox("Enable IONIS propagation predictions")
+        self.chk_ionis.setChecked(
+            self.config.get('IONIS', 'enabled', fallback='true') == 'true'
+        )
+        self.chk_ionis.setToolTip(
+            "Show predicted band openings and closings\n"
+            "for the path to your selected target.\n"
+            "Uses current SFI and Kp — no internet required."
+        )
+        ionis_layout.addWidget(self.chk_ionis)
+        
+        ionis_credit = QLabel(
+            '<small>Propagation model by Greg Beam, KI7MT<br>'
+            'Learn more: <a href="https://ionis-ai.com" '
+            'style="color: #66aaff;">ionis-ai.com</a> · GPLv3</small>'
+        )
+        ionis_credit.setOpenExternalLinks(True)
+        ionis_credit.setStyleSheet("color: #999999; padding: 4px 0px;")
+        ionis_layout.addWidget(ionis_credit)
+        
+        features_layout.addWidget(ionis_group)
+        features_layout.addStretch()
+        tabs.addTab(tab_features, "Features")
 
         layout.addWidget(tabs)
         
@@ -310,4 +342,6 @@ class SettingsDialog(QDialog):
         self.config.save_setting('APPEARANCE', 'font_size', self.inp_size.text())
         self.config.save_setting('APPEARANCE', 'high_prob_color', self.inp_hi.text())
         self.config.save_setting('APPEARANCE', 'low_prob_color', self.inp_lo.text())
+        self.config.save_setting('IONIS', 'enabled', 
+                                'true' if self.chk_ionis.isChecked() else 'false')
         self.accept()

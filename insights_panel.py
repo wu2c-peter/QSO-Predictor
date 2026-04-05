@@ -24,10 +24,10 @@ from typing import Optional, Dict
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QGroupBox, QProgressBar, QFrame, QPushButton,
-    QToolTip, QApplication
+    QToolTip, QApplication, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QColor, QPalette
+from PyQt6.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush
 
 from local_intel.models import (
     PickingStyle, PickingPattern, Prediction, 
@@ -960,6 +960,253 @@ class StrategyWidget(QGroupBox):
         self.reasons_label.setText("Select a target for recommendations")
 
 
+class ForecastStrip(QWidget):
+    """Painted horizontal bar showing 12-hour propagation forecast.
+    
+    Each cell represents one hour, colored by predicted SNR:
+        Strong open (>= -10 dB): bright green
+        Open (>= -21 dB): green  
+        Marginal (-21 to -25 dB): yellow
+        Closed (< -25 dB): dark red/gray
+    
+    Tick marks at every hour, number labels every 3 hours.
+    """
+    
+    BAR_HEIGHT = 20
+    LABEL_HEIGHT = 14
+    TICK_HEIGHT = 4
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._data = []  # list of {hour_utc, snr_db, ft8_status}
+        self.setFixedHeight(self.BAR_HEIGHT + self.LABEL_HEIGHT + self.TICK_HEIGHT + 2)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    
+    def set_data(self, forecast: list[dict]):
+        """Set forecast data and repaint."""
+        self._data = forecast or []
+        self.update()
+    
+    def clear(self):
+        self._data = []
+        self.update()
+    
+    @staticmethod
+    def _snr_to_color(snr_db: float) -> QColor:
+        """Map SNR in dB to a display color."""
+        if snr_db >= -10:
+            return QColor(0, 220, 0)       # Bright green — strong
+        elif snr_db >= -17:
+            return QColor(0, 180, 0)       # Green — solid open
+        elif snr_db >= -21:
+            return QColor(80, 160, 0)      # Yellow-green — open but weaker
+        elif snr_db >= -25:
+            return QColor(200, 180, 0)     # Yellow — marginal
+        elif snr_db >= -28:
+            return QColor(180, 80, 0)      # Orange — below FT8 threshold
+        else:
+            return QColor(80, 30, 30)      # Dark red — closed
+    
+    def paintEvent(self, event):
+        if not self._data:
+            return
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        
+        w = self.width()
+        n = len(self._data)
+        if n == 0:
+            painter.end()
+            return
+        
+        cell_w = w / n
+        bar_top = 0
+        tick_top = bar_top + self.BAR_HEIGHT
+        label_top = tick_top + self.TICK_HEIGHT + 1
+        
+        # Draw colored cells
+        for i, entry in enumerate(self._data):
+            x = int(i * cell_w)
+            x_next = int((i + 1) * cell_w)
+            color = self._snr_to_color(entry.get('snr_db', -40))
+            painter.fillRect(x, bar_top, x_next - x, self.BAR_HEIGHT, color)
+        
+        # Draw cell borders (subtle)
+        painter.setPen(QPen(QColor(60, 60, 60), 1))
+        for i in range(1, n):
+            x = int(i * cell_w)
+            painter.drawLine(x, bar_top, x, bar_top + self.BAR_HEIGHT)
+        
+        # "Now" marker — left edge highlight
+        painter.setPen(QPen(QColor(255, 255, 255), 2))
+        painter.drawLine(0, bar_top, 0, bar_top + self.BAR_HEIGHT)
+        
+        # Tick marks and hour labels
+        painter.setPen(QPen(QColor(170, 170, 170), 1))
+        label_font = painter.font()
+        label_font.setPointSize(7)
+        painter.setFont(label_font)
+        
+        for i, entry in enumerate(self._data):
+            x = int(i * cell_w + cell_w / 2)  # Center of cell
+            hour = int(entry.get('hour_utc', 0))
+            
+            # Tick mark at every hour
+            tick_len = 3
+            painter.setPen(QPen(QColor(120, 120, 120), 1))
+            painter.drawLine(int(i * cell_w), tick_top,
+                           int(i * cell_w), tick_top + tick_len)
+            
+            # Number label every 3 hours
+            if hour % 3 == 0:
+                painter.setPen(QPen(QColor(170, 170, 170), 1))
+                # Taller tick for labeled hours
+                painter.drawLine(int(i * cell_w), tick_top,
+                               int(i * cell_w), tick_top + tick_len + 2)
+                label = f"{hour:02d}"
+                text_x = int(i * cell_w) + 2
+                painter.drawText(text_x, label_top + 10, label)
+        
+        painter.end()
+
+
+class PropagationWidget(QGroupBox):
+    """Display IONIS propagation prediction for current target path.
+    
+    Shows:
+    - Current prediction (band, path, status, SNR)
+    - 12-hour forecast strip (painted color bar)
+    - vs-reality comparison (IONIS prediction vs PSK Reporter data)
+    - Current conditions (SFI, Kp)
+    
+    v2.4.0: IONIS integration — propagation model by Greg Beam (KI7MT)
+    """
+    
+    # vs-reality display strings and colors
+    VS_REALITY_DISPLAY = {
+        'confirmed':          ('✓ Confirmed by spots',      '#00dd00'),
+        'unconfirmed':        ('⚠ Predicted open, no spots', '#dddd00'),
+        'better_than_expected': ('★ Better than expected',   '#00dddd'),
+        'closed':             ('— Closed',                   '#666666'),
+        'unexpected_opening': ('★ Unexpected opening!',      '#00ffff'),
+        'unknown':            ('',                            '#888888'),
+    }
+    
+    def __init__(self, parent=None):
+        super().__init__("Propagation (IONIS)", parent)
+        self.setToolTip(
+            "HF path prediction from the IONIS V22-gamma model.\n"
+            "Uses current SFI, Kp, and sun position to predict\n"
+            "whether FT8 signals can travel this path.\n\n"
+            "Forecast assumes current conditions hold.\n"
+            "Model by Greg Beam, KI7MT — ionis-ai.com"
+        )
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(4)
+        
+        # Main prediction line: "20m FN42 → JN48:  OPEN  (-12.1 dB)"
+        self.prediction_label = QLabel("—")
+        self.prediction_label.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
+        layout.addWidget(self.prediction_label)
+        
+        # Solar/path context: "TX ☀ +38°  RX ☀ +36°   5,981 km"
+        self.context_label = QLabel("")
+        self.context_label.setStyleSheet("color: #999999; font-size: 10px;")
+        layout.addWidget(self.context_label)
+        
+        # Forecast strip
+        self.forecast_strip = ForecastStrip()
+        layout.addWidget(self.forecast_strip)
+        
+        # vs-reality indicator
+        self.vs_reality_label = QLabel("")
+        self.vs_reality_label.setStyleSheet("font-size: 10px;")
+        layout.addWidget(self.vs_reality_label)
+        
+        # Conditions line
+        self.conditions_label = QLabel("")
+        self.conditions_label.setStyleSheet("color: #888888; font-size: 9px;")
+        layout.addWidget(self.conditions_label)
+    
+    def update_display(self, prediction: dict = None,
+                       forecast: list = None,
+                       vs_reality: str = None):
+        """Update with IONIS prediction results.
+        
+        Args:
+            prediction: Single prediction dict from IonisEngine.predict()
+            forecast: List of prediction dicts from IonisEngine.predict_range()
+            vs_reality: One of: confirmed, unconfirmed, better_than_expected,
+                        closed, unexpected_opening, unknown
+        """
+        if not prediction:
+            self.clear()
+            return
+        
+        band = prediction.get('band', '?')
+        status = prediction.get('ft8_status', '?')
+        snr_db = prediction.get('snr_db', 0)
+        tx_solar = prediction.get('tx_solar_deg', 0)
+        rx_solar = prediction.get('rx_solar_deg', 0)
+        distance = prediction.get('distance_km', 0)
+        
+        # Main prediction line
+        status_colors = {
+            'OPEN': '#00dd00',
+            'MARGINAL': '#dddd00',
+            'CLOSED': '#ff4444',
+        }
+        color = status_colors.get(status, '#ffffff')
+        self.prediction_label.setText(
+            f"{band}:  {status}  ({snr_db:+.0f} dB)"
+        )
+        self.prediction_label.setStyleSheet(f"color: {color};")
+        
+        # Context line
+        tx_icon = "☀" if tx_solar > 0 else "☽"
+        rx_icon = "☀" if rx_solar > 0 else "☽"
+        self.context_label.setText(
+            f"TX {tx_icon} {tx_solar:+.0f}°   "
+            f"RX {rx_icon} {rx_solar:+.0f}°   "
+            f"{distance:,.0f} km"
+        )
+        
+        # Forecast strip
+        if forecast:
+            self.forecast_strip.set_data(forecast)
+        else:
+            self.forecast_strip.clear()
+        
+        # vs-reality
+        if vs_reality and vs_reality in self.VS_REALITY_DISPLAY:
+            text, vs_color = self.VS_REALITY_DISPLAY[vs_reality]
+            self.vs_reality_label.setText(text)
+            self.vs_reality_label.setStyleSheet(
+                f"color: {vs_color}; font-size: 10px;"
+            )
+        else:
+            self.vs_reality_label.setText("")
+        
+        # Conditions (set separately via set_conditions)
+    
+    def set_conditions(self, sfi: int, kp: int):
+        """Update the conditions display line."""
+        self.conditions_label.setText(f"SFI {sfi} · Kp {kp}")
+    
+    def clear(self):
+        """Clear all displays."""
+        self.prediction_label.setText("—")
+        self.prediction_label.setStyleSheet("")
+        self.context_label.setText("")
+        self.forecast_strip.clear()
+        self.vs_reality_label.setText("")
+        self.conditions_label.setText("")
+
+
 class InsightsPanel(QWidget):
     """
     Main insights panel combining all local intelligence displays.
@@ -1123,6 +1370,11 @@ class InsightsPanel(QWidget):
         # Strategy
         self.strategy_widget = StrategyWidget()
         layout.addWidget(self.strategy_widget)
+        
+        # v2.4.0: Propagation forecast (IONIS)
+        self.propagation_widget = PropagationWidget()
+        self.propagation_widget.hide()  # Hidden until IONIS is enabled and target selected
+        layout.addWidget(self.propagation_widget)
         
         # Spacer
         layout.addStretch()
@@ -1320,6 +1572,7 @@ class InsightsPanel(QWidget):
         self.behavior_widget.clear()
         self.prediction_widget.clear()
         self.strategy_widget.clear()
+        self.propagation_widget.clear()
     
     def update_near_me(self, near_me_data: Optional[Dict]):
         """

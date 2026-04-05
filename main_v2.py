@@ -198,6 +198,14 @@ except ImportError as e:
     LOCAL_INTEL_AVAILABLE = False
     logger.warning(f"Local Intelligence not available: {e}")
 
+# --- IONIS PROPAGATION v2.4.0 ---
+try:
+    from ionis import IonisEngine, freq_to_band as ionis_freq_to_band
+    IONIS_AVAILABLE = True
+except ImportError as e:
+    IONIS_AVAILABLE = False
+    logger.info(f"IONIS propagation engine not available: {e}")
+
 
 # --- WIDGET: TARGET DASHBOARD ---
 class TargetDashboard(QFrame):
@@ -1117,6 +1125,11 @@ class MainWindow(QMainWindow):
         self.hunt_manager = None
         if HUNT_MODE_AVAILABLE:
             self._init_hunt_mode()
+        
+        # --- v2.4.0: IONIS PROPAGATION ---
+        self._ionis_engine = None
+        if IONIS_AVAILABLE:
+            self._init_ionis()
             
         self.init_ui()
         self.setup_connections()
@@ -1200,6 +1213,24 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Failed to initialize Hunt Mode: {e}")
             self.hunt_manager = None
+
+    def _init_ionis(self):
+        """Initialize IONIS propagation engine v2.4.0."""
+        try:
+            ionis_enabled = self.config.get('IONIS', 'enabled', fallback='true') == 'true'
+            if not ionis_enabled:
+                logger.info("IONIS propagation engine disabled in settings")
+                return
+            
+            self._ionis_engine = IonisEngine()
+            if self._ionis_engine.is_available():
+                logger.info("IONIS propagation engine initialized")
+            else:
+                logger.warning("IONIS engine created but model not available")
+                self._ionis_engine = None
+        except Exception as e:
+            logger.error(f"Failed to initialize IONIS engine: {e}")
+            self._ionis_engine = None
 
     solar_update_signal = pyqtSignal(dict)
     update_check_signal = pyqtSignal(str, bool)  # (version_or_status, was_manual)
@@ -1813,6 +1844,12 @@ class MainWindow(QMainWindow):
         # --- 9. Perspective update (fetches PSK Reporter data for new target) ---
         if not is_clearing:
             self._update_perspective_display()
+        
+        # --- 10. IONIS propagation prediction (v2.4.0) ---
+        if is_clearing:
+            self._clear_ionis_prediction()
+        elif self._ionis_engine:
+            self._update_ionis_prediction()
     
     # --- v2.0.3: Clear Target functionality (suggested by KC0GU) ---
     def clear_target(self):
@@ -1975,6 +2012,12 @@ class MainWindow(QMainWindow):
                         self.clear_target()  # Clear target selection
                 
                 self._current_band = new_band
+                
+                # v2.4.0: Re-predict IONIS on band change (if target still set)
+                if (self.current_target_call and self._ionis_engine and
+                        old_band and new_band != old_band):
+                    self._update_ionis_prediction()
+                    
             except Exception as e:
                 logger.error(f"Error in band change detection: {e}")
             
@@ -2455,6 +2498,10 @@ class MainWindow(QMainWindow):
         self._solar_data = data  # Store for header styling
         self.str_solar = f"Solar: SFI {data['sfi']} | K {data['k']} ({data['condx']})"
         self.update_header()
+        
+        # v2.4.0: Re-predict IONIS when solar conditions change
+        if self.current_target_call and self._ionis_engine:
+            self._update_ionis_prediction()
 
     def check_for_updates(self, manual=False):
         """Check GitHub for newer release (runs in background thread)."""
@@ -2723,13 +2770,16 @@ class MainWindow(QMainWindow):
         """Show about dialog."""
         version = get_version()
         local_intel_status = "Enabled" if self.local_intel else "Not available"
+        ionis_status = "Enabled" if self._ionis_engine else "Not available"
         log_path = str(get_log_file_path())
         QMessageBox.about(self, "About QSO Predictor",
             f"<h2>QSO Predictor v{version}</h2>"
             f"<p>Real-Time Tactical Assistant for FT8 & FT4</p>"
-            f"<p>Copyright © 2025 Peter Hirst (WU2C)</p>"
+            f"<p>Copyright © 2025-2026 Peter Hirst (WU2C)</p>"
             f"<p>Licensed under GNU GPL v3</p>"
             f"<p>Insights Engine: {local_intel_status}</p>"
+            f"<p>Propagation: {ionis_status}"
+            f" — <a href='https://ionis-ai.com'>IONIS</a> by KI7MT</p>"
             f"<p>Log file: <small>{log_path}</small></p>"
             f"<p><a href='https://github.com/wu2c-peter/qso-predictor'>GitHub Repository</a></p>"
         )
@@ -2743,6 +2793,119 @@ class MainWindow(QMainWindow):
         if self.solar:
             data = self.solar.get_solar_data()
             self.solar_update_signal.emit(data)
+    
+    # --- v2.4.0: IONIS PROPAGATION METHODS ---
+    
+    def _update_ionis_prediction(self):
+        """Recompute IONIS propagation prediction for current target.
+        
+        Called on: target change, band change, solar data refresh.
+        Pushes results to PropagationWidget in Insights Panel.
+        """
+        if not self._ionis_engine or not self._ionis_engine.is_available():
+            return
+        
+        # Need target grid and current band
+        if not self.current_target_grid or not hasattr(self, '_current_band'):
+            return
+        band = getattr(self, '_current_band', None)
+        if not band:
+            return
+        
+        # Need our own grid
+        my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
+        if not my_grid or my_grid == 'FN00aa':
+            return
+        
+        # Get solar conditions (default to safe values if not yet fetched)
+        sfi = 100
+        kp = 2
+        if hasattr(self, '_solar_data') and self._solar_data:
+            sfi = self._solar_data.get('sfi', 100)
+            kp = self._solar_data.get('k', 2)
+        
+        try:
+            # Single prediction for current conditions
+            prediction = self._ionis_engine.predict(
+                my_grid, self.current_target_grid, band, sfi, kp
+            )
+            
+            # 12-hour forecast
+            forecast = self._ionis_engine.predict_range(
+                my_grid, self.current_target_grid, band, sfi, kp, hours=12
+            )
+            
+            # vs-reality comparison
+            vs_reality = self._compute_ionis_vs_reality(prediction)
+            
+            # Push to widget
+            if (self.local_intel and
+                    hasattr(self.local_intel, 'insights_panel') and
+                    self.local_intel.insights_panel):
+                panel = self.local_intel.insights_panel
+                panel.propagation_widget.show()
+                panel.propagation_widget.update_display(
+                    prediction, forecast, vs_reality)
+                panel.propagation_widget.set_conditions(sfi, kp)
+                
+        except Exception as e:
+            logger.debug(f"IONIS prediction error: {e}")
+    
+    def _compute_ionis_vs_reality(self, prediction: dict) -> str:
+        """Compare IONIS prediction against PSK Reporter observations.
+        
+        Checks whether we have recent spots from our field to target's
+        field on the current band — this averages out individual station
+        variation and gives a path-level reality check.
+        
+        Args:
+            prediction: dict from IonisEngine.predict()
+            
+        Returns:
+            One of: confirmed, unconfirmed, better_than_expected,
+                    closed, unexpected_opening, unknown
+        """
+        if not prediction:
+            return 'unknown'
+        
+        ionis_open = prediction.get('ft8_open', False)
+        ionis_snr = prediction.get('snr_db', -40)
+        
+        # Check PSK Reporter data: do we have tier 1-3 spots for this path?
+        # The analyzer tracks spots by tier. If we have any tier 1-3 spots
+        # for the current target, there's real RF activity on this path.
+        psk_has_spots = False
+        try:
+            if hasattr(self, 'analyzer') and self.analyzer:
+                perspective = self.analyzer.get_target_perspective()
+                if perspective:
+                    tier1 = perspective.get('tier1', [])
+                    tier2 = perspective.get('tier2', [])
+                    tier3 = perspective.get('tier3', [])
+                    psk_has_spots = len(tier1) + len(tier2) + len(tier3) > 0
+        except Exception:
+            pass
+        
+        MARGINAL_THRESHOLD = -25.0
+        
+        if ionis_open and psk_has_spots:
+            return 'confirmed'
+        elif ionis_open and not psk_has_spots:
+            return 'unconfirmed'
+        elif not ionis_open and ionis_snr >= MARGINAL_THRESHOLD and psk_has_spots:
+            return 'better_than_expected'
+        elif not ionis_open and not psk_has_spots:
+            return 'closed'
+        elif not ionis_open and psk_has_spots:
+            return 'unexpected_opening'
+        return 'unknown'
+    
+    def _clear_ionis_prediction(self):
+        """Clear the IONIS propagation display."""
+        if (self.local_intel and
+                hasattr(self.local_intel, 'insights_panel') and
+                self.local_intel.insights_panel):
+            self.local_intel.insights_panel.propagation_widget.clear()
     
     # --- v2.1.0: HUNT MODE METHODS ---
     

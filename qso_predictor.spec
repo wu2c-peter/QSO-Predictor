@@ -20,6 +20,9 @@ datas = [
     
     # Training scripts (run as subprocess via QProcess, not imported)
     ('training', 'training'),   # Include entire training folder
+    
+    # IONIS propagation model data (v2.4.0)
+    ('ionis/data', 'ionis/data'),  # Model checkpoint + config
 ]
 
 # Hidden imports that PyInstaller might miss
@@ -70,6 +73,14 @@ hiddenimports = [
     'training',
     'training.feature_builders',
     'training.trainer_process',
+    
+    # IONIS propagation engine (v2.4.0)
+    'ionis',
+    'ionis.engine',
+    'ionis.features',
+    'ionis.physics_override',
+    'safetensors',
+    'safetensors.numpy',
 ]
 
 a = Analysis(

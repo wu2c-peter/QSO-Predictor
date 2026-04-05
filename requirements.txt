@@ -15,10 +15,8 @@ pandas>=2.0.0              # Data manipulation for log analysis
 scikit-learn>=1.3.0        # ML models (RandomForest, LogisticRegression)
 joblib>=1.3.0              # Model serialization
 
-
-# ionis engine
-safetensors>=0.4.0
-
+# IONIS Propagation Engine (v2.4.0)
+safetensors>=0.4.0         # Model checkpoint loading (numpy backend)
 
 # Development dependencies (optional)
 # pytest>=7.0.0            # Testing

@@ -54,6 +54,9 @@ DEFAULT_CONFIG = {
     'ANALYSIS': {
         'my_callsign': 'N0CALL',
         'my_grid': 'FN00aa'
+    },
+    'IONIS': {
+        'enabled': 'true'
     }
 }
 
