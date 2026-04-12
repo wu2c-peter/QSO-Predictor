@@ -328,9 +328,10 @@ class BandMapWidget(QWidget):
             w = self.width()
             freq = int((x / w) * self.bandwidth)
             
-            # Clamp to valid range
-            min_freq = 1000 if self.hound_mode else 200
-            freq = max(min_freq, min(2800, freq))
+            # Clamp to valid range — matches auto-paste script limits (300-3000)
+            # and recommendation range (300-2700)
+            min_freq = 1000 if self.hound_mode else 300
+            freq = max(min_freq, min(2700, freq))
             
             # Set manual override
             self.best_offset = freq
