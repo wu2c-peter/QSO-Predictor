@@ -203,6 +203,30 @@ Click anywhere on the band map to manually set the recommended frequency:
 
 Use this to read off a specific frequency from the Rec display.
 
+### Manual Target Entry (v2.4.5)
+
+You can target any station by callsign, even if you haven't decoded them:
+
+1. Click the **+** button next to the target callsign (in either the Target View 
+   dashboard or the Insights panel)
+2. Type the callsign and press **Enter** (or press **Escape** to cancel)
+3. QSOP sets the target and shows all available PSK Reporter intelligence
+
+A **⚠** indicator next to the callsign shows the station hasn't been decoded 
+locally. Fields that require a local decode (UTC, dB, DT) show "--". Everything 
+from PSK Reporter works immediately: band map perspective, path intelligence, 
+competition, and IONIS prediction.
+
+When the station appears in your local decodes, the ⚠ clears automatically and 
+full tactical mode engages.
+
+**Grid resolution:** QSOP looks up the target's grid from PSK Reporter data, 
+local decode history, and a built-in DXCC prefix table. No API keys needed. If 
+the grid isn't found immediately, QSOP retries automatically as new data arrives.
+
+**Tip:** Click the ⚠ callsign to copy it to clipboard — with the auto-paste 
+script, this sends it directly to WSJT-X/JTDX's DX Call field.
+
 ---
 
 ## 5. Path Intelligence

@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.4.3-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.4.5-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,19 +10,37 @@
 
 ---
 
-## 🆕 What's New in v2.4.3
+## 🆕 What's New in v2.4.5
 
-### Pileup Status Clarity
+### Manual Target Entry
+
+Target any station by callsign — even if you haven't decoded them. Click the **+** button next to the target display (in either the dashboard or insights panel), type a callsign, and press Enter.
+
+QSOP immediately shows everything available from PSK Reporter: target perspective band map, path intelligence, competition, and IONIS propagation prediction. A **⚠** indicator shows the target hasn't been decoded locally. When the station appears in your decodes, the indicator clears automatically and full tactical mode engages.
+
+Grid lookup uses a cascade of local sources — no API keys required:
+* PSK Reporter receiver cache (any station actively uploading)
+* Local decode history and call/grid maps
+* DXCC prefix table (~180 entries) as fallback
+
+### Bug Fixes
+
+* **Path/status bar desync** — reporters with short grids (2–3 chars) were counted in the status bar "near target" count but skipped by path computation. Both now agree.
+* **IONIS without UDP** — "Awaiting target grid" appeared when the band (not grid) was unavailable. Band now derived from MQTT dial frequency when UDP is not connected.
+* **DX grid from UDP** — WSJT-X/JTDX sends the DX station's grid in UDP status messages. Previously parsed but discarded; now captured for immediate grid resolution.
+* **Band edge recommendations** — frequency recommendation could appear below 300 Hz or above 2700 Hz where WSJT-X may reject. Now clamped to 300–2700 Hz, matching auto-paste script limits.
+
+---
+
+## Previous Releases
+
+### v2.4.3
 
 Pileup status wording rewritten to eliminate ambiguity about data sources:
 * "Calling (clear)" → **"Calling — no other callers decoded"** (unambiguous: your radio's decodes)
 * "Calling (+5)" → **"Calling — 5 other callers decoded"**
 * Rank preserved when available: **"Calling — #1 loudest of 5 callers"**
 * Resolves the contradiction where "clear" appeared alongside a hidden pileup warning
-
----
-
-## Previous Releases
 
 ### v2.4.2
 

@@ -206,3 +206,46 @@ Both `HeuristicPredictor.get_strategy()` and the ML predictor's `get_strategy()`
 Fix: Added `PathStatus.UNKNOWN → action = "call_blind"` with reason "No target area data". Competition check skipped for `call_blind`. Display: "▶ CALL (no intel)" in muted blue (#88bbff) in insights_panel.py StrategyWidget.
 
 ---
+
+## v2.4.5 — Manual Target Entry & Consistency Fixes (April 2026)
+
+### Manual Target Entry
+
+**Motivation:** Operators often know about a station before decoding them — from DX cluster spots, friend tips, DXpedition announcements. Previously, QSOP could only target stations already in the decode table.
+
+**Architecture:** The `+` button in both `TargetDashboard` and `InsightsPanel` toggles a `QLineEdit` overlay. On Enter, emits `manual_target_requested(str)` signal → `MainWindow._on_manual_target()` → `_lookup_grid()` cascade → `_set_new_target()`.
+
+**Grid lookup cascade (`_lookup_grid`):**
+1. `analyzer.receiver_cache[call]` — if station uploads to PSK Reporter, their grid is in `spot['grid']` (the receiver's grid). This is the highest-quality source for active stations.
+2. `analyzer.call_grid_map[call]` — grids from locally decoded stations.
+3. `model._data` — decode table rows for current session.
+4. `_PREFIX_GRIDS` class dict — ~180 DXCC prefix → approximate grid centroid. Covers all major entities. Longest-prefix-first matching handles special prefixes (KH6, KL7, KP4) before single-letter (K, G, F).
+
+**`_is_manual_target` flag:** Set True by `_on_manual_target()`, cleared by row click, UDP status, sync, or when the target appears in the decode table (checked in `refresh_target_perspective`). Flows through `_set_new_target` → `local_intel.set_target(manual=True)` → `insights_panel.set_target(manual=True)` for ⚠ indicator display.
+
+**Grid retry:** `refresh_target_perspective` (3-second timer) retries `_lookup_grid` when `current_target_grid` is empty. As MQTT spots arrive and populate `receiver_cache`, the grid auto-resolves and IONIS prediction activates.
+
+**Design decision:** No online API (QRZ, HamQTH) in the initial implementation. Local sources resolve most active stations. Online lookup can be added later as an optional step in the cascade.
+
+### Short Grid Gate Bug
+
+**Root cause analysis:** Two code paths compute "near target" — the status bar cleanup loop in the MQTT thread (`analyzer.py` line ~1304) and the path computation in `analyze_decode`/`update_path_only`. The status bar used `len(rep_grid) >= 2` while path used `len(r_grid) >= 4` as a gate, with the field-level check `r_grid[:2] == target_major` nested INSIDE the `len >= 4` block. Reporters with 2–3 character grids passed the status bar check but silently failed the path check.
+
+**Fix:** Added `elif len(r_grid) >= 2` block after the `len >= 4` block in both `analyze_decode` and `update_path_only`. Uses lower `geo_bonus` (10 vs 15/25) to reflect reduced geographic precision.
+
+### IONIS Band Derivation Without UDP
+
+**Root cause:** `_update_ionis_prediction` combined grid and band availability into a single `if` with the message "Awaiting target grid…". The `_current_band` attribute is only set from `handle_status_update` (UDP). Without UDP (e.g., Mac testing with MQTT only), `_current_band` was never set. The `analyzer.current_dial_freq` was available from MQTT but not consulted.
+
+**Fix:** Split grid and band checks with distinct messages. Added fallback: `band = self._freq_to_band(self.analyzer.current_dial_freq)` when `_current_band` is not set.
+
+### Band Edge Recommendation Clamping
+
+**Three issues identified:**
+1. `score_map[0:200] = 0` (line 444) was overwritten to 10 by the local_busy loop at line 455 (`range(self.bandwidth)` included edges).
+2. Soft penalty ramp (200–300, 2700–2800) didn't prevent recommendations when the rest of the band was heavily congested and edge gaps scored highest.
+3. Click-to-set clamped to 200–2800, below the auto-paste scripts' 300–3000 floor.
+
+**Fix:** Local_busy loop restricted to `range(200, 2800)`. Both recommendation paths clamped to `max(300, min(2700, best_offset))`. Click-to-set clamped to 300–2700. All QSOP-produced frequencies now fall within auto-paste script accepted range.
+
+---
