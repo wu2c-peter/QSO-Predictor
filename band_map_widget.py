@@ -449,8 +449,8 @@ class BandMapWidget(QWidget):
             local_busy[0:1000] = True
             self.score_map[0:1000] = 0
         
-        # Mark locally busy areas as low score
-        for i in range(self.bandwidth):
+        # Mark locally busy areas as low score (but not in hard-zero edge zones)
+        for i in range(200, 2800):
             if local_busy[i]:
                 self.score_map[i] = 10  # Can't use - local QRM
         
@@ -577,6 +577,8 @@ class BandMapWidget(QWidget):
             if should_move:
                 # Smooth transition
                 self.best_offset = int((self.best_offset * 0.6) + (best_freq * 0.4))
+                # v2.4.5: Clamp to safe operating range (WSJT-X may reject edges)
+                self.best_offset = max(300, min(2700, self.best_offset))
                 return
             elif current_is_proven:
                 # Stay in current proven spot
@@ -645,6 +647,8 @@ class BandMapWidget(QWidget):
         
         if should_move:
             self.best_offset = int((self.best_offset * 0.7) + (best_center * 0.3))
+            # v2.4.5: Clamp to safe operating range (WSJT-X may reject edges)
+            self.best_offset = max(300, min(2700, self.best_offset))
 
     def _normalize_call(self, call):
         if not call: return ""
