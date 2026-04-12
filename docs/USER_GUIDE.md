@@ -119,15 +119,19 @@ Visual representation of the frequency recommendation algorithm:
 
 | Score | Color | Meaning |
 |-------|-------|---------|
-| 85-100 | Green | Excellent — proven with 1-3 signals |
-| 60-84 | Cyan | Good — proven or clear gap |
-| 40-59 | Yellow | Moderate — unproven or light congestion |
-| 20-39 | Orange | Poor — crowded area |
-| 0-19 | Red | Avoid — blocked or edge |
+| 85-100 | Green | Excellent — proven with 1-3 signals at target |
+| 65-84 | Cyan | Good — regional consensus quiet, or proven |
+| 50-64 | Yellow | Moderate — limited data or light congestion |
+| 25-49 | Orange | Poor — congested or suspicious gap |
+| 0-24 | Red | Avoid — blocked, local QRM, or edge |
 
 **Line style:**
 - **Solid line** = Algorithm has tier 1 (proven) data
-- **Dotted line** = Gap-based scoring only (less certain)
+- **Dotted line** = Gap-based or regional scoring (less certain)
+
+**Score tooltips (v2.5):** Hover over the score graph to see why any frequency has its current score. The tooltip shows the score, frequency, and a plain-English reason — for example "Proven: 2 signal(s) decoded by target" or "Regional quiet: 5 reporter(s) in area, clear" or "Suspicious gap: flanked by 6 target decodes".
+
+**Regional consensus (v2.5):** When multiple PSK Reporter stations near the target all show no activity at a frequency, confidence increases. The score scales continuously with reporter count — more independent reporters confirming quiet means a higher score. Frequencies flanked by heavy target activity but empty in between are flagged as suspicious (possible local QRM at target).
 
 #### Bottom Section: Your Local Decodes
 

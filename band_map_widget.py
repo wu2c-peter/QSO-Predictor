@@ -55,6 +55,13 @@ class BandMapWidget(QWidget):
         
         # Score visualization
         self.score_map = np.zeros(self.bandwidth, dtype=float)
+        self.score_reason = np.zeros(self.bandwidth, dtype=np.int8)
+        self._scoring_context = {}  # Saved dicts for tooltip detail
+        
+        # Score reason codes (int8) — see _score_reason_tip() for labels
+        # 0=unscored  1=edge  2=hound  3=local_qrm  4=proven_ideal
+        # 5=proven_crowded  6=regional_quiet  7=regional_light
+        # 8=congestion  11=suspicious_gap
         
         # Manual override (click-to-set)
         self.manual_override = False
@@ -351,8 +358,23 @@ class BandMapWidget(QWidget):
             self.update()  # PERFORMANCE FIX: was repaint()
 
     def mouseMoveEvent(self, event):
-        """v2.1.1: Show tooltip when hovering over signal bars."""
+        """v2.1.1: Show tooltip when hovering over signal bars.
+        v2.5: Also show score reason tooltip in score graph section."""
         pos = event.position()
+        
+        # Check if cursor is in the score graph section
+        score_top = getattr(self, '_score_section_top', 0)
+        score_bottom = getattr(self, '_score_section_bottom', 0)
+        if score_top < pos.y() < score_bottom and score_bottom > 0:
+            # Map x position to frequency
+            freq = int((pos.x() / self.width()) * self.bandwidth)
+            freq = max(0, min(self.bandwidth - 1, freq))
+            tip = self._score_reason_tip(freq)
+            if tip:
+                QToolTip.showText(event.globalPosition().toPoint(), tip, self)
+            else:
+                QToolTip.hideText()
+            return
         
         # Find the nearest bar under the cursor
         best_bar = None
@@ -422,13 +444,23 @@ class BandMapWidget(QWidget):
         - 4+ signals = crowded, decode probability drops
         - Empty frequencies = unproven (could be clear OR could have local QRM at target)
         
-        Priority: Proven (1-3 signals) > Proven (4+ crowded) > Empty gaps
+        v2.5 scoring hierarchy (highest to lowest):
+          1. Proven tier1, 1-3 signals:         100-90
+          2. Regionally validated quiet:         50-82  (continuous: reporters/6 * 32)
+          3. Regionally validated light:         72     (few signals, multiple reporters)
+          4. Proven tier1, crowded (4+):         70-30
+          5. Light congestion:                   55
+          6. Suspicious gap (flanked by tier1):  dampened by up to 30%
+          7. Moderate/heavy congestion:           25-45
+          8. Local QRM:                          10
+          9. Edge/hound zone:                    0
         
         Also populates score_map for visualization.
         """
         
-        # Reset score map
+        # Reset score map and reason codes
         self.score_map = np.full(self.bandwidth, 50.0)  # Default: unproven = 50
+        self.score_reason = np.zeros(self.bandwidth, dtype=np.int8)  # 0 = unscored
         
         # === STEP 1: Build local busy map (things WE hear - avoid our own QRM) ===
         local_busy = np.zeros(self.bandwidth, dtype=bool)
@@ -444,16 +476,20 @@ class BandMapWidget(QWidget):
         local_busy[2800:3000] = True
         self.score_map[0:200] = 0
         self.score_map[2800:3000] = 0
+        self.score_reason[0:200] = 1   # edge
+        self.score_reason[2800:3000] = 1
         
         # v2.3.0: Fox/Hound — zero out Fox TX zone when in Hound mode
         if self.hound_mode:
             local_busy[0:1000] = True
             self.score_map[0:1000] = 0
+            self.score_reason[0:1000] = 2  # hound zone
         
         # Mark locally busy areas as low score (but not in hard-zero edge zones)
         for i in range(200, 2800):
             if local_busy[i]:
                 self.score_map[i] = 10  # Can't use - local QRM
+                self.score_reason[i] = 3
         
         # === STEP 2: Analyze tier1 (cyan) - frequencies where target IS decoding ===
         tier1_spots = self.perspective_data.get('tier1', [])
@@ -476,15 +512,18 @@ class BandMapWidget(QWidget):
             if 1 <= count <= 3:
                 # IDEAL: Proven decode frequency, not saturated
                 score = 100 - (count - 1) * 5  # 1=100, 2=95, 3=90
+                reason = 4  # proven_ideal
             else:
                 # Crowded but still proven - better than unproven
                 score = 70 - (count - 4) * 10  # 4=70, 5=60, 6=50...
                 score = max(30, score)  # Floor
+                reason = 5  # proven_crowded
             
             # Apply score to the score_map around this bucket
             for i in range(max(0, bucket - 30), min(self.bandwidth, bucket + 30)):
                 if not local_busy[i]:
                     self.score_map[i] = max(self.score_map[i], score)
+                    self.score_reason[i] = reason
             
             # Skip if locally busy (we'd interfere with our own decodes)
             if local_busy[max(0, min(self.bandwidth-1, bucket))]:
@@ -495,12 +534,68 @@ class BandMapWidget(QWidget):
         # Sort by score
         proven_candidates.sort(key=lambda x: x[1], reverse=True)
         
-        # === STEP 5: Score based on tier2/tier3/global congestion ===
-        # Penalize areas with activity (these are potential hazards)
-        # But BOOST clear gaps to show them as good options
+        # === STEP 4b: Build regional intelligence (v2.5) ===
+        # Count distinct reporters per bucket and total regional coverage.
+        # Multiple independent reporters confirming a frequency slot's status
+        # is stronger evidence than a single reporter's view — any one station
+        # can only decode a limited number of signals per FT8 cycle, so a
+        # single reporter's silence is a sample, not a census. Five reporters
+        # all seeing quiet is a consensus.
+        regional_bucket_reporters = {}   # bucket -> set of reporter callsigns
+        regional_bucket_signals = {}     # bucket -> total signal count
+        all_regional_reporters = set()   # all distinct reporters in tier2/tier3
+
+        for tier_name in ['tier2', 'tier3']:
+            for s in self.perspective_data.get(tier_name, []):
+                if s.get('decay', 0) > 0.3:
+                    f = s.get('freq', 0)
+                    if 200 < f < 2800:
+                        bucket = round(f / bucket_size) * bucket_size
+                        receiver = s.get('receiver', '')
+                        if receiver:
+                            all_regional_reporters.add(receiver)
+                            if bucket not in regional_bucket_reporters:
+                                regional_bucket_reporters[bucket] = set()
+                                regional_bucket_signals[bucket] = 0
+                            regional_bucket_reporters[bucket].add(receiver)
+                            regional_bucket_signals[bucket] += 1
+
+        regional_coverage = len(all_regional_reporters)
+
+        # Build tier1 adjacency map for suspicious gap detection (Step 5c).
+        # For each bucket, sum tier1 signal count in neighboring buckets
+        # (~180 Hz each side). Heavy flanking activity with an empty center
+        # suggests local QRM at the target, not a clear slot.
+        tier1_adjacency = {}
+        for bucket_center in range(200, 2800, bucket_size):
+            adj_count = 0
+            for offset in [-3, -2, -1, 1, 2, 3]:
+                neighbor = bucket_center + offset * bucket_size
+                adj_count += tier1_buckets.get(neighbor, 0)
+            if adj_count > 0:
+                tier1_adjacency[bucket_center] = adj_count
+
+        # === STEP 5: Regional consensus scoring (v2.5) ===
+        # Replaces flat per-spot penalties with reporter-count-aware scoring.
+        # Hierarchy for non-tier1 slots:
+        #   Regionally validated quiet (many reporters, no signals) > 
+        #   Regionally validated light (few signals, multiple reporters) >
+        #   Unverified gap (no reporters in area) >
+        #   Congested
+        # Suspicious gaps adjacent to heavy tier1 activity are dampened.
+        #
+        # NOTE on score decay (backlog item): temporal decay within the
+        # 60-second spot window was evaluated and deemed incremental —
+        # reporter count provides spatial stability that captures most of
+        # the same information. The existing age-based decay (1.0→0.8→fade)
+        # plus 60s expiry handles propagation shifts adequately. If finer
+        # temporal weighting is needed later, the natural insertion point
+        # is the decay threshold checks in this step (currently > 0.3).
+
+        # 5a: Build congestion map from tier2/tier3/global spots
         tier_penalties = {'tier2': 20, 'tier3': 15, 'global': 8}
         congestion_map = np.zeros(self.bandwidth, dtype=float)
-        
+
         for tier_name, penalty in tier_penalties.items():
             for s in self.perspective_data.get(tier_name, []):
                 if s.get('decay', 0) > 0.3:
@@ -508,30 +603,82 @@ class BandMapWidget(QWidget):
                     if 200 < f < 2800:
                         for i in range(max(0, f - 30), min(self.bandwidth, f + 30)):
                             congestion_map[i] += penalty
-        
-        # Apply congestion penalties and gap bonuses to score_map
+
+        # 5b: Score non-tier1 frequencies using regional intelligence
+        # Confidence is continuous: 0 reporters = baseline, 6+ = full trust.
+        # No hard threshold — the score itself encodes confidence, and
+        # downstream thresholds (Step 7b's >= 65) naturally require ~3+
+        # reporters before acting on regional data.
+        confidence = min(1.0, regional_coverage / 6.0)
+
         for i in range(200, 2800):
             if local_busy[i]:
                 continue  # Already marked as 10
-            
-            # Check if this frequency is in a tier1 proven bucket
+
             bucket_for_i = round(i / bucket_size) * bucket_size
             if bucket_for_i in tier1_buckets:
-                continue  # Already scored based on tier1
-            
-            # Score based on congestion: less congestion = higher score
+                continue  # Already scored in Step 4
+
             congestion = congestion_map[i]
-            if congestion == 0:
-                # Clear gap - boost above baseline
-                self.score_map[i] = 70  # Good - clear of activity
-            elif congestion < 15:
-                self.score_map[i] = 55  # Slightly better than baseline
-            elif congestion < 30:
-                self.score_map[i] = 45  # Slightly worse than baseline
-            elif congestion < 50:
-                self.score_map[i] = 35  # Busy area
-            else:
-                self.score_map[i] = 25  # Very congested
+            bucket_reporters = len(regional_bucket_reporters.get(bucket_for_i, set()))
+            bucket_signals = regional_bucket_signals.get(bucket_for_i, 0)
+
+            if bucket_reporters == 0 and congestion == 0:
+                # Quiet slot — score scales with regional reporter coverage:
+                # 0 reporters → 50 (no data, baseline)
+                # 3 reporters → 66 (crosses recommendation threshold)
+                # 6+ reporters → 82 (strong consensus)
+                self.score_map[i] = 50 + confidence * 32
+                self.score_reason[i] = 6 if regional_coverage > 0 else 0
+
+            elif bucket_signals <= 2 and bucket_reporters >= 2:
+                # Light activity confirmed by multiple reporters — workable
+                self.score_map[i] = 72
+                self.score_reason[i] = 7  # regional_light
+
+            elif congestion > 0:
+                # Congested — score based on severity
+                if congestion < 15:
+                    self.score_map[i] = 55
+                elif congestion < 30:
+                    self.score_map[i] = 45
+                elif congestion < 50:
+                    self.score_map[i] = 35
+                else:
+                    self.score_map[i] = 25
+                self.score_reason[i] = 8  # congestion
+
+        # 5c: Suspicious gap detection
+        # If tier1 shows heavy activity flanking a frequency slot but
+        # nothing IN the slot, the target's decoder is active nearby yet
+        # finding nothing here — more likely local QRM than clear air.
+        for i in range(200, 2800):
+            if local_busy[i]:
+                continue
+            bucket_for_i = round(i / bucket_size) * bucket_size
+            if bucket_for_i in tier1_buckets:
+                continue  # Proven bucket, not a gap
+
+            adj_count = tier1_adjacency.get(bucket_for_i, 0)
+            if adj_count >= 4:
+                # Heavy tier1 flanking — dampen score
+                # adj_count 4 → mild (0.94x), 8+ → strong (0.70x)
+                suspicion = min(1.0, (adj_count - 3) / 5.0)
+                dampen = 1.0 - (suspicion * 0.3)
+                self.score_map[i] *= dampen
+                self.score_reason[i] = 11  # suspicious_gap
+
+        # Save context for tooltip display
+        self._scoring_context = {
+            'tier1_buckets': tier1_buckets,
+            'regional_bucket_reporters': {
+                k: len(v) for k, v in regional_bucket_reporters.items()
+            },
+            'regional_bucket_signals': regional_bucket_signals,
+            'regional_coverage': regional_coverage,
+            'tier1_adjacency': tier1_adjacency,
+            'bucket_size': bucket_size,
+        }
         
         # v2.3.0: Soft edge penalty — gentle ramp near band edges
         # Discourages recommendations near edges where decoder performance degrades
@@ -584,6 +731,37 @@ class BandMapWidget(QWidget):
             elif current_is_proven:
                 # Stay in current proven spot
                 return
+        
+        # === STEP 7b: Regional consensus recommendation (v2.5) ===
+        # No good proven candidates — use the score_map (populated by Step 5b)
+        # to find the best slot. The >= 65 threshold naturally requires ~3+
+        # regional reporters before a quiet slot qualifies (score curve:
+        # 0 rptrs=50, 3 rptrs=66, 6 rptrs=82). No hard gate needed.
+        if regional_coverage > 0:
+            # Use numpy to find highest-scored non-blocked frequency
+            masked_scores = self.score_map.copy()
+            masked_scores[local_busy] = 0
+            masked_scores[:300] = 0
+            masked_scores[2700:] = 0
+            best_regional_freq = int(np.argmax(masked_scores))
+            best_regional_score = masked_scores[best_regional_freq]
+
+            if best_regional_freq > 0 and best_regional_score >= 65:
+                current_score = self.score_map[current_idx] if current_locally_clear else 0
+
+                should_move = False
+                if not current_locally_clear:
+                    should_move = True
+                elif best_regional_score > current_score + 12:
+                    should_move = True
+
+                if should_move:
+                    self.best_offset = int((self.best_offset * 0.6) + (best_regional_freq * 0.4))
+                    self.best_offset = max(300, min(2700, self.best_offset))
+                    return
+                elif current_score >= 65:
+                    # Current position is regionally validated — hold
+                    return
         
         # === STEP 8: Fallback - no proven data, use gap-finding ===
         # This handles the case where target has no tier1 data
@@ -657,6 +835,48 @@ class BandMapWidget(QWidget):
         if '/' in call: return max(call.split('/'), key=len)
         return call
 
+    def _score_reason_tip(self, freq):
+        """Build tooltip text explaining why a frequency has its current score."""
+        if freq < 0 or freq >= self.bandwidth:
+            return ""
+        
+        score = self.score_map[freq]
+        reason = self.score_reason[freq]
+        ctx = self._scoring_context
+        bucket_size = ctx.get('bucket_size', 60)
+        bucket = round(freq / bucket_size) * bucket_size
+        
+        # Build detail based on reason code
+        if reason == 1:
+            detail = "Band edge"
+        elif reason == 2:
+            detail = "Hound mode — Fox TX zone"
+        elif reason == 3:
+            detail = "Local QRM (your receiver)"
+        elif reason == 4:
+            count = ctx.get('tier1_buckets', {}).get(bucket, 0)
+            detail = f"Proven: {count} signal(s) decoded by target"
+        elif reason == 5:
+            count = ctx.get('tier1_buckets', {}).get(bucket, 0)
+            detail = f"Proven but crowded: {count} signals at target"
+        elif reason == 6:
+            coverage = ctx.get('regional_coverage', 0)
+            detail = f"Regional quiet: {coverage} reporter(s) in area, clear"
+        elif reason == 7:
+            rptrs = ctx.get('regional_bucket_reporters', {}).get(bucket, 0)
+            sigs = ctx.get('regional_bucket_signals', {}).get(bucket, 0)
+            detail = f"Regional light: {sigs} signal(s), {rptrs} reporters"
+        elif reason == 8:
+            coverage = ctx.get('regional_coverage', 0)
+            detail = f"Congested ({coverage} reporter(s) in area)"
+        elif reason == 11:
+            adj = ctx.get('tier1_adjacency', {}).get(bucket, 0)
+            detail = f"Suspicious gap: flanked by {adj} target decodes"
+        else:
+            detail = "No data"
+        
+        return f"{int(score)}  @{freq} Hz — {detail}"
+
     def paintEvent(self, event):
         qp = QPainter(self)
         qp.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -672,6 +892,10 @@ class BandMapWidget(QWidget):
         bottom_h = h - top_h - score_h
         score_top = top_h
         bottom_top = top_h + score_h
+        
+        # Save geometry for mouseMoveEvent tooltip detection
+        self._score_section_top = score_top
+        self._score_section_bottom = score_top + score_h
         
         # 1. Background - use cached color
         qp.fillRect(0, 0, w, h, self._colors['background'])
