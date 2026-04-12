@@ -24,10 +24,10 @@ from typing import Optional, Dict
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QGroupBox, QProgressBar, QFrame, QPushButton,
-    QToolTip, QApplication, QSizePolicy
+    QToolTip, QApplication, QSizePolicy, QLineEdit
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush
+from PyQt6.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush, QShortcut, QKeySequence
 
 from local_intel.models import (
     PickingStyle, PickingPattern, Prediction, 
@@ -1226,6 +1226,9 @@ class InsightsPanel(QWidget):
     # v2.1.0: Signal when user wants Phase 2 path analysis (emits stations list)
     path_analyze_requested = pyqtSignal(list)
     
+    # v2.4.4: Signal when user manually enters a target callsign
+    manual_target_requested = pyqtSignal(str)
+    
     def __init__(self, 
                  session_tracker: SessionTracker = None,
                  predictor: BayesianPredictor = None,
@@ -1343,7 +1346,50 @@ class InsightsPanel(QWidget):
         self.sync_button.clicked.connect(self.sync_requested.emit)
         target_header.addWidget(self.sync_button)
         
+        # v2.4.4: Manual target entry button
+        btn_style = """
+            QPushButton {
+                background-color: #444;
+                color: #DDD;
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #555;
+            }
+            QPushButton:pressed {
+                background-color: #333;
+            }
+        """
+        self.manual_button = QPushButton("+")
+        self.manual_button.setToolTip("Manually enter a target callsign")
+        self.manual_button.setFixedSize(28, 28)
+        self.manual_button.setStyleSheet(btn_style)
+        self.manual_button.clicked.connect(self._toggle_manual_entry)
+        target_header.addWidget(self.manual_button)
+        
         layout.addLayout(target_header)
+        
+        # v2.4.4: Manual entry field (hidden by default, shown on + click)
+        self.manual_entry = QLineEdit()
+        self.manual_entry.setPlaceholderText("Enter callsign, press Enter...")
+        self.manual_entry.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
+        self.manual_entry.setStyleSheet("""
+            QLineEdit {
+                background-color: #1a1a2e;
+                color: #FF00FF;
+                border: 1px solid #00AAAA;
+                border-radius: 3px;
+                padding: 4px;
+            }
+        """)
+        self.manual_entry.returnPressed.connect(self._submit_manual_entry)
+        esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.manual_entry)
+        esc_shortcut.activated.connect(self._toggle_manual_entry)
+        self.manual_entry.hide()
+        layout.addWidget(self.manual_entry)
         
         # Separator
         line = QFrame()
@@ -1414,19 +1460,40 @@ class InsightsPanel(QWidget):
             self.status_message.emit(f"Copied to clipboard: {self._current_target}")
             QTimer.singleShot(1000, lambda: self.target_label.setText(original_text))
     
-    def set_target(self, callsign: str, grid: str = None):
+    def _toggle_manual_entry(self):
+        """v2.4.4: Toggle manual target entry field visibility."""
+        if self.manual_entry.isVisible():
+            self.manual_entry.hide()
+            self.manual_entry.clear()
+        else:
+            self.manual_entry.show()
+            self.manual_entry.clear()
+            self.manual_entry.setFocus()
+    
+    def _submit_manual_entry(self):
+        """v2.4.4: Submit manually entered callsign."""
+        call = self.manual_entry.text().strip().upper()
+        self.manual_entry.hide()
+        self.manual_entry.clear()
+        if call:
+            self.manual_target_requested.emit(call)
+    
+    def set_target(self, callsign: str, grid: str = None, manual: bool = False):
         """
         Set the current target station.
         
         Args:
             callsign: Target callsign
             grid: Target grid (if known)
+            manual: If True, target was manually entered (not decoded locally)
         """
         self._current_target = callsign.upper() if callsign else None
+        self._is_manual_target = manual
         
         # Update target header
         if self._current_target:
-            self.target_label.setText(f"Target: {self._current_target}")
+            prefix = "⚠ " if manual else ""
+            self.target_label.setText(f"Target: {prefix}{self._current_target}")
         else:
             self.target_label.setText("Target: —")
         

@@ -173,6 +173,10 @@ class LocalIntelligence(QObject):
             if hasattr(main_window, 'sync_to_jtdx'):
                 self.insights_panel.sync_requested.connect(main_window.sync_to_jtdx)
             
+            # v2.4.4: Connect manual target entry to main window
+            if hasattr(main_window, '_on_manual_target'):
+                self.insights_panel.manual_target_requested.connect(main_window._on_manual_target)
+            
             # v2.1.3: Connect clipboard feedback to status bar
             if hasattr(main_window, 'update_status_msg'):
                 self.insights_panel.status_message.connect(main_window.update_status_msg)
@@ -264,7 +268,7 @@ class LocalIntelligence(QObject):
         purist_action.triggered.connect(self._toggle_purist_mode)
         purist_action.setToolTip("Disable PSK Reporter, use only local data")
     
-    def set_target(self, callsign: str, grid: str = None):
+    def set_target(self, callsign: str, grid: str = None, manual: bool = False):
         """
         Set the current target station.
         
@@ -273,6 +277,7 @@ class LocalIntelligence(QObject):
         Args:
             callsign: Target callsign (empty string or None to clear)
             grid: Target grid square (if known)
+            manual: If True, target was manually entered (not decoded locally)
         """
         # Guard against re-entrant calls (can happen with processEvents)
         if hasattr(self, '_setting_target') and self._setting_target:
@@ -313,7 +318,7 @@ class LocalIntelligence(QObject):
             
             # Now update with results
             if self.insights_panel:
-                self.insights_panel.set_target(callsign, grid)
+                self.insights_panel.set_target(callsign, grid, manual=manual)
             
             logger.debug(f"Target set: {callsign}")
         finally:

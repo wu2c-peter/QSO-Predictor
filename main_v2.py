@@ -99,9 +99,9 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QTableView, QLabel, QHeaderView, QDockWidget,
                              QMessageBox, QProgressBar, QAbstractItemView, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu, QToolBar, QPushButton, QCheckBox,
-                             QStyledItemDelegate, QComboBox)
+                             QStyledItemDelegate, QComboBox, QLineEdit)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QAbstractTableModel, QModelIndex, QByteArray
-from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon, QCursor, QBrush
+from PyQt6.QtGui import QColor, QAction, QKeySequence, QFont, QIcon, QCursor, QBrush, QShortcut
 
 # v2.1.0: Hunt Mode imports
 try:
@@ -213,6 +213,8 @@ class TargetDashboard(QFrame):
     sync_requested = pyqtSignal()
     # v2.1.0: Signal for status bar messages (e.g., clipboard feedback)
     status_message = pyqtSignal(str)
+    # v2.4.4: Signal when user manually enters a target callsign
+    manual_target_requested = pyqtSignal(str)
     
     def __init__(self):
         super().__init__()
@@ -287,6 +289,36 @@ class TargetDashboard(QFrame):
         self.btn_sync.setFixedSize(28, 28)
         self.btn_sync.clicked.connect(self.sync_requested.emit)
         layout.addWidget(self.btn_sync)
+        
+        # v2.4.4: Manual target entry button and field
+        self.btn_manual = QPushButton("+")
+        self.btn_manual.setObjectName("sync")  # Reuse sync styling
+        self.btn_manual.setToolTip("Manually enter a target callsign")
+        self.btn_manual.setFixedSize(28, 28)
+        self.btn_manual.clicked.connect(self._toggle_manual_entry)
+        layout.addWidget(self.btn_manual)
+        
+        self.manual_entry = QLineEdit()
+        self.manual_entry.setPlaceholderText("Enter callsign...")
+        self.manual_entry.setFixedWidth(140)
+        self.manual_entry.setStyleSheet("""
+            QLineEdit {
+                background-color: #1a1a2e;
+                color: #FF00FF;
+                border: 1px solid #00AAAA;
+                border-radius: 3px;
+                padding: 2px 4px;
+                font-size: 14pt;
+                font-weight: bold;
+                font-family: Consolas, monospace;
+            }
+        """)
+        self.manual_entry.returnPressed.connect(self._submit_manual_entry)
+        # Escape cancels manual entry
+        esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.manual_entry)
+        esc_shortcut.activated.connect(self._toggle_manual_entry)
+        self.manual_entry.hide()
+        layout.addWidget(self.manual_entry)
         
         def add_field(label_text, width=None, stretch=False, tooltip=None):
             container = QWidget()
@@ -384,15 +416,38 @@ class TargetDashboard(QFrame):
     def _copy_target_to_clipboard(self):
         """Copy current target callsign to clipboard."""
         text = self.lbl_target.text()
-        if text and text != "NO TARGET":
+        # v2.4.4: Strip manual target indicator before copying
+        clean_text = text.replace("⚠ ", "").strip()
+        if clean_text and clean_text != "NO TARGET":
             clipboard = QApplication.clipboard()
-            clipboard.setText(text)
+            clipboard.setText(clean_text)
             # Brief visual feedback
             original_text = text
             self.lbl_target.setText(f"✓ Copied!")
-            self.status_message.emit(f"Copied to clipboard: {text}")
+            self.status_message.emit(f"Copied to clipboard: {clean_text}")
             # Restore after 1 second
             QTimer.singleShot(1000, lambda: self.lbl_target.setText(original_text))
+    
+    def _toggle_manual_entry(self):
+        """v2.4.4: Toggle manual target entry field visibility."""
+        if self.manual_entry.isVisible():
+            self.manual_entry.hide()
+            self.manual_entry.clear()
+            self.lbl_target.show()
+        else:
+            self.manual_entry.show()
+            self.manual_entry.clear()
+            self.manual_entry.setFocus()
+            self.lbl_target.hide()
+    
+    def _submit_manual_entry(self):
+        """v2.4.4: Submit manually entered callsign."""
+        call = self.manual_entry.text().strip().upper()
+        self.manual_entry.hide()
+        self.manual_entry.clear()
+        self.lbl_target.show()
+        if call:
+            self.manual_target_requested.emit(call)
 
     def update_data(self, data):
         if not data:
@@ -414,7 +469,11 @@ class TargetDashboard(QFrame):
             self._activity_state = 'unknown'
             return
 
-        self.lbl_target.setText(data.get('call', '???'))
+        # v2.4.4: Show "⚠" prefix for manual targets not yet decoded locally
+        call_display = data.get('call', '???')
+        if data.get('manual_target'):
+            call_display = f"⚠ {call_display}"
+        self.lbl_target.setText(call_display)
         self.val_utc.setText(str(data.get('time', '')))
         
         snr = str(data.get('snr', '--'))
@@ -1086,6 +1145,7 @@ class MainWindow(QMainWindow):
         self.current_target_call = ""
         self.current_target_grid = ""
         self.jtdx_last_dx_call = ""  # Track what JTDX last sent (separate from our selection)
+        self._is_manual_target = False  # v2.4.4: True when target entered manually (not decoded)
         
         # v2.3.0: Target Activity State tracking
         self._target_activity_state = 'unknown'
@@ -1465,6 +1525,7 @@ class MainWindow(QMainWindow):
         self.dashboard = TargetDashboard()
         self.dashboard.sync_requested.connect(self.sync_to_jtdx)  # v2.0.6
         self.dashboard.status_message.connect(self.update_status_msg)  # v2.1.0: clipboard feedback
+        self.dashboard.manual_target_requested.connect(self._on_manual_target)  # v2.4.4
         target_layout.addWidget(self.dashboard)
         
         # Band Map
@@ -1809,14 +1870,34 @@ class MainWindow(QMainWindow):
         
         # --- 5. Dashboard ---
         if is_clearing:
+            self._is_manual_target = False
             self.dashboard.update_data(None)
         elif row_data:
+            # Station is in decode table — not a manual target anymore
+            if self._is_manual_target:
+                self._is_manual_target = False
+                logger.info(f"Manual target {call} found in decode table — switching to normal mode")
             # Re-analyze with full perspective before displaying
             self.analyzer.analyze_decode(row_data, use_perspective=True)
+            row_data['manual_target'] = False
             self.dashboard.update_data(row_data)
         else:
-            # Have call but no row data yet — show call, clear other fields
-            self.dashboard.lbl_target.setText(call)
+            # Have call but no row data — may be manual target or early UDP target
+            # v2.4.4: Show minimal dashboard with manual indicator
+            manual_data = {
+                'call': call,
+                'time': '',
+                'snr': '--',
+                'dt': '--',
+                'freq': 0,
+                'message': '',
+                'grid': grid or '--',
+                'prob': '--',
+                'path': '--',
+                'competition': '--',
+                'manual_target': self._is_manual_target,
+            }
+            self.dashboard.update_data(manual_data)
         
         # --- 6. Band map ---
         self.band_map.set_target_freq(freq)
@@ -1830,7 +1911,8 @@ class MainWindow(QMainWindow):
         # --- 7. Local Intelligence ---
         if self.local_intel:
             try:
-                self.local_intel.set_target(call if call else "", grid)
+                self.local_intel.set_target(call if call else "", grid, 
+                                           manual=self._is_manual_target)
                 if row_data and not is_clearing:
                     self._update_local_intel_path_status(row_data)
                     comp_str = str(row_data.get('competition', ''))
@@ -1901,7 +1983,224 @@ class MainWindow(QMainWindow):
             return
         
         logger.info(f"Sync: Syncing to JTDX target: {self.jtdx_last_dx_call}")
+        self._is_manual_target = False  # v2.4.4: Not a manual target
         self._set_new_target(self.jtdx_last_dx_call)
+
+    # --- v2.4.4: Manual target entry ---
+    
+    # Common DXCC prefix → approximate grid centroid (fallback when no other source)
+    _PREFIX_GRIDS = {
+        # Japan
+        'JA': 'PM95', 'JH': 'PM95', 'JR': 'PM95', 'JE': 'PM95', 'JF': 'PM95',
+        'JG': 'PM95', 'JI': 'PM95', 'JJ': 'PM95', 'JK': 'PM95', 'JL': 'PM95',
+        'JM': 'PM95', 'JN': 'PM95', 'JO': 'PM95', 'JP': 'PM95', 'JQ': 'PM95',
+        'JS': 'PM95',
+        # Central/East Asia
+        'JT': 'ON48',  # Mongolia
+        'HL': 'PM37', 'DS': 'PM37',  # South Korea
+        'BV': 'PL05',  # Taiwan
+        'BY': 'OM89', 'BA': 'OM89', 'BD': 'OM89', 'BG': 'OM89',  # China
+        'VU': 'MK82', 'AT': 'MK82',  # India
+        # CIS / Former Soviet
+        'UA': 'KO85', 'RA': 'KO85', 'RV': 'KO85', 'RW': 'KO85', 'RX': 'KO85',
+        'R': 'KO85',  # Russia (single letter prefix)
+        'UN': 'MN53', 'UP': 'MN53', 'UL': 'MN53',  # Kazakhstan
+        'UK': 'MM39', 'UJ': 'MM39',  # Uzbekistan
+        'EX': 'MM72', 'EZ': 'MM72',  # Kyrgyzstan / Turkmenistan
+        'UR': 'KN28', 'UT': 'KN28', 'UX': 'KN28', 'US': 'KN28',  # Ukraine
+        'EU': 'KO33', 'EW': 'KO33',  # Belarus
+        'LY': 'KO24',  # Lithuania
+        'YL': 'KO26',  # Latvia
+        'ES': 'KO29',  # Estonia
+        'ER': 'KN47',  # Moldova
+        '4L': 'LN21',  # Georgia
+        '4J': 'LM49',  # Azerbaijan
+        'EK': 'LN20',  # Armenia
+        # Oceania
+        'VK': 'QF56', 'AX': 'QF56',  # Australia
+        'ZL': 'RF73',  # New Zealand
+        'DU': 'PK04', 'DV': 'PK04',  # Philippines
+        'YB': 'OI33', 'YC': 'OI33', 'YD': 'OI33',  # Indonesia
+        '9M': 'OJ11', '9W': 'OJ11',  # Malaysia
+        'HS': 'OK03', 'E2': 'OK03',  # Thailand
+        'XV': 'OK30', '3W': 'OK30',  # Vietnam
+        'XW': 'NK97',  # Laos
+        'V8': 'OJ95',  # Brunei
+        'FK': 'RG37',  # New Caledonia
+        'FO': 'BH51',  # French Polynesia
+        'KH6': 'BL11', 'KL7': 'BP51', 'KP4': 'FK68',
+        'NH6': 'BL11', 'NL7': 'BP51', 'NP4': 'FK68',
+        'WH6': 'BL11', 'WL7': 'BP51', 'WP4': 'FK68',
+        'AH6': 'BL11', 'AL7': 'BP51',
+        # Canada
+        'VE': 'FN03', 'VA': 'FN03', 'VY': 'FN03', 'VO': 'GN37',
+        # Europe
+        'G': 'IO91', 'M': 'IO91', '2E': 'IO91',
+        'GI': 'IO65', 'GW': 'IO71', 'GM': 'IO86', 'GD': 'IO74',
+        'DL': 'JO51', 'DA': 'JO51', 'DB': 'JO51', 'DC': 'JO51', 'DD': 'JO51',
+        'DF': 'JO51', 'DG': 'JO51', 'DH': 'JO51', 'DJ': 'JO51', 'DK': 'JO51',
+        'DO': 'JO51',
+        'F': 'JN18', 'ON': 'JO20', 'PA': 'JO22', 'PH': 'JO22',
+        'I': 'JN61', 'IK': 'JN61', 'IZ': 'JN61',
+        'EA': 'IN80', 'EB': 'IN80', 'EC': 'IN80',
+        'CT': 'IM58', 'CS': 'IM58',
+        'SM': 'JO89', 'SA': 'JO89', 'OH': 'KP20', 'OZ': 'JO55',
+        'LA': 'JO59', 'LB': 'JO59',
+        'SP': 'JO91', 'SQ': 'JO91', 'OK': 'JN79', 'OL': 'JN79',
+        'HA': 'JN97', 'HG': 'JN97',
+        'YU': 'KN04', 'YT': 'KN04',
+        'OE': 'JN78',  # Austria
+        'HB': 'JN47',  # Switzerland
+        'OY': 'IP62',  # Faroe Islands
+        'TF': 'HP94',  # Iceland
+        'SV': 'KM18', 'SW': 'KM18',  # Greece
+        '9A': 'JN75',  # Croatia
+        'S5': 'JN76',  # Slovenia
+        'Z3': 'KN01',  # North Macedonia
+        'ZA': 'KN01',  # Albania
+        'LZ': 'KN22',  # Bulgaria
+        'YO': 'KN25',  # Romania
+        'E7': 'JN84',  # Bosnia
+        # Middle East
+        'TA': 'KN30', 'TC': 'KN30',  # Turkey
+        '5B': 'KM65',  # Cyprus
+        'A4': 'LL93', 'A6': 'LL65', 'A7': 'LL55',
+        'A9': 'LL46', 'HZ': 'KL41', '9K': 'LL49',
+        'OD': 'KM73',  # Lebanon
+        '4X': 'KM72', '4Z': 'KM72',  # Israel
+        'YK': 'KM74',  # Syria
+        'YI': 'LM13',  # Iraq
+        'EP': 'LL48', 'EQ': 'LL48',  # Iran
+        'AP': 'ML44',  # Pakistan
+        # Africa
+        '3B8': 'MH87', '5H': 'KI73', '5Z': 'KI88',
+        '9J': 'KH25', '7Q': 'KH74', 'ZD8': 'II22',
+        'CN': 'IM63',  # Morocco
+        '7X': 'JM16',  # Algeria
+        'SU': 'KL30',  # Egypt
+        'ST': 'KK55',  # Sudan
+        'ET': 'KJ19',  # Ethiopia
+        '5A': 'JM73',  # Libya
+        'TU': 'IJ56',  # Ivory Coast
+        '6W': 'IK14',  # Senegal
+        '5N': 'JJ17',  # Nigeria
+        'TR': 'JI31',  # Gabon
+        '9X': 'KI49',  # Rwanda
+        'V5': 'JG87',  # Namibia
+        'ZS': 'KG33', 'ZR': 'KG33',  # South Africa
+        # Central America / Caribbean
+        'TI': 'EJ89', 'HP': 'FJ09', 'HK': 'FJ34', 'YV': 'FJ66',
+        'XE': 'EK09', 'XA': 'EK09',  # Mexico
+        'VP9': 'FM72', 'V3': 'EK57', '8P': 'GK03',
+        'HI': 'FK58',  # Dominican Republic
+        'CO': 'FL11', 'CM': 'FL11',  # Cuba
+        'YS': 'EK53',  # El Salvador
+        'TG': 'EK44',  # Guatemala
+        'HR': 'EK64',  # Honduras
+        'PJ': 'FK52',  # Netherlands Antilles
+        'J3': 'FK92',  # Grenada
+        'J6': 'FK93',  # St Lucia
+        'VP2': 'FK87',  # Anguilla/Montserrat
+        'FG': 'FK96',  # Guadeloupe
+        'FM': 'FK94',  # Martinique
+        # South America
+        'LU': 'GF05', 'LW': 'GF05',  # Argentina
+        'PY': 'GG87', 'PP': 'GG87', 'PR': 'GG87', 'PS': 'GG87', 'PT': 'GG87',
+        'PU': 'GG87',  # Brazil
+        'CE': 'FF46', 'CA': 'FF46',  # Chile
+        'HC': 'FI09',  # Ecuador
+        'OA': 'FH17',  # Peru
+        'CP': 'FH33',  # Bolivia
+        'ZP': 'GG14',  # Paraguay
+        'CX': 'GF15',  # Uruguay
+    }
+    
+    def _lookup_grid(self, call):
+        """v2.4.4: Grid lookup cascade — local sources first, then prefix fallback.
+        
+        Priority:
+        1. Analyzer's call_grid_map (recent MQTT/PSK Reporter data)
+        2. Decode table (currently displayed stations)
+        3. DXCC prefix centroid (approximate, always available)
+        
+        Returns:
+            tuple: (grid_str, source_str) e.g. ('PM95', 'PSK Reporter') or ('', 'none')
+        """
+        call = call.upper().strip()
+        
+        # 1. Analyzer's call_grid_map (populated from local decodes)
+        grid = self.analyzer.call_grid_map.get(call, '')
+        if grid and len(grid) >= 2:
+            logger.info(f"Manual target grid lookup: {call} → {grid} (call_grid_map)")
+            return grid, 'local decode'
+        
+        # 2. Receiver cache — if station uploads to PSK Reporter, their grid
+        #    is in every spot they reported (the 'grid' field = receiver's grid)
+        with self.analyzer.lock:
+            if call in self.analyzer.receiver_cache:
+                spots = self.analyzer.receiver_cache[call]
+                if spots:
+                    grid = spots[-1].get('grid', '')  # Most recent spot
+                    if grid and len(grid) >= 2:
+                        logger.info(f"Manual target grid lookup: {call} → {grid} (PSK Reporter receiver)")
+                        return grid, 'PSK Reporter'
+        
+        # 3. Decode table rows
+        for row in self.model._data:
+            if row.get('call') == call:
+                grid = row.get('grid', '')
+                if grid and len(grid) >= 2:
+                    logger.info(f"Manual target grid lookup: {call} → {grid} (decode table)")
+                    return grid, 'local decode'
+        
+        # 4. DXCC prefix fallback — try longest prefix match first
+        # Handle special prefixes like KH6, KL7, KP4 before single-letter
+        for prefix_len in (3, 2, 1):
+            prefix = call[:prefix_len]
+            if prefix in self._PREFIX_GRIDS:
+                grid = self._PREFIX_GRIDS[prefix]
+                logger.info(f"Manual target grid lookup: {call} → {grid} (DXCC prefix '{prefix}', approximate)")
+                return grid, f'DXCC prefix (approx)'
+        
+        # 5. US callsign heuristic — W/K/N/AA-AL + digit gives rough area
+        if len(call) >= 2 and call[0] in ('W', 'K', 'N'):
+            logger.info(f"Manual target grid lookup: {call} → no grid (US call, too broad)")
+            return '', 'none'
+        
+        logger.info(f"Manual target grid lookup: {call} → no grid found")
+        return '', 'none'
+    
+    def _on_manual_target(self, call):
+        """v2.4.4: Handle manually entered target callsign.
+        
+        Looks up grid from local caches and DXCC prefix table,
+        then sets target with manual indicator.
+        """
+        call = call.upper().strip()
+        if not call:
+            return
+        
+        # Don't re-target if already targeting this station
+        if call == self.current_target_call:
+            logger.info(f"Manual target: {call} already targeted")
+            return
+        
+        # Look up grid
+        grid, source = self._lookup_grid(call)
+        
+        logger.info(f"Manual target: {call}, grid={grid or '(unknown)'} via {source}")
+        
+        # Set the manual target flag BEFORE calling _set_new_target
+        self._is_manual_target = True
+        
+        # Call unified target handler
+        self._set_new_target(call, grid=grid)
+        
+        # Show feedback in status bar
+        if grid:
+            self.update_status_msg(f"Manual target: {call} (grid {grid} via {source})")
+        else:
+            self.update_status_msg(f"Manual target: {call} (grid unknown — will resolve from spots)")
 
     def handle_decode(self, data):
         self.buffer.append(data)
@@ -1988,6 +2287,7 @@ class MainWindow(QMainWindow):
             if dx_call and dx_call != self.current_target_call:
                 # v2.4.4: Pass DX grid from UDP status (was previously discarded)
                 dx_grid = status.get('dx_grid', '')
+                self._is_manual_target = False  # v2.4.4: Not a manual target
                 self._set_new_target(dx_call, grid=dx_grid)
             # Note: If JTDX clears dx_call, we don't clear our target
             # (user may have manually selected something in the table)
@@ -2068,6 +2368,7 @@ class MainWindow(QMainWindow):
                 logger.debug(f"Same target {target_call}, skipping")
                 return
             
+            self._is_manual_target = False  # v2.4.4: Not a manual target
             self._set_new_target(
                 target_call,
                 data.get('grid', ''),
@@ -2336,6 +2637,16 @@ class MainWindow(QMainWindow):
             # Find and re-analyze the selected target with full perspective
             for row in self.model._data:
                 if row.get('call') == self.current_target_call:
+                    # v2.4.4: Station decoded locally — clear manual target indicator
+                    if self._is_manual_target:
+                        self._is_manual_target = False
+                        logger.info(f"Manual target {self.current_target_call} now decoded locally")
+                        # Update insights panel to remove ⚠ indicator
+                        if self.local_intel and hasattr(self.local_intel, 'insights_panel'):
+                            self.local_intel.insights_panel._is_manual_target = False
+                            ip = self.local_intel.insights_panel
+                            ip.target_label.setText(f"Target: {self.current_target_call}")
+                    
                     # v2.4.0: Backfill grid if it wasn't available on target set
                     if not self.current_target_grid and row.get('grid'):
                         self.current_target_grid = row['grid']
@@ -2356,6 +2667,7 @@ class MainWindow(QMainWindow):
                             else:
                                 row['competition'] = f"Moderate ({inferred_count}) inferred"
                     
+                    row['manual_target'] = False  # v2.4.4: Decoded = not manual
                     self.dashboard.update_data(row)
                     
                     # --- LOCAL INTELLIGENCE: Update path status ---
@@ -2388,6 +2700,16 @@ class MainWindow(QMainWindow):
             
             # Update band map perspective
             self._update_perspective_display()
+            
+            # v2.4.4: Retry grid resolution for manual targets
+            # (receiver_cache may have populated since initial target set)
+            if not self.current_target_grid or len(self.current_target_grid) < 2:
+                grid, source = self._lookup_grid(self.current_target_call)
+                if grid and len(grid) >= 2:
+                    self.current_target_grid = grid
+                    self.analyzer.current_target_grid = grid
+                    self.band_map.set_target_grid(grid)
+                    logger.info(f"Manual target grid resolved: {self.current_target_call} → {grid} via {source}")
             
             # v2.4.0: Re-attempt IONIS prediction if not yet shown
             # (grid may not have been available when target was first set)
@@ -2821,10 +3143,13 @@ class MainWindow(QMainWindow):
             return
         
         # Need target grid and current band
-        if not self.current_target_grid or not hasattr(self, '_current_band'):
+        if not self.current_target_grid:
             self._show_ionis_waiting("Awaiting target grid…")
             return
         band = getattr(self, '_current_band', None)
+        # v2.4.4: Derive band from MQTT dial frequency if UDP not connected
+        if not band and self.analyzer.current_dial_freq > 0:
+            band = self._freq_to_band(self.analyzer.current_dial_freq)
         if not band:
             self._show_ionis_waiting("Awaiting band info…")
             return
