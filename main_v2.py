@@ -1986,7 +1986,9 @@ class MainWindow(QMainWindow):
         if dx_call != self.jtdx_last_dx_call:
             self.jtdx_last_dx_call = dx_call
             if dx_call and dx_call != self.current_target_call:
-                self._set_new_target(dx_call)
+                # v2.4.4: Pass DX grid from UDP status (was previously discarded)
+                dx_grid = status.get('dx_grid', '')
+                self._set_new_target(dx_call, grid=dx_grid)
             # Note: If JTDX clears dx_call, we don't clear our target
             # (user may have manually selected something in the table)
         

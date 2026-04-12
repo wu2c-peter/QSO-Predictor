@@ -990,6 +990,15 @@ class QSOAnalyzer(QObject):
                         path_str = "Reported in Region"
                         my_snr_at_target = my_rep.get('snr', None)
                         my_snr_reporter = my_rep.get('receiver', '')
+                elif len(r_grid) >= 2:
+                    # v2.4.4: Catch reporters with short grids (2-3 chars)
+                    # Previously skipped by the len>=4 gate, causing status bar
+                    # to show "near target" while path showed "Not Reported"
+                    if r_grid[:2] == target_major:
+                        geo_bonus = 10  # Lower confidence than full grid match
+                        path_str = "Reported in Region"
+                        my_snr_at_target = my_rep.get('snr', None)
+                        my_snr_reporter = my_rep.get('receiver', '')
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
@@ -1185,6 +1194,12 @@ class QSOAnalyzer(QObject):
                         my_snr_reporter = my_rep.get('receiver', '')
                         break
                     elif r_grid[:2] == target_major:
+                        path_str = "Reported in Region"
+                        my_snr_at_target = my_rep.get('snr', None)
+                        my_snr_reporter = my_rep.get('receiver', '')
+                elif len(r_grid) >= 2:
+                    # v2.4.4: Catch reporters with short grids (2-3 chars)
+                    if r_grid[:2] == target_major:
                         path_str = "Reported in Region"
                         my_snr_at_target = my_rep.get('snr', None)
                         my_snr_reporter = my_rep.get('receiver', '')

@@ -321,6 +321,7 @@ class UDPHandler(QObject):
                 # Fields 12-18 may not be present in older WSJT-X/JTDX versions
                 de_call = ""
                 de_grid = ""
+                dx_grid = ""  # v2.4.4: DX grid from JTDX (was parsed but discarded)
                 special_mode = 0  # 0=None, 5=WW DIGI, 6=Fox, 7=Hound
                 
                 # Diagnostic: log remaining bytes on first status (helps debug JTDX vs WSJT-X)
@@ -334,7 +335,7 @@ class UDPHandler(QObject):
                     # 13. DE grid (utf8)
                     de_grid, idx = self._read_utf8(data, idx)
                     # 14. DX grid (utf8)
-                    _, idx = self._read_utf8(data, idx)
+                    dx_grid, idx = self._read_utf8(data, idx)
                     # 15. Tx Watchdog (bool)
                     idx += 1
                     # 16. Sub-mode (utf8)
@@ -360,6 +361,7 @@ class UDPHandler(QObject):
                 self.status_update.emit({
                     'dial_freq': dial_freq,
                     'dx_call': dx_call,
+                    'dx_grid': dx_grid,          # v2.4.4: DX grid (was discarded)
                     'tx_df': tx_df,
                     'tx_enabled': tx_enabled,
                     'transmitting': transmitting,
