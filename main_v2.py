@@ -1969,10 +1969,15 @@ class MainWindow(QMainWindow):
             if hasattr(self, '_solar_data') and self._solar_data:
                 sfi = self._solar_data.get('sfi', 0)
                 k = self._solar_data.get('k', 0)
+            # Capture path status BEFORE we start calling — this is predictive
+            # (non-tautological). Path established during the QSO exchange
+            # will show in the outcome snapshot's 'path' field instead.
+            path_now = str(row_data.get('path', '')) if row_data else ''
             self.outcome_recorder.on_target_selected(
                 call, grid,
                 band=getattr(self, '_current_band', ''),
-                sfi=sfi, k=k
+                sfi=sfi, k=k,
+                path_at_select=path_now
             )
     
     # --- v2.0.3: Clear Target functionality (suggested by KC0GU) ---

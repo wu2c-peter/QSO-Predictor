@@ -173,6 +173,7 @@ class OutcomeRecorder:
         self._current_target = None
         self._current_target_grid = ""
         self._target_selected_at = None
+        self._path_at_select = ""       # Path status BEFORE calling (predictive)
         self._first_tx_at = None
         self._tx_cycle_count = 0
         self._target_responded = False
@@ -203,7 +204,8 @@ class OutcomeRecorder:
     # --- Public API: Event hooks ---
 
     def on_target_selected(self, call: str, grid: str,
-                           band: str = "", sfi: int = 0, k: int = 0):
+                           band: str = "", sfi: int = 0, k: int = 0,
+                           path_at_select: str = ""):
         """Called when user selects a new target.
         
         If no session is active (or the gap since last activity exceeds
@@ -220,6 +222,8 @@ class OutcomeRecorder:
             band: Current operating band (for session_start marker)
             sfi: Solar flux index (for session_start marker)
             k: K-index (for session_start marker)
+            path_at_select: Path status at moment of selection (predictive,
+                           before user calls — NOT tautological with outcome)
         """
         if not self._enabled:
             return
@@ -254,6 +258,7 @@ class OutcomeRecorder:
         self._current_target = call.upper() if call else None
         self._current_target_grid = grid.upper() if grid else ""
         self._target_selected_at = now
+        self._path_at_select = path_at_select  # Predictive (before calling)
         self._first_tx_at = None
         self._tx_cycle_count = 0
         self._target_responded = False
@@ -415,7 +420,8 @@ class OutcomeRecorder:
             "score_reason": snapshot.get('score_reason', 0),
             
             # Ephemeral context
-            "path": snapshot.get('path', ''),
+            "path": snapshot.get('path', ''),           # at outcome (confirmatory)
+            "path_at_select": self._path_at_select,     # at selection (predictive)
             "competition": snapshot.get('competition', 0),
             "reporters": snapshot.get('reporters', 0),
             "ionis": snapshot.get('ionis', ''),
@@ -452,6 +458,7 @@ class OutcomeRecorder:
         self._current_target = None
         self._current_target_grid = ""
         self._target_selected_at = None
+        self._path_at_select = ""
         self._target_responded = False
         self._tx_cycle_count = 0
         self._first_tx_at = None
