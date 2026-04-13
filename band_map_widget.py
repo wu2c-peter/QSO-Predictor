@@ -422,18 +422,20 @@ class BandMapWidget(QWidget):
             else:
                 s['decay'] = max(0, 0.8 - ((age - 29) / 30.0))
         
-        # 2. Perspective data - same decay logic per tier
+        # 2. Perspective data - 180 second persistence with decay
+        #    Bridges PSK Reporter upload gaps while showing visual freshness.
+        #    Decay: 0-29s full, 29-59s bright, 59-179s fading
         for tier_name in ['tier1', 'tier2', 'tier3', 'global']:
             tier_list = self.perspective_data.get(tier_name, [])
-            tier_list = [s for s in tier_list if now - s.get('seen', 0) < 60]
+            tier_list = [s for s in tier_list if now - s.get('seen', 0) < 180]
             for s in tier_list:
                 age = now - s.get('seen', now)
-                if age < 14:
+                if age < 29:
                     s['decay'] = 1.0
-                elif age < 29:
+                elif age < 59:
                     s['decay'] = 0.8
                 else:
-                    s['decay'] = max(0, 0.8 - ((age - 29) / 30.0))
+                    s['decay'] = max(0, 0.8 - ((age - 59) / 120.0))
             self.perspective_data[tier_name] = tier_list
 
     def _calculate_best_frequency(self):

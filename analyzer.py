@@ -162,7 +162,8 @@ class QSOAnalyzer(QObject):
         target_call = (target_call or '').upper().strip()
         target_grid = (target_grid or '').upper().strip()
         
-        recent_limit = time.time() - 60  # 60 seconds for target perspective
+        recent_limit = time.time() - 180  # 3 minutes — bridges PSK Reporter upload gaps
+        # (cache retains 15 min; this just controls the query window)
         
         tier1 = []  # Direct from target
         tier2 = []  # Same 4-char grid
@@ -292,7 +293,7 @@ class QSOAnalyzer(QObject):
         my_field = my_grid[:2]
         my_grid4 = my_grid[:4] if len(my_grid) >= 4 else None
         
-        recent_limit = time.time() - 60  # 60 seconds
+        recent_limit = time.time() - 180  # 3 minutes — matches perspective window
         
         near_me_stations = []
         seen_calls = set()  # Avoid duplicates
