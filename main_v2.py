@@ -540,13 +540,6 @@ class TargetDashboard(QFrame):
                 path_display = f"{short}{snr_part}{age_part}"
         
         self.val_path.setText(path_display)
-        # DEBUG: Verify path freshness data flow (remove after confirming)
-        if path in ("Heard by Target", "Reported in Region"):
-            import logging as _log
-            _log.getLogger(__name__).debug(
-                f"Path display: age={path_age}, stale={path_stale}, "
-                f"display='{path_display}'"
-            )
         
         # Color coding — stale gets warning color
         if path_stale and "Heard by Target" in path:
@@ -655,8 +648,6 @@ class TargetDashboard(QFrame):
         # Color-code competition status
         if comp == 'In QSO':
             self.val_comp.setStyleSheet("color: #FFA500; font-weight: bold;")  # Amber — target mid-QSO
-        elif "Heard by Target" in comp:
-            self.val_comp.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
         elif "PILEUP" in comp:
             self.val_comp.setStyleSheet("color: #FF5555; font-weight: bold;")  # Red
         elif "High" in comp:

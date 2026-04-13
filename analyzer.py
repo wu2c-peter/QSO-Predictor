@@ -1141,9 +1141,8 @@ class QSOAnalyzer(QObject):
                 else:
                     comp_str = "Unknown"
             
-            # Override with path status if connected
-            if direct_hit:
-                comp_str = "Heard by Target"
+            # v2.5.1: Removed "Heard by Target" override — that info now belongs
+            # in the Path field (with freshness). Competition shows actual pileup count.
             
             decode_data['competition'] = comp_str
             geo_bonus -= qrm_penalty  # Factor competition into probability
