@@ -53,7 +53,8 @@ DEFAULT_CONFIG = {
     },
     'ANALYSIS': {
         'my_callsign': 'N0CALL',
-        'my_grid': 'FN00aa'
+        'my_grid': 'FN00aa',
+        'outcome_recording': 'true'
     },
     'IONIS': {
         'enabled': 'true'

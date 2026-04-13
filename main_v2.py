@@ -112,6 +112,14 @@ except ImportError as e:
     HUNT_MODE_AVAILABLE = False
     logger.warning(f"Hunt Mode not available: {e}")
 
+# OutcomeRecorder — silent data collector for performance analysis
+try:
+    from outcome_recorder import OutcomeRecorder
+    OUTCOME_RECORDER_AVAILABLE = True
+except ImportError as e:
+    OUTCOME_RECORDER_AVAILABLE = False
+    logger.warning(f"OutcomeRecorder not available: {e}")
+
 
 def get_version():
     """Get version from git tag or VERSION file."""
@@ -1191,6 +1199,18 @@ class MainWindow(QMainWindow):
         self._ionis_shown = False  # Track whether prediction is displayed
         if IONIS_AVAILABLE:
             self._init_ionis()
+        
+        # --- OUTCOME RECORDER: Silent data collector for performance analysis ---
+        self.outcome_recorder = None
+        if OUTCOME_RECORDER_AVAILABLE:
+            try:
+                my_call = self.config.get('ANALYSIS', 'my_callsign', fallback='')
+                my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
+                enabled = self.config.get('ANALYSIS', 'outcome_recording',
+                                          fallback='true').lower() == 'true'
+                self.outcome_recorder = OutcomeRecorder(my_call, my_grid, enabled)
+            except Exception as e:
+                logger.warning(f"OutcomeRecorder init failed: {e}")
             
         self.init_ui()
         self.setup_connections()
@@ -1846,6 +1866,13 @@ class MainWindow(QMainWindow):
         prev_target = self.current_target_call
         logger.info(f"Target: '{prev_target}' → '{call or '(cleared)'}'")
         
+        # --- OUTCOME RECORDER: Record outcome for previous target BEFORE state resets ---
+        # Must happen here — after this point, scoring state gets cleared.
+        # Safe to call if no active target (recorder checks has_active_target).
+        if prev_target:
+            trigger = 'CLEARED' if is_clearing else 'TARGET_CHANGED'
+            self._record_outcome_for_current_target(trigger)
+        
         # --- 1. Core state ---
         self.current_target_call = call
         self.current_target_grid = grid
@@ -1934,8 +1961,129 @@ class MainWindow(QMainWindow):
             self._clear_ionis_prediction()
         elif self._ionis_engine:
             self._update_ionis_prediction()
+        
+        # --- 11. OUTCOME RECORDER: Register new target ---
+        if self.outcome_recorder and call:
+            sfi = 0
+            k = 0
+            if hasattr(self, '_solar_data') and self._solar_data:
+                sfi = self._solar_data.get('sfi', 0)
+                k = self._solar_data.get('k', 0)
+            self.outcome_recorder.on_target_selected(
+                call, grid,
+                band=getattr(self, '_current_band', ''),
+                sfi=sfi, k=k
+            )
     
     # --- v2.0.3: Clear Target functionality (suggested by KC0GU) ---
+    
+    def _build_outcome_snapshot(self) -> dict:
+        """Build a snapshot of QSOP's ephemeral state for OutcomeRecorder.
+        
+        MUST be called BEFORE any state-clearing code runs, otherwise
+        scoring context will be lost.
+        
+        Returns dict with all keys expected by OutcomeRecorder.record_outcome().
+        """
+        # Recommended frequency and score
+        rec_freq = getattr(self.band_map, 'best_offset', 0) or 0
+        rec_score = 0
+        if hasattr(self.band_map, 'score_map') and 0 <= rec_freq < len(self.band_map.score_map):
+            rec_score = float(self.band_map.score_map[rec_freq])
+        
+        # Actual TX frequency and score
+        tx_freq = getattr(self.band_map, 'current_tx_freq', 0) or 0
+        tx_score = 0
+        score_reason = 0
+        if hasattr(self.band_map, 'score_map') and 0 < tx_freq < len(self.band_map.score_map):
+            tx_score = float(self.band_map.score_map[tx_freq])
+        if hasattr(self.band_map, 'score_reason') and 0 < tx_freq < len(self.band_map.score_reason):
+            score_reason = int(self.band_map.score_reason[tx_freq])
+        
+        # Path and competition from current target row
+        path = ''
+        competition = 0
+        if self.current_target_call:
+            for row in self.model._data:
+                if row.get('call') == self.current_target_call:
+                    path = str(row.get('path', ''))
+                    comp_str = str(row.get('competition', ''))
+                    try:
+                        competition = int(comp_str.split()[0])  # "3 local" → 3
+                    except (ValueError, IndexError):
+                        competition = 0
+                    break
+        
+        # Reporter count from scoring context
+        reporters = 0
+        if hasattr(self.band_map, '_scoring_context'):
+            reporters = self.band_map._scoring_context.get('regional_coverage', 0)
+        
+        # IONIS status — read from propagation widget label
+        ionis = ''
+        try:
+            if (self.local_intel and
+                    hasattr(self.local_intel, 'insights_panel') and
+                    self.local_intel.insights_panel and
+                    hasattr(self.local_intel.insights_panel, 'propagation_widget')):
+                pw = self.local_intel.insights_panel.propagation_widget
+                if pw.isVisible():
+                    label_text = pw.prediction_label.text()
+                    # Label format: "20m PM95→FN42 OPEN" — status is last word
+                    for status in ('STRONG', 'OPEN', 'MARGINAL', 'CLOSED'):
+                        if status in label_text:
+                            ionis = status
+                            break
+        except Exception:
+            pass
+        
+        # F/H mode
+        fh_mode = 'normal'
+        if self._fh_active:
+            fh_mode = self._fh_type or 'fh'
+        
+        # Solar data
+        sfi = 0
+        k = 0
+        if hasattr(self, '_solar_data') and self._solar_data:
+            sfi = self._solar_data.get('sfi', 0)
+            k = self._solar_data.get('k', 0)
+        
+        return {
+            'rec_freq': rec_freq,
+            'rec_score': rec_score,
+            'tx_freq': tx_freq,
+            'tx_score': tx_score,
+            'score_reason': score_reason,
+            'path': path,
+            'competition': competition,
+            'reporters': reporters,
+            'ionis': ionis,
+            'fh_mode': fh_mode,
+            'band': getattr(self, '_current_band', ''),
+            'sfi': sfi,
+            'k': k,
+            'a': None,  # A-index not yet implemented
+        }
+    
+    def _record_outcome_for_current_target(self, trigger: str):
+        """Record outcome for the current target if OutcomeRecorder is active.
+        
+        Safe to call multiple times — the recorder resets after recording,
+        so subsequent calls are no-ops (has_active_target returns False).
+        
+        Args:
+            trigger: 'QSO_LOGGED', 'CLEARED', 'TARGET_CHANGED', 
+                     'BAND_CHANGED', 'APP_CLOSED'
+        """
+        if not self.outcome_recorder or not self.outcome_recorder.has_active_target:
+            return
+        try:
+            snapshot = self._build_outcome_snapshot()
+            self.outcome_recorder.record_outcome(trigger, snapshot)
+        except Exception as e:
+            logger.debug(f"OutcomeRecorder: error recording outcome: {e}")
+
     def clear_target(self):
         """Clear the current target selection.
         
@@ -1957,11 +2105,16 @@ class MainWindow(QMainWindow):
         Feature suggested by: Warren KC0GU (Dec 2025)
         """
         logged_call = data.get('dx_call', '').upper()
+        current_upper = self.current_target_call.upper() if self.current_target_call else ''
+        
+        # OUTCOME RECORDER: Record QSO_LOGGED BEFORE auto-clear resets state.
+        # This must fire first so the snapshot captures scoring context.
+        if logged_call and logged_call == current_upper:
+            self._record_outcome_for_current_target('QSO_LOGGED')
         
         # Check if auto-clear is enabled
         if self.chk_auto_clear.isChecked():
             # Only clear if we logged the station we were targeting
-            current_upper = self.current_target_call.upper() if self.current_target_call else ''
             if logged_call and logged_call == current_upper:
                 logger.info(f"Auto-clear: Target cleared after logging {logged_call}")
                 self.clear_target()
@@ -2244,6 +2397,13 @@ class MainWindow(QMainWindow):
                 if state:
                     self._update_target_activity(state, other)
             
+            # --- OUTCOME RECORDER: Check for target response (RESPONDED detection) ---
+            if self.outcome_recorder and self.current_target_call:
+                self.outcome_recorder.on_decode(
+                    item.get('call', ''),
+                    item.get('message', '')
+                )
+            
             # v2.3.0: SuperFox auto-detection from decode content
             self._check_superfox_from_decodes(item.get('message', ''))
         
@@ -2291,6 +2451,12 @@ class MainWindow(QMainWindow):
                 self._set_new_target(dx_call, grid=dx_grid)
             # Note: If JTDX clears dx_call, we don't clear our target
             # (user may have manually selected something in the table)
+        
+        # --- OUTCOME RECORDER: Track TX cycle edges (before throttle) ---
+        # Must run on every status update for reliable rising-edge detection.
+        # Single boolean comparison — zero cost.
+        if self.outcome_recorder:
+            self.outcome_recorder.on_status_update(status.get('transmitting', False))
         
         # Throttle remaining UI updates: JTDX sends status many times per second
         if hasattr(self, '_last_status_time') and (now - self._last_status_time) < 0.5:
@@ -3414,6 +3580,15 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         # --- v2.1.0: Flag to prevent notifications during shutdown ---
         self._closing = True
+        
+        # --- OUTCOME RECORDER: Flush pending outcome and end session ---
+        # Must happen BEFORE analyzer/UDP shutdown — snapshot needs live state.
+        if self.outcome_recorder:
+            try:
+                self._record_outcome_for_current_target('APP_CLOSED')
+                self.outcome_recorder.on_app_close()
+            except Exception as e:
+                logger.debug(f"OutcomeRecorder shutdown error: {e}")
         
         # --- LOCAL INTELLIGENCE: Clean shutdown ---
         if self.local_intel:
