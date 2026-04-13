@@ -333,24 +333,26 @@ class OutcomeRecorder:
         if not self._target_selected_at:
             return
         
-        # Skip non-attempts: if user never transmitted, this was just
-        # browsing (clicked a station, looked at it, moved on).
-        # Not useful data for scoring analysis. QSO_LOGGED always records
-        # as a safety net (shouldn't happen with 0 cycles, but just in case).
-        if self._tx_cycle_count == 0 and trigger != 'QSO_LOGGED':
-            logger.debug(f"OutcomeRecorder: skipping {self._current_target} "
-                         f"— no TX cycles (browsing, not an attempt)")
-            # Reset per-target state without recording
-            self._current_target = None
-            self._current_target_grid = ""
-            self._target_selected_at = None
-            self._target_responded = False
-            self._tx_cycle_count = 0
-            self._first_tx_at = None
-            self._was_transmitting = False
-            return
-        
         now = datetime.utcnow()
+        elapsed_s = int((now - self._target_selected_at).total_seconds())
+        
+        # --- Filter non-attempts ---
+        # QSO_LOGGED always records as a safety net.
+        if trigger != 'QSO_LOGGED':
+            # No TX cycles = browsing (clicked a station, looked, moved on)
+            if self._tx_cycle_count == 0:
+                logger.debug(f"OutcomeRecorder: skipping {self._current_target} "
+                             f"— no TX cycles (browsing)")
+                self._reset_target_state()
+                return
+            
+            # Elapsed < 15s = band-change churn or rapid clicking.
+            # Can't complete an FT8 exchange in under 15 seconds.
+            if elapsed_s < 15:
+                logger.debug(f"OutcomeRecorder: skipping {self._current_target} "
+                             f"— elapsed {elapsed_s}s < 15s (churn)")
+                self._reset_target_state()
+                return
         
         # Determine outcome tier
         if trigger == 'QSO_LOGGED':
@@ -397,7 +399,7 @@ class OutcomeRecorder:
             
             # Session counters
             "tx_cycles": self._tx_cycle_count,
-            "elapsed_s": int((now - self._target_selected_at).total_seconds()),
+            "elapsed_s": elapsed_s,
             
             # Filter-enabling fields
             "hour_utc": now.hour,
@@ -414,7 +416,10 @@ class OutcomeRecorder:
                      f"(trigger={trigger}, tx_cycles={self._tx_cycle_count}, "
                      f"score={snapshot.get('tx_score', '?')})")
         
-        # Reset per-target state
+        self._reset_target_state()
+
+    def _reset_target_state(self):
+        """Reset all per-target state. Used after recording or skipping."""
         self._current_target = None
         self._current_target_grid = ""
         self._target_selected_at = None
