@@ -189,6 +189,9 @@ class OutcomeRecorder:
         self._session_outcome_count = 0
         self._last_activity_time = None  # Timestamp of last outcome or target selection
         self._pending_session = None     # Buffered session params, written on first TX
+        self._last_band = ""             # Cache for session starts after QSY
+        self._last_sfi = 0
+        self._last_k = 0
         
         logger.info(f"OutcomeRecorder: initialized (enabled={enabled}), "
                      f"file={self.filepath}")
@@ -233,8 +236,19 @@ class OutcomeRecorder:
         # Buffer session params — actual session_start is deferred to first
         # TX cycle. If user just browses targets without transmitting, no
         # session is created and no data is written.
+        # Cache last known good values for session starts — if caller passes
+        # empty band or zero solar data (e.g., right after QSY before status
+        # update arrives), fall back to cached values.
+        if band:
+            self._last_band = band
+        if sfi > 0:
+            self._last_sfi = sfi
+        if k > 0:
+            self._last_k = k
         self._pending_session = {
-            'band': band, 'sfi': sfi, 'k': k
+            'band': band or self._last_band,
+            'sfi': sfi or self._last_sfi,
+            'k': k or self._last_k,
         }
         
         self._current_target = call.upper() if call else None
@@ -365,6 +379,20 @@ class OutcomeRecorder:
         # Extract snapshot values with safe defaults
         rec_freq = snapshot.get('rec_freq', 0)
         tx_freq = snapshot.get('tx_freq', 0)
+        rec_score = round(snapshot.get('rec_score', 0), 1)
+        tx_score = round(snapshot.get('tx_score', 0), 1)
+        
+        # "Followed recommendation" — true if user TX'd near the green line
+        # OR at a frequency scoring equivalently. Handles clicking near but
+        # not exactly on the green line, and flat plateaus where multiple
+        # frequencies are equally good.
+        if tx_freq and rec_freq:
+            followed = (abs(tx_freq - rec_freq) < 100) or (tx_score >= rec_score - 5)
+        else:
+            followed = None
+        
+        # Continuous score difference for Phase 2 nuanced analysis
+        score_delta = round(rec_score - tx_score, 1) if rec_score else None
         
         # Calculate distance
         distance_km = _haversine_km(self._my_grid, self._current_target_grid)
@@ -379,10 +407,11 @@ class OutcomeRecorder:
             
             # QSOP scoring context (unique to us — lost if not captured)
             "rec_freq": rec_freq,
-            "rec_score": round(snapshot.get('rec_score', 0), 1),
+            "rec_score": rec_score,
             "tx_freq": tx_freq,
-            "tx_score": round(snapshot.get('tx_score', 0), 1),
-            "followed": abs(tx_freq - rec_freq) < 30 if (tx_freq and rec_freq) else None,
+            "tx_score": tx_score,
+            "followed": followed,
+            "score_delta": score_delta,
             "score_reason": snapshot.get('score_reason', 0),
             
             # Ephemeral context
