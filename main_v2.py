@@ -540,6 +540,13 @@ class TargetDashboard(QFrame):
                 path_display = f"{short}{snr_part}{age_part}"
         
         self.val_path.setText(path_display)
+        # DEBUG: Verify path freshness data flow (remove after confirming)
+        if path in ("Heard by Target", "Reported in Region"):
+            import logging as _log
+            _log.getLogger(__name__).debug(
+                f"Path display: age={path_age}, stale={path_stale}, "
+                f"display='{path_display}'"
+            )
         
         # Color coding — stale gets warning color
         if path_stale and "Heard by Target" in path:
