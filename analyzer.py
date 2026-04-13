@@ -963,6 +963,7 @@ class QSOAnalyzer(QObject):
         # Check for direct connection (target heard us)
         my_snr_at_target = None
         my_snr_reporter = None
+        path_heard_time = 0  # v2.5.1: When the "heard" spot was received
         for my_rep in my_reception_snapshot:
             if my_rep['receiver'] == target_call:
                 geo_bonus = 100
@@ -970,6 +971,7 @@ class QSOAnalyzer(QObject):
                 path_str = "Heard by Target"
                 my_snr_at_target = my_rep.get('snr', None)
                 my_snr_reporter = target_call
+                path_heard_time = my_rep.get('time', 0)
                 break
         
         # Check for path open (nearby station heard us)
@@ -985,12 +987,14 @@ class QSOAnalyzer(QObject):
                         path_str = "Reported in Region"
                         my_snr_at_target = my_rep.get('snr', None)
                         my_snr_reporter = my_rep.get('receiver', '')
+                        path_heard_time = my_rep.get('time', 0)
                         break
                     elif r_grid[:2] == target_major:
                         geo_bonus = 15
                         path_str = "Reported in Region"
                         my_snr_at_target = my_rep.get('snr', None)
                         my_snr_reporter = my_rep.get('receiver', '')
+                        path_heard_time = my_rep.get('time', 0)
                 elif len(r_grid) >= 2:
                     # v2.4.4: Catch reporters with short grids (2-3 chars)
                     # Previously skipped by the len>=4 gate, causing status bar
@@ -1000,6 +1004,7 @@ class QSOAnalyzer(QObject):
                         path_str = "Reported in Region"
                         my_snr_at_target = my_rep.get('snr', None)
                         my_snr_reporter = my_rep.get('receiver', '')
+                        path_heard_time = my_rep.get('time', 0)
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
@@ -1009,6 +1014,23 @@ class QSOAnalyzer(QObject):
                 geo_bonus = decode_bonus
                 if decode_path == "Heard by Target":
                     direct_hit = True
+                    path_heard_time = time.time()  # Decode evidence is live
+        
+        # v2.5.1: Active invalidation — if target uploaded NEWER spots
+        # that don't include us, our "heard" evidence is stale.
+        # The target's decoder was active after hearing us but didn't
+        # hear us in the latest batch — signal may have faded.
+        path_stale = False
+        if direct_hit and path_heard_time > 0:
+            with self.lock:
+                target_spots = self.receiver_cache.get(target_call, [])
+                if target_spots:
+                    newest_target_upload = max(
+                        (s.get('time', 0) for s in target_spots), default=0)
+                    # Target uploaded 30+ seconds after they last heard us
+                    # and we're not in those newer spots → signal faded
+                    if newest_target_upload > path_heard_time + 30:
+                        path_stale = True
         
         # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
@@ -1031,6 +1053,9 @@ class QSOAnalyzer(QObject):
         decode_data['path'] = path_str
         decode_data['my_snr_at_target'] = my_snr_at_target
         decode_data['my_snr_reporter'] = my_snr_reporter
+        # v2.5.1: Path freshness for dashboard display
+        decode_data['path_heard_age'] = int(time.time() - path_heard_time) if path_heard_time > 0 else None
+        decode_data['path_stale'] = path_stale
         
         # --- COMPETITION (expensive, only for selected target) ---
         if use_perspective:

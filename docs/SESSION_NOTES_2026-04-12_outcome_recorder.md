@@ -78,12 +78,104 @@ Extended theoretical analysis of FT8 decoder mechanics and how they ground QSOP'
 
 ---
 
-### What's Next
+### Part 3: Field Testing & Iterative Fixes (Evening Session)
 
-- Peter: deploy, test, verify JSONL file looks reasonable
-- Phase 2 (future): analysis dialog with filters, cached results, dashboard
-- Phase 3 (future): anonymous data export for aggregate analysis
-- Document the decoder physics analysis in design docs (density_score breakpoints grounded in FT8 mechanics)
+Deployed OutcomeRecorder and operated on-air to collect real data. Three rounds of refinement driven by actual operating data.
+
+**Round 1: Burst filtering**
+- Band changes caused rapid-fire target cycling — 8+ events within 200ms
+- `_was_transmitting` reset on each target selection credited false TX cycles
+- **Fix:** Added minimum elapsed time filter (< 15s → skip) alongside existing tx_cycles=0 filter
+
+**Round 2: Local QRM masking tier1 scores**
+- Screenshot showed cyan bars (tier1 data) not elevating the score graph
+- Root cause: `local_busy` mask in Step 4 overrode tier1 proven scores with score=10
+- In FT8, TX and RX alternate — local signals don't prevent TX at that frequency
+- **Fix:** Tier1 proven data now overrides local_busy in Steps 4 and 7b
+
+**Round 3: Perspective data disappearing**
+- Cyan bars blinked in and out between PSK Reporter upload batches
+- Root cause: analyzer query window was 60s, but uploads can be minutes apart
+- **Fix:** Extended perspective and path intelligence queries from 60s to 180s; matched band_map decay timeline
+
+**Round 4: Followed recommendation tolerance**
+- User clicks near green line on flat score plateau but misses by a few Hz
+- Original 30 Hz threshold too strict
+- **Fix:** `followed = True` if within 100 Hz OR tx_score within 5 points of rec_score. Added `score_delta` continuous field.
+
+**Round 5: Path status tautology**
+- "Heard by Target: 100% QSO rate" was potentially circular
+- If path changed from "Reported in Region" to "Heard by Target" DURING the QSO, the correlation is tautological
+- **Fix:** Added `path_at_select` field captured at target selection time (predictive, non-tautological). Existing `path` field is at outcome time (confirmatory).
+
+**Round 6: Session management refinements**
+- Sessions tied to target activity (Option B), not app lifetime
+- Session start deferred to first TX cycle — browsing creates no records
+- Gap detection with effective session_end at last activity time
+- Cached band/sfi/k for session starts after QSY
+
+---
+
+### First Real Operating Session Analysis
+
+18 attempts over ~1 hour, 2 QSOs:
+
+| Metric | Value |
+|--------|-------|
+| Followed rec | 8 attempts, 1 QSO (12%) |
+| Deviated | 10 attempts, 1 QSO (10%) |
+| Heard by Target | 2 attempts, 2 QSOs (100%) |
+| Avg score delta | 35 pts (rec was better) |
+| Large misses (Δ≥75) | 6 attempts, 65 TX cycles wasted |
+| QSO patience | avg 4 cycles |
+| Gave-up patience | avg 8 cycles |
+| TX freq reason=3 (local QRM) | 14 of 18 events |
+
+**Key finding:** Path confirmation ("Heard by Target") was the strongest predictor — but requires `path_at_select` analysis to determine if it's truly predictive vs tautological.
+
+---
+
+### Ideas Surfaced
+
+- **Operator coaching/trainer:** Template-based session debriefs from outcome data. Phase 1 in-app (arithmetic + templates), optional Phase 2 LLM debrief.
+- **CQ mode recording:** Current recorder only tracks calling workflow. CQ sessions need separate detection and different analytical questions.
+- **Path freshness display:** Show "Heard by Target (30s ago)" vs "(3m ago)" and actively invalidate when target uploads new spots that don't include the operator. **Implemented** — analyzer tracks `path_heard_age` and `path_stale`, dashboard shows freshness in seconds/minutes and amber "Was Heard — fading?" state.
+
+---
+
+### Part 4: Path Freshness & Active Invalidation
+
+**Problem:** "Heard by Target" persisted as long as the spot was cached, even if the target had since uploaded dozens of decode batches without the operator. No way to know if the path confirmation was 30 seconds old or 3 minutes stale.
+
+**Solution — two layers:**
+
+1. **Freshness display:** Every "Heard by Target" and "Reported in Region" now shows the age of the underlying spot. "25s" (fresh) vs "2m ago" (aging). Operators can gauge confidence at a glance.
+
+2. **Active invalidation:** If the target uploaded newer spots to PSK Reporter and the operator is NOT in them, the status changes to "Was Heard (Xm ago) — fading?" in amber. This is absence-is-evidence from an active reporter — not just aging, but confirmation that the target's decoder was working and didn't hear you.
+
+**Implementation:**
+- `analyzer.py`: Added `path_heard_time` tracking for each path determination. Invalidation checks `receiver_cache` for target's newer uploads. New fields: `path_heard_age` (int seconds), `path_stale` (bool).
+- `main_v2.py`: Dashboard path display reformatted with freshness suffix and amber color for stale state.
+- Decode evidence (from local UDP) sets `path_heard_time = now` — always fresh, never stale via PSK Reporter timing.
+
+**Also: path_at_select for non-tautological analysis**
+- Peter caught that "100% QSO rate when Heard by Target" could be circular if the path status was established during the QSO exchange.
+- Added `path_at_select` field to OutcomeRecorder — captured at target selection time (before calling), separate from `path` at outcome time.
+- Phase 2 analysis can now ask the honest question without circular reasoning.
+
+---
+
+### Files Modified (v2.5.1)
+
+| File | Changes |
+|------|---------|
+| `outcome_recorder.py` | **NEW** — ~530 lines, full OutcomeRecorder class with path_at_select |
+| `main_v2.py` | Import, init, snapshot builder, 5 integration hooks, path_at_select, path freshness display |
+| `config_manager.py` | Added `outcome_recording` default |
+| `band_map_widget.py` | Tier1 override of local_busy; extended perspective decay |
+| `analyzer.py` | Perspective + path intelligence 60s → 180s; path freshness tracking; active invalidation |
+| `docs/OUTCOME_RECORDER_SPEC.md` | **NEW** — full design specification |
+| `docs/RELEASE_NOTES_v2.5.1.md` | **NEW** — release documentation |
 
 ---
 

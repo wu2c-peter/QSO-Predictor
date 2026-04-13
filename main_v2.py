@@ -508,15 +508,43 @@ class TargetDashboard(QFrame):
         # Path status
         path = str(data.get('path', '--'))
         my_snr = data.get('my_snr_at_target', None)
-        # v2.3.0: Append SNR to path display when available
+        path_age = data.get('path_heard_age', None)  # v2.5.1: seconds since heard
+        path_stale = data.get('path_stale', False)    # v2.5.1: target uploaded without us
+        
+        # v2.5.1: Build path display with freshness and staleness
         path_display = path
-        if my_snr is not None and path in ("Heard by Target", "Reported in Region"):
-            snr_str = f"{my_snr:+d}" if isinstance(my_snr, int) else str(my_snr)
-            # Shorten labels to fit with SNR ("Rprtd" not "Rptd" — latter implies "Repeated")
+        if path in ("Heard by Target", "Reported in Region"):
+            # Base label (shortened to fit)
             short = "Heard by Target" if path == "Heard by Target" else "Rprtd in Region"
-            path_display = f"{short} ({snr_str} dB)"
+            
+            # SNR component
+            snr_part = ""
+            if my_snr is not None:
+                snr_str = f"{my_snr:+d}" if isinstance(my_snr, int) else str(my_snr)
+                snr_part = f" ({snr_str} dB)"
+            
+            # Freshness component
+            age_part = ""
+            if path_age is not None:
+                if path_age < 60:
+                    age_part = f" {path_age}s"
+                else:
+                    age_part = f" {path_age // 60}m ago"
+            
+            if path_stale and path == "Heard by Target":
+                # Target's decoder was active after hearing us but didn't
+                # hear us in latest batch — signal may have faded
+                age_str = f"{path_age // 60}m" if path_age and path_age >= 60 else f"{path_age}s"
+                path_display = f"Was Heard ({age_str} ago) — fading?"
+            else:
+                path_display = f"{short}{snr_part}{age_part}"
+        
         self.val_path.setText(path_display)
-        if "Heard by Target" in path:
+        
+        # Color coding — stale gets warning color
+        if path_stale and "Heard by Target" in path:
+            self.val_path.setStyleSheet("color: #FFAA00; font-weight: bold;")  # Amber — was heard, fading
+        elif "Heard by Target" in path:
             self.val_path.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
         elif "Not Reported in Region" in path:
             # MUST check "Not Reported" BEFORE "Reported" — substring match issue
