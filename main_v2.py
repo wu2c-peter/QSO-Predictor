@@ -535,7 +535,7 @@ class TargetDashboard(QFrame):
                 # Target's decoder was active after hearing us but didn't
                 # hear us in latest batch — signal may have faded
                 age_str = f"{path_age // 60}m" if path_age and path_age >= 60 else f"{path_age}s"
-                path_display = f"Was Heard ({age_str} ago) — fading?"
+                path_display = f"Was Heard ({age_str} ago)"
             else:
                 path_display = f"{short}{snr_part}{age_part}"
         
@@ -544,19 +544,26 @@ class TargetDashboard(QFrame):
         # Color coding — stale gets warning color
         if path_stale and "Heard by Target" in path:
             self.val_path.setStyleSheet("color: #FFAA00; font-weight: bold;")  # Amber — was heard, fading
+            self.val_path.setToolTip("Target uploaded newer spots without you — signal may have faded")
         elif "Heard by Target" in path:
             self.val_path.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
+            self.val_path.setToolTip("Target has decoded your signal")
         elif "Not Reported in Region" in path:
             # MUST check "Not Reported" BEFORE "Reported" — substring match issue
             self.val_path.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
+            self.val_path.setToolTip("")
         elif "Reported in Region" in path:
             self.val_path.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
+            self.val_path.setToolTip("")
         elif "Not Transmitting" in path:
             self.val_path.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
+            self.val_path.setToolTip("")
         elif "No Reporters" in path:
             self.val_path.setStyleSheet("color: #666666; font-weight: bold;")  # Dark gray
+            self.val_path.setToolTip("")
         else:
             self.val_path.setStyleSheet("color: #DDDDDD;")
+            self.val_path.setToolTip("")
         
         comp = str(data.get('competition', ''))
         self._raw_competition = comp  # v2.3.5: Cache real value for override logic
