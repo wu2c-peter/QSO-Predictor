@@ -519,15 +519,13 @@ class BandMapWidget(QWidget):
                 score = max(30, score)  # Floor
                 reason = 5  # proven_crowded
             
-            # Apply score to the score_map around this bucket
+            # Apply score to the score_map around this bucket.
+            # Tier1 proven data OVERRIDES local_busy: in FT8, TX and RX alternate
+            # on 15s cycles — a local signal at your TX frequency doesn't prevent
+            # you from transmitting there. The target's perspective is what matters.
             for i in range(max(0, bucket - 30), min(self.bandwidth, bucket + 30)):
-                if not local_busy[i]:
-                    self.score_map[i] = max(self.score_map[i], score)
-                    self.score_reason[i] = reason
-            
-            # Skip if locally busy (we'd interfere with our own decodes)
-            if local_busy[max(0, min(self.bandwidth-1, bucket))]:
-                continue
+                self.score_map[i] = max(self.score_map[i], score)
+                self.score_reason[i] = reason
             
             proven_candidates.append((bucket, score, count))
         
@@ -738,9 +736,12 @@ class BandMapWidget(QWidget):
         # regional reporters before a quiet slot qualifies (score curve:
         # 0 rptrs=50, 3 rptrs=66, 6 rptrs=82). No hard gate needed.
         if regional_coverage > 0:
-            # Use numpy to find highest-scored non-blocked frequency
+            # Use numpy to find highest-scored non-blocked frequency.
+            # Zero local_busy frequencies UNLESS they have tier1 proven data
+            # (reason 4=proven_ideal, 5=proven_crowded) — same logic as Step 4.
             masked_scores = self.score_map.copy()
-            masked_scores[local_busy] = 0
+            local_but_not_proven = local_busy & ~np.isin(self.score_reason, [4, 5])
+            masked_scores[local_but_not_proven] = 0
             masked_scores[:300] = 0
             masked_scores[2700:] = 0
             best_regional_freq = int(np.argmax(masked_scores))
