@@ -334,15 +334,18 @@ class BehaviorPredictor:
         # Current session beliefs (reset per session)
         self._session_beliefs: Dict[str, BehaviorPrior] = {}
         
-        # Accumulated observations for future training
-        self._pending_observations: List[Dict] = []
-        
         # Prefix statistics cache (built from history)
         self._prefix_stats: Dict[str, Dict] = {}
         self._prefix_stats_dirty = True  # Rebuild when history changes
         
         # Load historical data
         self._load_history()
+        
+        # One-time migration (v2.5.3): clean up orphaned pending_observations.jsonl
+        # This file was written by an unused training pipeline and could grow to
+        # hundreds of GB on long-running installations due to a bug in the write
+        # loop. Safe to call on every startup — idempotent, fails gracefully.
+        self._cleanup_orphaned_pending_file()
     
     def _extract_prefix(self, callsign: str) -> str:
         """
@@ -641,9 +644,6 @@ class BehaviorPredictor:
         # Cache it
         self._session_beliefs[callsign] = posterior
         
-        # Record for future training
-        self._record_observation(callsign, answered_call, pileup_snapshot, posterior)
-        
         logger.debug(f"Updated {callsign} behavior: {posterior.most_likely_style} "
                     f"(conf={posterior.confidence:.2f})")
         
@@ -681,14 +681,6 @@ class BehaviorPredictor:
     def clear_session(self):
         """Clear all session beliefs (e.g., when changing bands)."""
         self._session_beliefs.clear()
-    
-    def get_pending_training_data(self) -> List[Dict]:
-        """Get accumulated observations for training."""
-        return self._pending_observations.copy()
-    
-    def clear_pending_data(self):
-        """Clear pending observations after training."""
-        self._pending_observations.clear()
     
     # =========================================================================
     # Bayesian Calculations
@@ -830,44 +822,53 @@ class BehaviorPredictor:
         if len(self._history) % 10 == 0:
             self._save_history()
     
-    def _record_observation(self, 
-                           callsign: str,
-                           answered: AnsweredCall,
-                           pileup: Dict,
-                           posterior: BehaviorPrior):
-        """Record observation for future training."""
-        obs = {
-            'timestamp': datetime.now().isoformat(),
-            'dx_callsign': callsign,
-            'answered_callsign': answered.callsign,
-            'answered_snr': answered.snr,
-            'answered_freq': answered.frequency,
-            'answered_snr_rank': answered.snr_rank,
-            'pileup_size': len(pileup) if pileup else 0,
-            'inferred_style': posterior.most_likely_style,
-            'style_confidence': posterior.confidence,
-        }
-        self._pending_observations.append(obs)
+    def _cleanup_orphaned_pending_file(self):
+        """One-time cleanup of pending_observations.jsonl (orphaned from v2.5.2 and earlier).
         
-        # Auto-save pending data periodically
-        if len(self._pending_observations) >= 100:
-            self._save_pending_observations()
-    
-    def _save_pending_observations(self):
-        """Save pending observations for future training."""
-        if not self._pending_observations:
-            return
+        This file was written by a planned training pipeline that was never
+        wired up to any consumer. A bug in the write loop caused O(N^2) growth:
+        once the in-memory buffer crossed 100 items, every subsequent observation
+        triggered another append of the full (growing) list. Some users saw
+        files in the hundreds of GB.
         
+        Safe to run on every startup: no-op if file is absent, graceful on
+        any failure. See docs/RELEASE_NOTES_v2.5.3.md for full context.
+        """
         try:
-            pending_path = self.history_path.parent / 'pending_observations.jsonl'
-            with open(pending_path, 'a') as f:
-                for obs in self._pending_observations:
-                    f.write(json.dumps(obs) + '\n')
+            orphan_path = self.history_path.parent / 'pending_observations.jsonl'
+            if not orphan_path.exists():
+                return
             
-            logger.info(f"Saved {len(self._pending_observations)} pending observations")
+            size_bytes = orphan_path.stat().st_size
+            size_mb = size_bytes / (1024 * 1024)
+            orphan_path.unlink()
             
+            # Log prominently for sizable cleanups; quietly for tiny residuals
+            if size_mb >= 100:
+                logger.warning(
+                    f"Removed orphaned pending_observations.jsonl "
+                    f"({size_mb:,.1f} MB freed). This file was an unused artifact "
+                    f"from a planned training pipeline and grew due to a bug "
+                    f"fixed in v2.5.3. No user data is lost."
+                )
+            else:
+                logger.info(
+                    f"Removed orphaned pending_observations.jsonl "
+                    f"({size_mb:.2f} MB). Legacy artifact, no user data lost."
+                )
+        except PermissionError:
+            # File locked by antivirus, search indexer, or similar — not fatal.
+            # Next startup will retry automatically.
+            logger.warning(
+                "Could not remove orphaned pending_observations.jsonl "
+                "(file in use). You may delete it manually from "
+                f"{self.history_path.parent} when convenient, "
+                "or QSOP will retry on next startup."
+            )
         except Exception as e:
-            logger.error(f"Failed to save pending observations: {e}")
+            logger.warning(
+                f"Unexpected error cleaning up pending_observations.jsonl: {e}"
+            )
     
     # =========================================================================
     # Historical Bootstrap
@@ -1471,9 +1472,6 @@ class BehaviorPredictor:
         
         # Save final history
         self._save_history()
-        
-        # Clear pending observations (we don't need to retrain on bootstrap data)
-        self._pending_observations.clear()
         
         logger.info(f"Bootstrapped behavior history for {len(stations_processed)} stations")
         

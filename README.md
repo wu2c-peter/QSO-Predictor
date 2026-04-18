@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.4.5-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.5.3-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -10,29 +10,41 @@
 
 ---
 
-## 🆕 What's New in v2.4.5
+## 🆕 What's New in v2.5.3
 
-### Manual Target Entry
+### Disk Space Cleanup
 
-Target any station by callsign — even if you haven't decoded them. Click the **+** button next to the target display (in either the dashboard or insights panel), type a callsign, and press Enter.
+QSOP now automatically removes an orphaned data file (`pending_observations.jsonl`) that had been accumulating silently since v2.0. This file was written by an unused training-pipeline stub — a bug in the write loop caused it to grow unboundedly, with some long-running installations seeing files in the **hundreds of gigabytes**.
 
-QSOP immediately shows everything available from PSK Reporter: target perspective band map, path intelligence, competition, and IONIS propagation prediction. A **⚠** indicator shows the target hasn't been decoded locally. When the station appears in your decodes, the indicator clears automatically and full tactical mode engages.
+* **Automatic one-time cleanup** — on first launch of v2.5.3, the orphaned file is removed. You'll see a log entry confirming how much space was freed.
+* **No user data is affected** — the file had no consumer anywhere in QSOP. The Bayesian behavior predictor (active prediction path) and `outcome_history.jsonl` (OutcomeRecorder) are untouched.
+* **Dead code removed** — the training-pipeline stub has been deleted from `behavior_predictor.py`. If/when an online-learning feature is ever built, it will be designed fresh with proper size bounds and a defined consumer.
 
-Grid lookup uses a cascade of local sources — no API keys required:
-* PSK Reporter receiver cache (any station actively uploading)
-* Local decode history and call/grid maps
-* DXCC prefix table (~180 entries) as fallback
-
-### Bug Fixes
-
-* **Path/status bar desync** — reporters with short grids (2–3 chars) were counted in the status bar "near target" count but skipped by path computation. Both now agree.
-* **IONIS without UDP** — "Awaiting target grid" appeared when the band (not grid) was unavailable. Band now derived from MQTT dial frequency when UDP is not connected.
-* **DX grid from UDP** — WSJT-X/JTDX sends the DX station's grid in UDP status messages. Previously parsed but discarded; now captured for immediate grid resolution.
-* **Band edge recommendations** — frequency recommendation could appear below 300 Hz or above 2700 Hz where WSJT-X may reject. Now clamped to 300–2700 Hz, matching auto-paste script limits.
+**Check your disk:** if you've been running QSOP for months and have limited free space, look at `~/.qso-predictor/pending_observations.jsonl` before upgrading. On Windows that's `%USERPROFILE%\.qso-predictor\`. A large file there explains anything from a gradual SSD-full creep to dramatic overnight space loss.
 
 ---
 
 ## Previous Releases
+
+### v2.5.2
+
+Path status messaging polish — shorter, clearer wording with richer tooltip context on hover.
+
+### v2.5.1
+
+**OutcomeRecorder** — silent performance data collector. On each QSO attempt, QSOP now writes a compact record (~380 bytes) of the scoring context and three-tier outcome (`NO_RESPONSE` / `RESPONDED` / `QSO_LOGGED`) to `~/.qso-predictor/outcome_history.jsonl`. Sessions tied to operating activity, not app lifetime. No callsigns or grids stored. Enables Phase 2 self-evaluation and coaching features (planned v2.6).
+
+### v2.5.0
+
+**Smarter Frequency Recommendations** — scoring engine now uses regional reporter consensus to gauge confidence. Quiet slot scores scale smoothly from 50 (no reporters) to 82 (6+ reporters). Suspicious gap detection dampens empty slots flanked by heavy target decoding activity. Regional consensus recommendation when no proven Tier 1 data exists.
+
+**Score Reason Tooltips** — hover over the score graph to see why any frequency has its current score. Plain-English explanations: "Proven: 2 signal(s) decoded by target", "Regional quiet: 5 reporter(s) in area, clear", "Suspicious gap: flanked by 6 target decodes".
+
+### v2.4.5
+
+Manual target entry — target any station by callsign even if not decoded locally. Click **+**, type callsign, press Enter. QSOP shows PSK Reporter perspective, path intelligence, and IONIS prediction immediately. Grid lookup cascade uses receiver cache → local decodes → DXCC prefix table. ⚠ indicator clears when station appears in local decodes.
+
+Bug fixes: path/status bar desync for short grids, IONIS band derivation from MQTT when no UDP, DX grid capture from UDP status, band edge recommendation clamped to 300–2700 Hz.
 
 ### v2.4.3
 
