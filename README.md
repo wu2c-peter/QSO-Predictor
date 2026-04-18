@@ -172,18 +172,41 @@ Using real-time PSK Reporter data, QSO Predictor shows:
 
 ### Windows
 
-1. Download latest `.zip` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases)
-2. Extract and run `QSO Predictor.exe`
-3. Configure WSJT-X/JTDX: Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`
+**Option A (recommended):** Download the latest `.zip` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases), extract, and run `QSO Predictor.exe`.
 
-### macOS / Linux (from source)
-
+**Option B (from source):** Install Python 3.10+, then:
 ```
 git clone https://github.com/wu2c-peter/qso-predictor.git
 cd qso-predictor
 pip install -r requirements.txt
 python main_v2.py
 ```
+
+### macOS
+
+**Option A (recommended):** Download the latest `.dmg` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases) and drag QSO Predictor to Applications.
+
+**Option B (from source):** Install Python 3.10+, then:
+```
+git clone https://github.com/wu2c-peter/qso-predictor.git
+cd qso-predictor
+pip install -r requirements.txt
+python main_v2.py
+```
+
+### Linux
+
+No pre-built binary yet — run from source. Install Python 3.10+, then:
+```
+git clone https://github.com/wu2c-peter/qso-predictor.git
+cd qso-predictor
+pip install -r requirements.txt
+python main_v2.py
+```
+
+### Configure WSJT-X/JTDX (all platforms)
+
+Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`. Check "Accept UDP Requests".
 
 ### First-Time Setup
 

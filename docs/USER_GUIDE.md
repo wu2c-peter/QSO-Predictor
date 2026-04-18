@@ -1,9 +1,11 @@
 # QSO Predictor User Guide
 
-**Version 2.3.1**  
+**Current as of Version 2.5.3**  
 **By Peter Hirst (WU2C)**
 
 > 📋 **See [README](https://github.com/wu2c-peter/qso-predictor/blob/main/README.md) for What's New, Version History, and Installation**
+
+> Feature annotations in this guide (e.g. "v2.2.0") indicate when a specific feature was introduced. All annotated features are available in the current release unless marked otherwise.
 
 ---
 
@@ -45,14 +47,38 @@ QSO Predictor shows you the "view from the other end." Using PSK Reporter data, 
 
 ### Windows
 
+**Option A (recommended):** Install the pre-built binary
 1. Download the latest `.zip` from [GitHub Releases](https://github.com/wu2c-peter/qso-predictor/releases)
 2. Extract to any folder
 3. Run `QSO Predictor.exe`
 4. **First run:** Windows SmartScreen may warn about an unrecognized app
    - Click "More info" → "Run anyway"
 
-### Running from Source (Windows/Mac/Linux)
+**Option B:** Run from source (requires Python 3.10+)
+```bash
+git clone https://github.com/wu2c-peter/qso-predictor.git
+cd qso-predictor
+pip install -r requirements.txt
+python main_v2.py
+```
 
+### macOS
+
+**Option A (recommended):** Install from DMG
+1. Download the latest `.dmg` from [GitHub Releases](https://github.com/wu2c-peter/qso-predictor/releases)
+2. Open the DMG and drag QSO Predictor to Applications
+
+**Option B:** Run from source (requires Python 3.10+)
+```bash
+git clone https://github.com/wu2c-peter/qso-predictor.git
+cd qso-predictor
+pip install -r requirements.txt
+python main_v2.py
+```
+
+### Linux
+
+No pre-built binary yet — run from source (requires Python 3.10+):
 ```bash
 git clone https://github.com/wu2c-peter/qso-predictor.git
 cd qso-predictor
@@ -158,8 +184,8 @@ The decode table's **Path** column shows whether your signal is reaching each st
 | Status | Color | Meaning |
 |--------|-------|---------|
 | **Heard by Target** | Cyan | Target has decoded YOUR signal — call them! |
-| **Heard in Region** | Green | Stations near target heard you — path confirmed |
-| **Not Heard in Region** | Orange | Reporters exist but haven't heard you yet |
+| **Reported in Region** | Green | Stations near target heard you — path confirmed |
+| **Not Reported in Region** | Orange | Reporters exist but haven't heard you yet |
 | **Not Transmitting** | Gray | You haven't transmitted recently |
 | **No Reporters in Region** | Dark gray | No PSK Reporter data from that area |
 
@@ -172,6 +198,7 @@ The dashboard shows what the target station is doing **right now**, parsed from 
 | **CQing** | Target is calling CQ — open for contacts, call now |
 | **Working YOU** | Target is in QSO with you — Fox is controlling TX |
 | **Working [call]** | Target is in QSO with another station |
+| **In QSO** (amber, v2.3.5) | Target is working/completing with another station — wait for them to finish |
 | **Idle** | No target activity in last 2 minutes |
 
 This is derived entirely from local decodes — no internet required. It updates in real time as the target's transmissions are decoded.
@@ -290,7 +317,7 @@ QSO Predictor uses three independent data sources for path information:
 - **PSK Reporter (target's receivers)** — is the target hearing stations from YOUR area?
 - **Local decodes** — have you directly decoded a response from the target?
 
-These can sometimes show different things. For example, the Path column might show "Not Heard in Region" (your signal not confirmed) while Path Intelligence shows 3 stations from your area getting through (the path IS viable).
+These can sometimes show different things. For example, the Path column might show "Not Reported in Region" (your signal not confirmed) while Path Intelligence shows 3 stations from your area getting through (the path IS viable).
 
 **v2.2.0 reconciliation:** When near-me evidence exists but PSK Reporter hasn't confirmed your specific signal, the strategy recommendation now accounts for both pieces of information — giving you "CALL NOW" instead of the old "TRY LATER" that ignored the evidence.
 
@@ -330,13 +357,27 @@ The Insights Panel shows:
 
 ### Strategy Recommendations
 
-Based on all available data:
+Based on all available data — path intelligence, pileup state, target behavior, and propagation:
 
 | Recommendation | Meaning |
 |----------------|---------|
-| **CALL NOW** | Conditions favorable, go for it |
-| **WAIT** | Pileup too heavy or poor timing |
-| **TRY LATER** | Path issues or target busy |
+| **▶ CALL NOW** | Conditions favorable — call immediately |
+| **▶ CALL (no intel)** (v2.3.4) | Limited data available — no reason to wait, go ahead and call |
+| **⏸ WAIT** | Pileup too heavy, or unfavorable timing — hold off briefly |
+| **⏭ TRY LATER** | Path issues or target busy — come back in a few minutes |
+
+### Opportunity Score (v2.3.3)
+
+The Insights panel shows an **Opportunity Score** (0–100) summarizing how favorable the current moment is for working the target. It blends:
+
+- Path intelligence (is your signal reaching the target's area?)
+- Competition (how many callers are visible from the target's perspective?)
+- Target behavior prediction (how does this operator pick?)
+- IONIS propagation (does the ionosphere support this path right now?)
+
+The score is directional, not predictive — a high score means "this is a good moment to call" rather than "you will definitely make this QSO." Use it as the headline read-out; the underlying components tell you *why* the moment is good or bad.
+
+> The Opportunity Score was previously labelled "Success Prediction" in versions before v2.3.3.
 
 ### Pileup Contrast (v2.2.0)
 
@@ -845,11 +886,11 @@ end
 
 | Key | Action |
 |-----|--------|
+| F1 | Open User Guide |
+| F5 | Force refresh spots |
 | Ctrl+R | Clear target selection |
 | Ctrl+Y | Fetch target from WSJT-X/JTDX |
 | Ctrl+H | Open Hunt List |
-| Ctrl+S | Open Settings |
-| F5 | Force refresh spots |
 
 ### Click Actions
 
@@ -871,6 +912,20 @@ end
 
 **UDP Port:** Default 2237. Change if another app uses that port.
 
+**Features tab (v2.4.0):** Toggle optional subsystems:
+- **IONIS propagation predictions** — enabled by default. Disable if you don't want the Path Prediction panel.
+- **Outcome recording** — enabled by default. See "Data Collection" below for what this is.
+
+### Toolbar Options
+
+A few commonly-used behaviors live on the main toolbar rather than in Settings:
+
+- **Auto-clear on QSO** (v2.0.3) — when checked, QSOP clears the current target automatically after a QSO is logged (UDP Type 5). Useful for fast contest-style operating.
+- **Auto-clear on QSY** (v2.1.0) — when checked, QSOP clears the target when you change bands. Prevents stale target state from surviving a band change.
+- **F/H mode combo** — see Section 9 (Fox/Hound & SuperFox Mode).
+
+Both auto-clear settings persist between sessions.
+
 ### Network Configuration
 
 **Standard (single app):**
@@ -886,6 +941,28 @@ UDP Port: 2237
 ```
 
 See Troubleshooting section for multi-app setups.
+
+### Data Collection (v2.5.1)
+
+QSOP keeps a small amount of local data to support Local Intelligence and future self-evaluation features. **Nothing is ever uploaded anywhere** — all data stays on your machine.
+
+**Files in `~/.qso-predictor/` (Mac/Linux) or `%USERPROFILE%\.qso-predictor\` (Windows):**
+
+| File | Purpose | Typical size |
+|------|---------|--------------|
+| `behavior_history.json` | Observed picking behavior of stations you've seen | ~1 KB per station |
+| `outcome_history.jsonl` | One compact record per QSO attempt — scoring context and outcome | ~380 bytes per event |
+| `file_positions.json` | Bookkeeping for incremental log parsing | <1 KB |
+
+**Outcome recording specifics (v2.5.1):** Each time you select a target, transmit, and then clear or complete the QSO, one event is written capturing QSOP's ephemeral state at that moment — the recommendation you saw, the frequency you chose, path status, competition count, IONIS prediction, solar conditions, and the three-tier outcome (NO_RESPONSE, RESPONDED, QSO_LOGGED). **No callsigns or grids are stored.** Target distance and continent are stored but anonymized.
+
+**Why this exists:** to enable Phase 2 self-evaluation and coaching features (planned v2.6) — "did following QSOP's recommendation actually help?" is a question you can only answer with data.
+
+**To disable:** Edit → Settings → Features → uncheck "Outcome recording". The existing file is not deleted; future events are simply not written.
+
+**Growth is safe:** ~3 MB/year for active operators. Automatic rotation at 50 MB.
+
+> **Note:** v2.5.3 includes a one-time cleanup of an older data file (`pending_observations.jsonl`) that had been accumulating due to a bug in an unused training-pipeline stub. If you're upgrading from an earlier v2.x, you may see a "Removed orphaned pending_observations.jsonl (X MB freed)" log message on first launch of v2.5.3. No user data is lost.
 
 ---
 
@@ -983,16 +1060,22 @@ This is normal for unsigned applications:
 
 ### Clearing Data
 
-**Reset behavior history:**
+**Reset behavior history** (forces re-bootstrap):
 ```
 del "%USERPROFILE%\.qso-predictor\behavior_history.json"
 ```
-Then run bootstrap again.
 
-**Full reset:**
+**Delete outcome recording history** (safe — nothing upstream depends on it):
+```
+del "%USERPROFILE%\.qso-predictor\outcome_history.jsonl"
+```
+
+**Full reset** (removes all local data — behavior, outcomes, cached file positions):
 ```
 rmdir /s /q "%USERPROFILE%\.qso-predictor"
 ```
+
+**Disk space concern?** If you're running a version of QSOP from before v2.5.3 and see a `pending_observations.jsonl` file that's unusually large (potentially hundreds of GB due to a fixed bug), just upgrade to v2.5.3 — it removes the file automatically on first launch. See Release Notes for v2.5.3 for details.
 
 ### SuperFox — Enable TX Flashes But Won't Transmit
 
