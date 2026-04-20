@@ -10,6 +10,41 @@
 
 ---
 
+## QSO Predictor in Action
+
+A real 40m FT8 QSO with **V31DL (Belize, EK57)** from Massachusetts (FN42), completed using QSO Predictor's recommendations.
+
+### Step 1 — Target identified, all intelligence layers aligned
+
+![QSOP detecting V31DL with all intelligence layers converging on CALL NOW](docs/QSOP-heardbytarget.png)
+
+QSOP flagged V31DL with all four intelligence layers agreeing:
+
+- **Path Intelligence:** Target decoded your signal at -17 dB — you're in their receiver
+- **PSK Reporter:** Path confirmed via regional reporters
+- **IONIS Propagation:** 40m FN42→EK57 **OPEN** (3,280 km, SFI 105, Kp 2)
+- **Behavior:** Methodical operator, 90% confidence from 32 prior observations
+- **Pileup:** Low competition (1 competitor at target)
+
+Recommendation: **CALL NOW**.
+
+### Step 2 — QSO confirmed
+
+![QSOP showing completed four-message FT8 exchange with V31DL ending in RR73](docs/QSOP-RR73.png)
+
+Clean four-message FT8 exchange with V31DL:
+
+```
+WU2C V31DL -15        ← V31DL replies with signal report
+V31DL WU2C R+00       ← WU2C confirms with report back
+WU2C V31DL RR73       ← V31DL seals the QSO
+V31DL WU2C 73         ← WU2C final 73
+```
+
+Belize in the log. This is what "see the band from the DX station's perspective" looks like in practice — intelligence that tells you when to call, not just what you're hearing.
+
+---
+
 ## 🆕 What's New in v2.5.3
 
 ### Disk Space Cleanup
