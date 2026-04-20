@@ -396,7 +396,11 @@ Contributions welcome! Please open an issue first to discuss proposed changes.
 
 ## License
 
-GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
+QSO Predictor is licensed under the **GNU General Public License v3.0** — see [LICENSE.txt](LICENSE.txt) for the full license text.
+
+For attribution of third-party dependencies and bundled models (including the IONIS propagation model by Greg Beam, KI7MT), see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+For a summary index of every license in use across QSO Predictor and its dependencies, see [DEPENDENCY_LICENSES.md](DEPENDENCY_LICENSES.md).
 
 ## Support
 
