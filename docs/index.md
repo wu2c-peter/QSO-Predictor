@@ -10,6 +10,8 @@ station is hearing, who's in their pileup, and which frequencies are clear at
 their location. Stop calling into pileups you can't hear, and stop wasting
 calls on paths that aren't open.
 
+![QSO Predictor main window](screenshot.png)
+
 ## What it does
 
 - **Target perspective band map** — reconstructs what the DX station's region
@@ -33,6 +35,7 @@ Windows and macOS builds are provided. Linux users can run from Python source.
 ## Documentation
 
 - [User Guide](/user-guide/) — Getting started, workflow, and interpreting the display
+- [README](https://github.com/wu2c-peter/qso-predictor#readme) — Version history, installation details, what's new
 - [Technical Wiki](https://github.com/wu2c-peter/QSO-Predictor/wiki) — Deep dives, troubleshooting, and internals for advanced users
 
 ## Open source

@@ -16,6 +16,13 @@ minima:
   social_links:
     github: wu2c-peter/qso-predictor
 
+# Explicit nav order; also excludes the home page (index.md) which is already
+# accessed via the site title in the header.
+header_pages:
+  - USER_GUIDE.md
+  - privacy.md
+  - support.md
+
 plugins:
   - jekyll-seo-tag
 
