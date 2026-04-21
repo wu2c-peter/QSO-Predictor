@@ -3323,6 +3323,8 @@ class MainWindow(QMainWindow):
             f" — <a href='https://ionis-ai.com'>IONIS</a> by KI7MT</p>"
             f"<p>Log file: <small>{log_path}</small></p>"
             f"<p><a href='https://github.com/wu2c-peter/qso-predictor'>GitHub Repository</a></p>"
+            f"<p><a href='https://github.com/wu2c-peter/qso-predictor/blob/main/PRIVACY.md'>Privacy Policy</a>"
+            f" — no telemetry, no tracking</p>"
         )
 
     def fetch_solar_data(self):

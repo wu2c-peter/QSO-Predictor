@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.5.3-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.5.4-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 
@@ -45,21 +45,25 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.5.3
+## 🆕 What's New in v2.5.4
 
-### Disk Space Cleanup
+### Privacy Policy Infrastructure
 
-QSOP now automatically removes an orphaned data file (`pending_observations.jsonl`) that had been accumulating silently since v2.0. This file was written by an unused training-pipeline stub — a bug in the write loop caused it to grow unboundedly, with some long-running installations seeing files in the **hundreds of gigabytes**.
+Formal documentation of QSO Predictor's privacy posture, in preparation for distribution via the Microsoft Store. No behavioral changes to the app itself.
 
-* **Automatic one-time cleanup** — on first launch of v2.5.3, the orphaned file is removed. You'll see a log entry confirming how much space was freed.
-* **No user data is affected** — the file had no consumer anywhere in QSOP. The Bayesian behavior predictor (active prediction path) and `outcome_history.jsonl` (OutcomeRecorder) are untouched.
-* **Dead code removed** — the training-pipeline stub has been deleted from `behavior_predictor.py`. If/when an online-learning feature is ever built, it will be designed fresh with proper size bounds and a defined consumer.
+* **New [`PRIVACY.md`](PRIVACY.md)** at the repository root — comprehensive statement of what QSOP does and does not do with user data. Summary: no telemetry, no tracking, no personal information collection or transmission. All data stays on your local device.
+* **Privacy Policy link in About dialog** — Help → About now includes a direct link to the privacy policy, reinforcing the "no telemetry, no tracking" commitment in-app.
+* **Documentation alignment** — README, User Guide, and wiki Home page all reference the privacy policy consistently.
 
-**Check your disk:** if you've been running QSOP for months and have limited free space, look at `~/.qso-predictor/pending_observations.jsonl` before upgrading. On Windows that's `%USERPROFILE%\.qso-predictor\`. A large file there explains anything from a gradual SSD-full creep to dramatic overnight space loss.
+This release prepares QSO Predictor for Microsoft Store submission. GitHub direct-download distribution continues unchanged — the Microsoft Store will be an additional channel, not a replacement.
 
 ---
 
 ## Previous Releases
+
+### v2.5.3
+
+**Disk Space Cleanup** — automatic one-time removal of an orphaned `pending_observations.jsonl` file that had been accumulating silently since v2.0 due to a bug in an unused training-pipeline stub. Some long-running installations saw files in the hundreds of gigabytes. No user data affected — the file had no consumer anywhere in QSOP. See [RELEASE_NOTES_v2.5.3.md](docs/RELEASE_NOTES_v2.5.3.md) for full details.
 
 ### v2.5.2
 
