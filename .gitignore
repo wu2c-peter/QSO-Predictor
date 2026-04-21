@@ -38,6 +38,13 @@ MANIFEST
 # Allow project-specific PyInstaller specs (onefile, onedir for MSIX, etc.)
 !qso_predictor*.spec
 
+# MSIX packaging build artifacts (generated, not checked in)
+packaging/Assets/
+packaging/staging/
+packaging/*.msix
+packaging/*.msixupload
+packaging/*.pfx
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt

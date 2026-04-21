@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+    IgnorableNamespaces="uap uap10 rescap">
+
+    <!-- Package Identity — these MUST match Partner Center exactly -->
+    <Identity
+        Name="PeterHirstWU2C.QSOPredictor"
+        Publisher="CN=66D60A45-A38B-4C72-BFF6-F710FB0E496D"
+        Version="2.5.4.0"
+        ProcessorArchitecture="x64" />
+
+    <!-- Properties shown on the Store listing and in Windows -->
+    <Properties>
+        <DisplayName>QSO Predictor</DisplayName>
+        <PublisherDisplayName>Peter Hirst (WU2C)</PublisherDisplayName>
+        <Description>Real-time tactical assistant for FT8/FT4 amateur radio — see the band from the DX station's perspective.</Description>
+        <Logo>Assets\StoreLogo.png</Logo>
+    </Properties>
+
+    <!-- Supported languages -->
+    <Resources>
+        <Resource Language="en-us" />
+    </Resources>
+
+    <!-- Windows 10/11 dependency -->
+    <Dependencies>
+        <TargetDeviceFamily
+            Name="Windows.Desktop"
+            MinVersion="10.0.17763.0"
+            MaxVersionTested="10.0.26100.0" />
+    </Dependencies>
+
+    <!-- Capabilities required for QSOP -->
+    <Capabilities>
+        <!-- Required for Python desktop apps (full desktop privileges) -->
+        <rescap:Capability Name="runFullTrust" />
+    </Capabilities>
+
+    <!-- Application entry point -->
+    <Applications>
+        <Application
+            Id="QSOPredictor"
+            Executable="QSO Predictor.exe"
+            EntryPoint="Windows.FullTrustApplication">
+            
+            <uap:VisualElements
+                DisplayName="QSO Predictor"
+                Description="Real-time tactical assistant for FT8/FT4 amateur radio"
+                BackgroundColor="transparent"
+                Square44x44Logo="Assets\Square44x44Logo.png"
+                Square150x150Logo="Assets\Square150x150Logo.png">
+                
+                <uap:DefaultTile
+                    Wide310x150Logo="Assets\Wide310x150Logo.png"
+                    Square310x310Logo="Assets\Square310x310Logo.png"
+                    Square71x71Logo="Assets\Square71x71Logo.png" />
+                
+                <uap:SplashScreen
+                    Image="Assets\SplashScreen.png"
+                    BackgroundColor="transparent" />
+                
+                <uap:LockScreen
+                    Notification="badge"
+                    BadgeLogo="Assets\LockScreenLogo.png" />
+            </uap:VisualElements>
+        </Application>
+    </Applications>
+</Package>
