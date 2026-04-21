@@ -429,6 +429,10 @@ Contributions welcome! Please open an issue first to discuss proposed changes.
 * **Doug McDonald, CaptainBucko, Bill K3CDY, Edgar K9RE** — Beta testing and feedback
 * **Jallu OH4NDU** — Linux testing
 
+## Privacy
+
+QSO Predictor does not collect, store, or transmit personal information. All data stays on your local device. See the [Privacy Policy](PRIVACY.md) for details.
+
 ## License
 
 QSO Predictor is licensed under the **GNU General Public License v3.0** — see [LICENSE.txt](LICENSE.txt) for the full license text.

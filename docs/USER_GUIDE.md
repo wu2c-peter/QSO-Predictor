@@ -1108,7 +1108,7 @@ A: Partially. Local Intelligence works offline. Target Perspective requires PSK 
 A: Yes — Windows (.exe) and macOS (.dmg) builds are available on the Releases page. Linux users should run from Python source.
 
 **Q: Is my data uploaded anywhere?**  
-A: No. QSO Predictor only downloads PSK Reporter data. Your logs stay local.
+A: No. QSO Predictor only downloads PSK Reporter data. Your logs and behavior history stay local. See the [Privacy Policy](https://github.com/wu2c-peter/qso-predictor/blob/main/PRIVACY.md) for details.
 
 **Q: Why does bootstrap take 30 seconds?**  
 A: It's parsing up to 500,000 decodes from your log files. This is a one-time operation.
@@ -1149,6 +1149,7 @@ A: v2.2.0 uses "effective path status" — if Path Intelligence shows stations f
 
 - **GitHub Issues:** [Report bugs or request features](https://github.com/wu2c-peter/qso-predictor/issues)
 - **GitHub Discussions:** [Ask questions, share tips](https://github.com/wu2c-peter/qso-predictor/discussions)
+- **Privacy Policy:** [PRIVACY.md](https://github.com/wu2c-peter/qso-predictor/blob/main/PRIVACY.md)
 
 ---
 
