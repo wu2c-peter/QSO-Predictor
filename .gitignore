@@ -35,7 +35,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
-!qso_predictor.spec
+# Allow project-specific PyInstaller specs (onefile, onedir for MSIX, etc.)
+!qso_predictor*.spec
 
 # Installer logs
 pip-log.txt
