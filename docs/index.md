@@ -1,0 +1,51 @@
+---
+layout: home
+title: QSO Predictor
+---
+
+**Real-time tactical assistant for FT8 and FT4 amateur radio.**
+
+QSO Predictor shows you the view from the *other* end of the QSO — what the DX
+station is hearing, who's in their pileup, and which frequencies are clear at
+their location. Stop calling into pileups you can't hear, and stop wasting
+calls on paths that aren't open.
+
+## What it does
+
+- **Target perspective band map** — reconstructs what the DX station's region
+  is decoding, using PSK Reporter data filtered by geographic proximity
+- **Frequency recommendations** — identifies clear frequencies at the target's
+  location, not just yours
+- **Propagation confirmation** — shows whether your signal is reaching the
+  target's region before you call
+- **Local intelligence** — learns behavior patterns of stations you observe
+  and predicts their calling style
+
+Works alongside WSJT-X or JTDX via UDP integration. Advisory only — you keep
+full control of your radio.
+
+## Download
+
+[**Latest release on GitHub →**](https://github.com/wu2c-peter/qso-predictor/releases/latest)
+
+Windows and macOS builds are provided. Linux users can run from Python source.
+
+## Documentation
+
+- [User Guide](/user-guide/) — Getting started, workflow, and interpreting the display
+- [Technical Wiki](https://github.com/wu2c-peter/QSO-Predictor/wiki) — Deep dives, troubleshooting, and internals for advanced users
+
+## Open source
+
+QSO Predictor is released under GPLv3. Source code, issue tracker, and
+contributing guidelines are on [GitHub](https://github.com/wu2c-peter/qso-predictor).
+
+## Contact
+
+For bug reports and feature requests, [file an issue on GitHub](https://github.com/wu2c-peter/qso-predictor/issues).
+
+For other questions, see [Support](/support/).
+
+---
+
+73 de WU2C

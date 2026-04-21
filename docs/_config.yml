@@ -1,0 +1,32 @@
+# Jekyll site configuration for QSO Predictor
+# Served at https://qsop.wu2c.net via GitHub Pages (source: docs/ folder)
+
+title: QSO Predictor
+tagline: Real-time tactical assistant for FT8 and FT4 amateur radio
+description: >-
+  QSO Predictor shows you what the DX station hears — the pileup, the clear
+  frequencies, the path status — so you call smarter, not harder.
+url: https://qsop.wu2c.net
+baseurl: ""
+
+theme: minima
+
+minima:
+  skin: auto
+  social_links:
+    github: wu2c-peter/qso-predictor
+
+plugins:
+  - jekyll-seo-tag
+
+# Defensive: exclude dev-doc patterns if any ever leak into docs/ by mistake.
+# Normally all dev docs live in /dev-docs (outside the Pages source).
+exclude:
+  - DEVELOPMENT_*.md
+  - SESSION_NOTES_*.md
+  - DESIGN_*.md
+  - SPEC_*.md
+  - RELEASE_NOTES_*.md
+  - BACKLOG.md
+  - OUTCOME_RECORDER_*.md
+  - MICROSOFT_STORE_*.md

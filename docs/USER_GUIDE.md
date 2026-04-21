@@ -1,3 +1,10 @@
+---
+layout: page
+title: User Guide
+permalink: /user-guide/
+---
+
+
 # QSO Predictor User Guide
 
 **Current as of Version 2.5.4**  
