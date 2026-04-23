@@ -18,6 +18,37 @@ The GitHub Wiki Home page still shows Windows-only install with Mac/Linux as "fr
 
 ## Code Quality
 
+### Target View "No Reporters in Region" contradicts Path Intelligence when target is uploading
+
+**Priority:** Near-term. Small code change, but current behavior undermines user trust in QSOP's signaling — the UI contradicts itself.
+
+**Symptom:** Path Intelligence panel shows rich data — e.g., "At target: 10 from your area reported" with specific callsigns, SNRs, and frequencies (VA3QBR/FN03 at -4 dB, KA3FMO/FN21 at -5 dB, etc.) and "✓ Target uploads to PSK Reporter". Simultaneously, the Target View's Path field displays "No Reporters in Region" for the same target. Observed 2026-04-23 with target EK/RX3DPK on 40m.
+
+**Root cause:** In `analyzer.py` around line 944, `has_nearby_reporters` is set by scanning `self.grid_cache` for reporters uploading *from grids near the target*. When the target is uploading their own spots (present in `self.receiver_cache`), this data is ignored by the `has_nearby_reporters` check. The "No Reporters in Region" fallback at line 1045 then fires even though the target themselves is providing ground-truth reception data — the most authoritative reporter possible.
+
+**Fix sketch:**
+```python
+# analyzer.py ~line 944
+has_nearby_reporters = False
+
+# NEW: target is their own reporter when they're uploading
+if target_call and target_call in self.receiver_cache:
+    if any(s['time'] > recent_limit for s in self.receiver_cache[target_call]):
+        has_nearby_reporters = True
+
+if not has_nearby_reporters and target_grid and len(target_grid) >= 2:
+    # existing grid_cache check
+    ...
+```
+
+Consider also renaming the variable to something like `has_reporter_coverage_for_target` to reflect that target-self-uploads count. The Path column label may also benefit from a more specific state — e.g., "Heard by Target" (already exists as a concept per the Feb 2026 commit `87fc44e` notes) rather than falling back to a default.
+
+**Regression check:** Not a recent regression — the `has_nearby_reporters` logic dates from commit `87fc44e` (2026-02-08). Pre-existing design gap, surfaced when Path Intelligence started showing richer target-uploaded data.
+
+**Testing:** Reproduce with a target that uploads to PSK Reporter. Verify Path field shows a confirmed-path label (not "No Reporters in Region") when Path Intelligence has near_me_stations data.
+
+---
+
 ### OutcomeRecorder crash-resilience (pending in-memory state)
 
 OutcomeRecorder currently holds all pending session state in memory (`_current_target`, `_pending_session`, snapshot variables). A mid-QSO crash — Windows update, app crash, power loss — loses that target's outcome record. Not catastrophic (outcome data is a best-effort performance signal, not a QSO log), but worth considering if crashes ever prove non-rare.

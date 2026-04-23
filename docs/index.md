@@ -10,8 +10,6 @@ station is hearing, who's in their pileup, and which frequencies are clear at
 their location. Stop calling into pileups you can't hear, and stop wasting
 calls on paths that aren't open.
 
-![QSO Predictor main window](screenshot.png)
-
 ## What it does
 
 - **Target perspective band map** — reconstructs what the DX station's region
@@ -26,16 +24,27 @@ calls on paths that aren't open.
 Works alongside WSJT-X or JTDX via UDP integration. Advisory only — you keep
 full control of your radio.
 
-## Download
+## Install
 
-[**Latest release on GitHub →**](https://github.com/wu2c-peter/qso-predictor/releases/latest)
+<p>
+  <a href="https://apps.microsoft.com/detail/9MWCW2FTB866">
+    <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200" alt="Get it from Microsoft" />
+  </a>
+</p>
 
-Windows and macOS builds are provided. Linux users can run from Python source.
+**Windows users — Microsoft Store (recommended):** One-click install,
+automatic updates, signed by Microsoft. Requires Windows 10 1809 or later.
+
+**Windows (GitHub download), macOS, or Linux:** See the
+[latest release on GitHub](https://github.com/wu2c-peter/qso-predictor/releases/latest)
+for the `.zip` (Windows), `.dmg` (macOS), or source. Windows users downloading
+the `.zip` will see a SmartScreen warning the first time — click "More info"
+→ "Run anyway". This is normal for open-source software distributed outside
+the Store.
 
 ## Documentation
 
 - [User Guide](/user-guide/) — Getting started, workflow, and interpreting the display
-- [README](https://github.com/wu2c-peter/qso-predictor#readme) — Version history, installation details, what's new
 - [Technical Wiki](https://github.com/wu2c-peter/QSO-Predictor/wiki) — Deep dives, troubleshooting, and internals for advanced users
 
 ## Open source

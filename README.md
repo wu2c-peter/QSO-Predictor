@@ -3,6 +3,7 @@
 [![Version](https://img.shields.io/badge/version-2.5.4-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9MWCW2FTB866)
 
 **Real-time tactical assistant for FT8/FT4 — see the band from the DX station's perspective.**
 
@@ -209,11 +210,17 @@ Using real-time PSK Reporter data, QSO Predictor shows:
 
 ## Quick Start
 
-### Windows
+### Install on Windows
 
-**Option A (recommended):** Download the latest `.zip` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases), extract, and run `QSO Predictor.exe`.
+**Option A — Microsoft Store (recommended for most users):**
 
-**Option B (from source):** Install Python 3.10+, then:
+<a href="https://apps.microsoft.com/detail/9MWCW2FTB866"><img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200" alt="Get it from Microsoft" /></a>
+
+One-click install, automatic updates, signed by Microsoft (no SmartScreen warning). Requires Windows 10 1809 or later.
+
+**Option B — GitHub Releases:** Download the latest `.zip` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases), extract, and run `QSO Predictor.exe`. Windows will show a SmartScreen warning the first time — click "More info" → "Run anyway". This is normal for open-source software distributed outside the Store.
+
+**Option C — From source:** Install Python 3.10+, then:
 ```
 git clone https://github.com/wu2c-peter/qso-predictor.git
 cd qso-predictor
@@ -221,7 +228,7 @@ pip install -r requirements.txt
 python main_v2.py
 ```
 
-### macOS
+### Install on macOS
 
 **Option A (recommended):** Download the latest `.dmg` from [Releases](https://github.com/wu2c-peter/qso-predictor/releases) and drag QSO Predictor to Applications.
 
@@ -233,7 +240,7 @@ pip install -r requirements.txt
 python main_v2.py
 ```
 
-### Linux
+### Install on Linux
 
 No pre-built binary yet — run from source. Install Python 3.10+, then:
 ```

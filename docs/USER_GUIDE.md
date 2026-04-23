@@ -48,53 +48,32 @@ QSO Predictor shows you the "view from the other end." Using PSK Reporter data, 
 
 **The result:** Fewer wasted calls, smarter frequency choices, better target selection.
 
-### QSO Predictor in Action
-
-A real 40m FT8 QSO with **V31DL (Belize, EK57)** from Massachusetts (FN42), completed using QSO Predictor's recommendations.
-
-#### Step 1 — Target identified, all intelligence layers aligned
-
-![QSOP detecting V31DL with all intelligence layers converging on CALL NOW](/QSOP-heardbytarget.png)
-
-QSOP flagged V31DL with all four intelligence layers agreeing:
-
-- **Path Intelligence:** Target decoded your signal at -17 dB — you're in their receiver
-- **PSK Reporter:** Path confirmed via regional reporters
-- **IONIS Propagation:** 40m FN42→EK57 **OPEN** (3,280 km, SFI 105, Kp 2)
-- **Behavior:** Methodical operator, 90% confidence from 32 prior observations
-- **Pileup:** Low competition (1 competitor at target)
-
-Recommendation: **CALL NOW**.
-
-#### Step 2 — QSO confirmed
-
-![QSOP showing completed four-message FT8 exchange with V31DL ending in RR73](/QSOP-RR73.png)
-
-Clean four-message FT8 exchange with V31DL:
-
-```
-WU2C V31DL -15        ← V31DL replies with signal report
-V31DL WU2C R+00       ← WU2C confirms with report back
-WU2C V31DL RR73       ← V31DL seals the QSO
-V31DL WU2C 73         ← WU2C final 73
-```
-
-Belize in the log. This is what "see the band from the DX station's perspective" looks like in practice — intelligence that tells you *when* to call, not just *what* you're hearing.
-
 ---
 
 ## 2. Installation
 
 ### Windows
 
-**Option A (recommended):** Install the pre-built binary
+**Option A (easiest) — Microsoft Store:**
+1. Visit the [QSO Predictor page on Microsoft Store](https://apps.microsoft.com/detail/9MWCW2FTB866)
+2. Click **Get** (or **Install**)
+3. Launch from the Start menu once installed
+
+The Store version is signed by Microsoft, auto-updates, and avoids any
+SmartScreen warnings. Requires Windows 10 version 1809 or later.
+
+**Option B — GitHub Release (for users who prefer direct download):**
 1. Download the latest `.zip` from [GitHub Releases](https://github.com/wu2c-peter/qso-predictor/releases)
 2. Extract to any folder
 3. Run `QSO Predictor.exe`
 4. **First run:** Windows SmartScreen may warn about an unrecognized app
    - Click "More info" → "Run anyway"
+   - This is normal for open-source software distributed outside the Store
 
-**Option B:** Run from source (requires Python 3.10+)
+Useful when the Store is blocked (some corporate networks), when you prefer
+not to use a Microsoft account, or for portable / offline installation.
+
+**Option C — Run from source** (requires Python 3.10+)
 ```bash
 git clone https://github.com/wu2c-peter/qso-predictor.git
 cd qso-predictor
