@@ -1386,6 +1386,23 @@ class QSOAnalyzer(QObject):
                     for k in grid_keys_to_remove:
                         del self.grid_cache[k]
                     
+                    # --- v2.5.5: Cleanup sender_cache ---
+                    # sender_cache was added in v2.1.0 for Phase 2 reverse lookups but
+                    # was missing from maintenance loop. Populated on every spot in
+                    # handle_live_spot (line ~144), it grew unbounded between band changes
+                    # (which clear it) — accumulating ~4 MB/min on a busy band.
+                    # Same 15-minute cutoff as other spot caches.
+                    sender_keys_to_remove = []
+                    for call in self.sender_cache:
+                        self.sender_cache[call] = [
+                            r for r in self.sender_cache[call]
+                            if isinstance(r.get('time'), (int, float)) and r['time'] > cutoff
+                        ]
+                        if not self.sender_cache[call]:
+                            sender_keys_to_remove.append(call)
+                    for k in sender_keys_to_remove:
+                        del self.sender_cache[k]
+                    
                     # --- v2.1.3: Cleanup decode evidence caches ---
                     evidence_to_remove = []
                     for call, ev in self.decode_evidence.items():
@@ -1442,11 +1459,19 @@ class QSOAnalyzer(QObject):
                         except Exception:
                             # Diagnostic must never kill the analyzer
                             pass
+                    # v2.5.5: sender_cache diagnostics — populated per-spot in handle_live_spot
+                    # but historically not pruned by maintenance loop. Track both unique
+                    # senders (dict keys) and total spots stored across all entries to
+                    # quantify accumulation.
+                    sender_cache_calls = len(self.sender_cache)
+                    sender_cache_spots = sum(len(v) for v in self.sender_cache.values())
                     logger.info(
                         f"Analyzer cache health: spots_processed={self._spots_processed}, "
                         f"band_cache_freqs={len(self.band_cache)}, "
                         f"receiver_cache_calls={len(self.receiver_cache)}, "
                         f"grid_cache_grids={len(self.grid_cache)}, "
+                        f"sender_cache_calls={sender_cache_calls}, "
+                        f"sender_cache_spots={sender_cache_spots}, "
                         f"decode_evidence={len(self.decode_evidence)}, "
                         f"responded_to_me={len(self.responded_to_me)}, "
                         f"unique_senders={len(unique_senders)}, "

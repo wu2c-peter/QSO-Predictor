@@ -10,7 +10,7 @@
     <Identity
         Name="PeterHirstWU2C.QSOPredictor"
         Publisher="CN=66D60A45-A38B-4C72-BFF6-F710FB0E496D"
-        Version="2.5.4.0"
+        Version="2.5.5.0"
         ProcessorArchitecture="x64" />
 
     <!-- Properties shown on the Store listing and in Windows -->

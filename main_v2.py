@@ -173,6 +173,36 @@ def compare_versions(current, latest):
         return latest != current and latest > current
 
 
+def is_packaged_install():
+    """Detect if running from MSIX/AppX package (e.g. Microsoft Store install).
+    
+    Microsoft Store handles updates for Store-installed apps automatically,
+    so the in-app GitHub-based update check is redundant (and worse, points
+    users somewhere they cannot install from). When this returns True, callers
+    should skip update checks and hide update-related UI.
+    
+    Uses the Windows GetCurrentPackageFullName API — the canonical way per
+    Microsoft documentation. Returns ERROR_INSUFFICIENT_BUFFER (122) for
+    packaged apps (telling caller the buffer needs sizing) or
+    APPMODEL_ERROR_NO_PACKAGE (15700) for non-packaged processes.
+    
+    Defensive: any unexpected error returns False, meaning "treat as
+    non-packaged, show update notifications." That's the safe default —
+    if detection fails, source/GitHub users are not affected, and at worst
+    MSIX users see a slightly noisy notification (the status quo before
+    this function existed).
+    """
+    if sys.platform != 'win32':
+        return False
+    try:
+        kernel32 = ctypes.windll.kernel32
+        length = ctypes.c_uint(0)
+        result = kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
+        return result == 122  # ERROR_INSUFFICIENT_BUFFER = packaged
+    except Exception:
+        return False
+
+
 try:
     from config_manager import ConfigManager
     from udp_handler import UDPHandler
@@ -1268,8 +1298,12 @@ class MainWindow(QMainWindow):
             self.solar_timer.timeout.connect(self.fetch_solar_data)
             self.solar_timer.start(15 * 60 * 1000)  # 15 minutes
         
-        # Check for updates on startup (non-blocking, silent)
-        self.check_for_updates(manual=False)
+        # Check for updates on startup (non-blocking, silent).
+        # v2.5.5: Skip for MSIX/Store installs — the Store handles update
+        # delivery for those users; an in-app GitHub-based notification would
+        # only confuse them (they cannot install from GitHub over an MSIX).
+        if not is_packaged_install():
+            self.check_for_updates(manual=False)
         
         # v2.1.1: Periodic data health check (detects UDP/MQTT data loss)
         self._data_health_timer = QTimer()
@@ -1697,9 +1731,12 @@ class MainWindow(QMainWindow):
         
         help_menu.addSeparator()
         
-        check_update_action = QAction("Check for Updates", self)
-        check_update_action.triggered.connect(lambda: self.check_for_updates(manual=True))
-        help_menu.addAction(check_update_action)
+        # v2.5.5: Hide "Check for Updates" on MSIX/Store installs.
+        # Store-installed users get updates through the Store, not GitHub.
+        if not is_packaged_install():
+            check_update_action = QAction("Check for Updates", self)
+            check_update_action.triggered.connect(lambda: self.check_for_updates(manual=True))
+            help_menu.addAction(check_update_action)
         
         about_action = QAction("About", self)
         about_action.triggered.connect(self.show_about)

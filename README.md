@@ -46,21 +46,27 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.5.4
+## 🆕 What's New in v2.5.5
 
-### Privacy Policy Infrastructure
+### Memory leak fixed
 
-Formal documentation of QSO Predictor's privacy posture, in preparation for distribution via the Microsoft Store. No behavioral changes to the app itself.
+A cache added in v2.1.0 (Phase 2 reverse lookups) was being populated on every spot but was never pruned by the maintenance loop. On long-running sessions this caused steady RSS growth — typically several MB per minute on a busy band, accumulating to multiple GB on multi-day runs. The cache now expires entries on the same 15-minute window as the other spot caches, and memory should remain stable indefinitely. See [RELEASE_NOTES_v2.5.5.md](dev-docs/RELEASE_NOTES_v2.5.5.md) for the full diagnostic story.
 
-* **New [`PRIVACY.md`](PRIVACY.md)** at the repository root — comprehensive statement of what QSOP does and does not do with user data. Summary: no telemetry, no tracking, no personal information collection or transmission. All data stays on your local device.
-* **Privacy Policy link in About dialog** — Help → About now includes a direct link to the privacy policy, reinforcing the "no telemetry, no tracking" commitment in-app.
-* **Documentation alignment** — README, User Guide, and wiki Home page all reference the privacy policy consistently.
+### Microsoft Store-aware update check
 
-This release prepares QSO Predictor for Microsoft Store submission. GitHub direct-download distribution continues unchanged — the Microsoft Store will be an additional channel, not a replacement.
+QSO Predictor now detects whether it's running from a Microsoft Store install (MSIX/AppX package) and suppresses the in-app GitHub-based update check in that case. Store-installed users get updates through the Store automatically — the in-app banner pointing at GitHub was redundant for that audience and could not be acted upon. Source and direct-download GitHub installs see the update banner exactly as before.
+
+### Memory diagnostics in cache health log
+
+The periodic `Analyzer cache health` log line now reports process working-set, virtual memory size, and per-cache occupancy. Adds `psutil` as a soft dependency — the app runs without it, just without the new diagnostic fields.
 
 ---
 
 ## Previous Releases
+
+### v2.5.4
+
+**Privacy Policy Infrastructure** — formal documentation of QSO Predictor's privacy posture, in preparation for distribution via the Microsoft Store. New [`PRIVACY.md`](PRIVACY.md), Privacy Policy link in About dialog, documentation alignment across README, User Guide, and wiki. No behavioral changes to the app.
 
 ### v2.5.3
 
