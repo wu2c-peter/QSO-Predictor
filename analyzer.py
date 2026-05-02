@@ -8,6 +8,14 @@ from typing import List, Dict, Optional
 from PyQt6.QtCore import QObject, pyqtSignal
 from mqtt_client import MQTTClient
 
+# v2.5.5: psutil for memory diagnostics in cache health log.
+# Defensive import so missing dep doesn't crash the analyzer for dev/source runs.
+try:
+    import psutil
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    _PSUTIL_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 class QSOAnalyzer(QObject):
@@ -27,6 +35,12 @@ class QSOAnalyzer(QObject):
         # Diagnostic: track spot processing health
         self._spot_error_logged = False
         self._spots_processed = 0
+        
+        # v2.5.5: Memory diagnostic — capture Process handle once, reuse on each log.
+        # psutil.Process() does setup work; calling it per-log would be wasteful.
+        self._process = psutil.Process() if _PSUTIL_AVAILABLE else None
+        if self._process is None:
+            logger.info("psutil not available — memory diagnostics disabled in cache health log")
         
         self.mqtt = MQTTClient()
         self.mqtt.spot_received.connect(self.handle_live_spot)
@@ -1414,6 +1428,20 @@ class QSOAnalyzer(QObject):
                     self._maint_cycle = 0
                 self._maint_cycle += 1
                 if self._maint_cycle % 15 == 1:
+                    # v2.5.5: Append process memory to cache health for leak/accumulator diagnosis.
+                    # rss_mb = working set (RAM-resident); vms_mb = ~commit (total committed virtual mem).
+                    # On Windows, divergence between rss and vms indicates pagefile activity.
+                    mem_str = ""
+                    if self._process is not None:
+                        try:
+                            mi = self._process.memory_info()
+                            mem_str = (
+                                f", rss_mb={mi.rss / 1024**2:.0f}"
+                                f", vms_mb={mi.vms / 1024**2:.0f}"
+                            )
+                        except Exception:
+                            # Diagnostic must never kill the analyzer
+                            pass
                     logger.info(
                         f"Analyzer cache health: spots_processed={self._spots_processed}, "
                         f"band_cache_freqs={len(self.band_cache)}, "
@@ -1424,6 +1452,7 @@ class QSOAnalyzer(QObject):
                         f"unique_senders={len(unique_senders)}, "
                         f"dial_freq={self.current_dial_freq}, "
                         f"spot_errors={'YES' if self._spot_error_logged else 'none'}"
+                        f"{mem_str}"
                     )
                 
             except Exception as e:
