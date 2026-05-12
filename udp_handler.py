@@ -75,6 +75,10 @@ class UDPHandler(QObject):
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # v2.5.5.1: SO_REUSEPORT enables multicast co-binding on macOS/BSD (suggested by W6IX).
+        # No-op on Windows (constant doesn't exist); additive on Linux.
+        if hasattr(socket, 'SO_REUSEPORT'):
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         
         # v2.0.10: On Windows, disable ICMP "port unreachable" errors from killing the socket
         # This is critical for UDP forwarding to work reliably
@@ -128,6 +132,9 @@ class UDPHandler(QObject):
                     self.sock.close()
                     self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                     self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    # v2.5.5.1: See note above re: SO_REUSEPORT for macOS/BSD co-binding.
+                    if hasattr(socket, 'SO_REUSEPORT'):
+                        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
                     self.sock.bind(('0.0.0.0', self.port))
                     self.is_multicast = False  # Clear flag so stop() doesn't try to leave group
                     logger.warning(
