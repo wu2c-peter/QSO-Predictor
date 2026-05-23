@@ -2073,10 +2073,31 @@ class MainWindow(QMainWindow):
         self.dashboard.update_rec(freq, cur)
 
     def update_status_msg(self, msg):
-        # v2.1.1: Save non-warning messages so we can restore after health warnings clear
-        if msg and not msg.startswith("⚠"):
+        """Update the status text shown in the info bar.
+
+        Warnings (text starting with "⚠") are sticky: they preempt normal
+        status messages until explicitly cleared via `clear_health_warning`.
+        Normal messages are always remembered in `_normal_status` so they
+        can be restored when the warning lifts — without this, the analyzer's
+        ~2 s "Tracking N stations" message overwrites health warnings before
+        the user can read them.
+        """
+        is_warning = bool(msg) and msg.startswith("⚠")
+        current = getattr(self, 'str_status', '')
+
+        if msg and not is_warning:
             self._normal_status = msg
+            # Don't clobber a visible warning with a normal message.
+            if current.startswith("⚠"):
+                return
+
         self.str_status = msg
+        self.update_header()
+
+    def clear_health_warning(self):
+        """Restore the most recent non-warning status. Called by HealthMonitor
+        when data sources resume after a silent period."""
+        self.str_status = getattr(self, '_normal_status', '')
         self.update_header()
 
     def update_header(self):

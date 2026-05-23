@@ -72,14 +72,15 @@ class HealthMonitor(QObject):
             if not mqtt_ok and mqtt_msg:
                 warnings.append(mqtt_msg)
 
-        # Update status bar if warning state changed
+        # MainWindow.update_status_msg is sticky for warnings — a single
+        # call holds until clear_health_warning() runs, so we only need to
+        # act on transitions: warning_text changed text, or warning lifted.
         warning_text = "   |   ".join(warnings) if warnings else ""
-        if warning_text != self._last_health_warning:
-            self._last_health_warning = warning_text
-            if warning_text:
-                mw.update_status_msg(warning_text)
-            else:
-                mw.update_status_msg(getattr(mw, '_normal_status', ''))
+        if warning_text and warning_text != self._last_health_warning:
+            mw.update_status_msg(warning_text)
+        elif not warning_text and self._last_health_warning:
+            mw.clear_health_warning()
+        self._last_health_warning = warning_text
 
     def show_connection_help(self):
         """Manually show the connection help dialog (from Help menu)."""
