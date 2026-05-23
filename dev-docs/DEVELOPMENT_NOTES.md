@@ -203,6 +203,108 @@ Phase 2 path analysis (reverse PSK Reporter lookups, beaming detection) runs onl
 
 ---
 
+## Module Structure & Refactor Conventions
+
+`main_v2.py` started as a single 3,723-line `MainWindow` god class. After a
+multi-stage refactor (May 2026) it's down to ~1,728 lines — a UI shell that
+wires widgets to controllers. Several patterns were established along the way
+and should be preserved by future changes.
+
+### Top-level module map
+
+| Module / package | Owns |
+|---|---|
+| `main_v2.py` | `MainWindow` + `init_ui` + signal routing |
+| `widgets/` | Reusable Qt widgets: `TargetDashboard`, `TacticalToast`, `DecodeTableModel`, `HuntHighlightDelegate`, `ClickableLabel`, `ClickableCopyLabel` |
+| `controllers/` | Focused subsystems: `UpdateChecker`, `HealthMonitor`, `HuntCoordinator`, `IonisIntegration`, `FoxHoundController`, `TargetCoordinator` |
+| `analyzer/` | `QSOAnalyzer` (in `core.py`) + pure helpers (`geometry.py`) |
+| `local_intel/` | Offline ML stack — models, predictor, session tracker, log parser |
+| `ionis/` | IONIS propagation engine — numpy inference + features |
+| `utils/` | Pure-stdlib helpers with no Qt / main-app deps (e.g. `version.py`) |
+| `training/` | Out-of-process model training |
+
+### Controller pattern (state-on-MainWindow)
+
+Controllers are `QObject` subclasses instantiated with a back-reference to
+`MainWindow` (`self.target = TargetCoordinator(self)`). They own the *methods*
+for their subsystem but **not** the state attributes — those stay on
+`MainWindow` (e.g., `current_target_call`, `_fh_active`, `_ionis_engine`).
+
+The controller mutates the MainWindow state in place. This is on purpose:
+many unrelated code paths still read these flags directly (outcome snapshot,
+activity handling, target clearing, IONIS triggers). Pulling state into
+controllers would have meant touching dozens of call sites in one PR. The
+"methods home" approach kept each extraction small and reversible.
+
+If you add a new controller, follow the same shape:
+- Subclass `QObject`, take `main_window` in `__init__`, call `super().__init__(main_window)` so Qt parents it.
+- Read/write state via `self.main_window.X` for things the rest of the app touches.
+- Emit signals back to MainWindow only when you need a slot in code you can't reach directly. Most controllers don't need any.
+- Register in `controllers/__init__.py`.
+
+### PathStatus is the canonical domain type
+
+`local_intel/models.py::PathStatus` is the single source of truth for the
+path classification (HEARD_BY_TARGET, REPORTED_IN_REGION, NOT_REPORTED_IN_REGION,
+NOT_TRANSMITTING, NO_REPORTERS, UNKNOWN). The enum carries its own display
+attributes: `display_label`, `short_label`, `color`, `row_background`, `tooltip`.
+
+**The `display_label` strings are byte-identical to historic UI strings** because
+the outcome recorder persists them to disk in event logs (`~/.qso-predictor/outcome_history.jsonl`).
+Changing a label would break older logs. If you ever need to add a new state,
+keep existing labels frozen and pick a new one for the new state.
+
+UI dispatch should always go through `PathStatus.from_display(s)` for parsing
+and through the enum properties for rendering — never substring-match the
+display labels (`"Not Reported in Region"` contains `"Reported in Region"`).
+
+### Health warnings are sticky in the status bar
+
+`MainWindow.update_status_msg(msg)` refuses to clobber a visible warning
+(text starting with `⚠`) with a non-warning message. Normal messages are
+saved to `_normal_status` for later restoration. When `HealthMonitor` decides
+the warning has lifted, it calls `MainWindow.clear_health_warning()` — the
+only path that bypasses the sticky check.
+
+This is what makes a UDP-silent warning actually readable. The analyzer's
+maintenance loop emits a `"Tracking N stations"` message every ~2 seconds
+through `update_status_msg`; without the sticky check those messages would
+overwrite the warning before the user could read it.
+
+### Don't do `from main_v2 import X` from controllers
+
+`main_v2.py` is loaded as the `__main__` module at startup. When *any* other
+module does `from main_v2 import X`, Python loads it again under the new name
+`main_v2` and re-runs every top-level statement, including `setup_logging()`.
+The visible symptom is a second "QSO Predictor logging initialized" banner
+in the log and a duplicated console handler.
+
+Anything controllers need from `main_v2.py` (version helpers, etc.) must live
+in a non-`main_v2` module. `utils/version.py` exists for exactly this reason.
+If you find yourself wanting to import a helper from `main_v2`, move the
+helper to `utils/` first.
+
+### Pure helpers belong in `*/geometry.py` style modules
+
+`analyzer/geometry.py` was carved out of `QSOAnalyzer` for the five helpers
+that take their inputs explicitly and don't touch the locked spot caches
+(`sector_distribution`, `max_concentration`, `bearing_to_region`, `freq_to_band`,
+`is_callsign`). If you find yourself writing a helper that doesn't need `self`,
+write it as a free function and put it in the package's helpers module —
+makes it reusable and testable without the QObject machinery.
+
+### Known follow-up: `freq_to_band` duplication
+
+The function `freq_to_band(freq_hz) → "20m"` exists as a private method on
+four separate classes (`analyzer/core.py`, `mqtt_client.py`, `hunt_manager.py`,
+`local_intel/log_parser.py`) plus a slightly-different `ionis/features.py`
+version. The canonical version is now `analyzer.geometry.freq_to_band` and
+the other copies should eventually import from there. Not done as part of
+the refactor because it touches multiple packages — saved for a focused
+follow-up PR.
+
+---
+
 ## Recurring Debugging Pattern
 
 Multiple sessions showed the same pattern: AI overcomplicates the analysis while Peter asks "is it just the obvious thing?" and is right.
@@ -238,6 +340,6 @@ IONIS predictions need data that arrives asynchronously (grid from decodes, SFI/
 
 ---
 
-*Last updated: April 2026*
+*Last updated: May 2026*
 
 **73 de WU2C**
