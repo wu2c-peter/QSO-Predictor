@@ -46,23 +46,31 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.5.5
+## 🆕 What's New in v2.5.6
 
-### Memory leak fixed
+### Windows console no longer spams logging errors
 
-A cache added in v2.1.0 (Phase 2 reverse lookups) was being populated on every spot but was never pruned by the maintenance loop. On long-running sessions this caused steady RSS growth — typically several MB per minute on a busy band, accumulating to multiple GB on multi-day runs. The cache now expires entries on the same 15-minute window as the other spot caches, and memory should remain stable indefinitely. See [RELEASE_NOTES_v2.5.5.md](dev-docs/RELEASE_NOTES_v2.5.5.md) for the full diagnostic story.
+Python's default Windows console encoding (cp1252) couldn't render the Unicode characters in QSOP's status messages, producing `--- Logging error ---` tracebacks on every target change. The console stream is now reconfigured to UTF-8 with a safe fallback. The file log was always fine; only the console mirror was affected.
 
-### Microsoft Store-aware update check
+### Connection-help dialog shows accurate state
 
-QSO Predictor now detects whether it's running from a Microsoft Store install (MSIX/AppX package) and suppresses the in-app GitHub-based update check in that case. Store-installed users get updates through the Store automatically — the in-app banner pointing at GitHub was redundant for that audience and could not be acted upon. Source and direct-download GitHub installs see the update banner exactly as before.
+Help → "Connection Help" now reflects whether data is actually flowing — green check for "Data Sources Connected", yellow warning for partial data, original red wording reserved for the no-data case. Previously the dialog always said "No Data Detected" even when both UDP and MQTT were clearly running.
 
-### Memory diagnostics in cache health log
+### UDP-silent warning stays visible
 
-The periodic `Analyzer cache health` log line now reports process working-set, virtual memory size, and per-cache occupancy. Adds `psutil` as a soft dependency — the app runs without it, just without the new diagnostic fields.
+When WSJT-X / JTDX stops sending decodes, the resulting `⚠ No UDP data received` warning now stays in the status bar instead of flashing once and being overwritten by the analyzer's ~2 s "Tracking N stations" updates. Status warnings are sticky until the underlying condition clears.
+
+### Internal architecture refactor
+
+`main_v2.py` shrank from 3,723 lines to 1,728 lines (-54%) through a multi-stage extraction of widgets, controllers, and pure helpers into focused packages (`widgets/`, `controllers/`, `analyzer/`, `utils/`). No feature behavior changed — every stage was Mac + Windows tested against live WSJT-X / JTDX before merging. Conventions documented in [DEVELOPMENT_NOTES.md](dev-docs/DEVELOPMENT_NOTES.md) and [CLAUDE.md](CLAUDE.md). See [RELEASE_NOTES_v2.5.6.md](dev-docs/RELEASE_NOTES_v2.5.6.md) for the full story.
 
 ---
 
 ## Previous Releases
+
+### v2.5.5
+
+**Memory leak fixed** — a `sender_cache` added in v2.1.0 was never pruned, causing several MB per minute RSS growth on busy bands. Now expires entries on the same 15-minute window as the other spot caches. **Microsoft Store-aware update check** — MSIX/Store installs now suppress the in-app GitHub update banner since the Store handles updates automatically. **Memory diagnostics in cache health log** — RSS, VMS, and per-cache sizes now in the periodic log line; adds `psutil` as a soft dependency. See [RELEASE_NOTES_v2.5.5.md](dev-docs/RELEASE_NOTES_v2.5.5.md) for details.
 
 ### v2.5.4
 
