@@ -13,6 +13,7 @@ from .health_monitor import HealthMonitor
 from .hunt_coordinator import HuntCoordinator
 from .ionis_integration import IonisIntegration
 from .fox_hound import FoxHoundController
+from .target_coordinator import TargetCoordinator
 
 __all__ = [
     "UpdateChecker",
@@ -20,4 +21,5 @@ __all__ = [
     "HuntCoordinator",
     "IonisIntegration",
     "FoxHoundController",
+    "TargetCoordinator",
 ]
