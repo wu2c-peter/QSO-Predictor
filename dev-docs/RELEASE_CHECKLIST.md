@@ -29,11 +29,14 @@ release-time doc and metadata touches, including the easy-to-miss ones.
 - [ ] Update **`docs/USER_GUIDE.md`** — the "**Current as of Version X.Y.Z**"
       line near the top. Easy to forget; it's the only version reference in
       the guide and bumping it keeps qsop.wu2c.net's user-guide page fresh.
-- [ ] **Wiki** (`https://github.com/wu2c-peter/QSO-Predictor/wiki`) —
-      maintained outside the commit flow, so a manual edit. Only needed if
-      this release changes user-facing features or install instructions
-      that the Wiki covers. For pure bug-fix or refactor releases, skip.
-      See `BACKLOG.md` § Documentation for the open Wiki items.
+- [ ] **Wiki** is a separate git repo at
+      `/Users/peterhirst/projects/QSO-Predictor.wiki` (remote:
+      `git@github.com:wu2c-peter/QSO-Predictor.wiki.git`, `master` branch).
+      Edit locally, commit, `git push origin master`. GitHub publishes
+      directly — no build step. For each release, at minimum bump the
+      "Content current as of v..." marker at the top of
+      `Quick-Usage-Guide.md` and `QSO-Predictor-How-and-Why-It-Works.md`.
+      Skip content edits for pure bug-fix or refactor releases.
 
 ## Release
 
