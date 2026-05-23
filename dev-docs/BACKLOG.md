@@ -8,6 +8,16 @@ For the active development roadmap (Hunt Mode, multi-source spot collector, etc.
 
 ## Documentation
 
+### Release workflow should use RELEASE_NOTES file as the GitHub Release body
+
+`.github/workflows/build-release.yml` currently writes a hardcoded boilerplate body to the GitHub Release page (lines 207-235) — downloads, install instructions, requirements. The actual release notes file (`dev-docs/RELEASE_NOTES_v<version>.md`) is committed but isn't surfaced in the Release UI, so anyone landing on a Release page sees install instructions but not "what changed."
+
+**Fix sketch:** Add a step before `softprops/action-gh-release@v1` that reads `dev-docs/RELEASE_NOTES_v${VERSION}.md` if it exists, and use it as `body` instead of the hardcoded markdown (or `body_path:` parameter, which `softprops/action-gh-release` supports directly). Fall back to the current boilerplate if the file is missing.
+
+**Observed in v2.5.6 release.** Worked around manually by editing the Release page after the fact.
+
+---
+
 ### Wiki install instructions need the same update as README/USER_GUIDE
 
 The GitHub Wiki Home page still shows Windows-only install with Mac/Linux as "from source." Same fix pattern applied in the in-repo docs should be mirrored to the Wiki. Wiki is maintained outside the normal commit flow so this needs a separate manual edit on GitHub.
