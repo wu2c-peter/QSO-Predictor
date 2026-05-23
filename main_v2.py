@@ -161,15 +161,6 @@ except ImportError as e:
     LOCAL_INTEL_AVAILABLE = False
     logger.warning(f"Local Intelligence not available: {e}")
 
-# --- IONIS PROPAGATION v2.4.0 ---
-try:
-    from ionis import IonisEngine, freq_to_band as ionis_freq_to_band
-    IONIS_AVAILABLE = True
-except ImportError as e:
-    IONIS_AVAILABLE = False
-    logger.info(f"IONIS propagation engine not available: {e}")
-
-
 # --- WIDGETS ---
 # Reusable Qt widgets live in the `widgets/` package. See widgets/__init__.py.
 from widgets import (
@@ -184,8 +175,10 @@ from widgets import (
 # --- CONTROLLERS ---
 # Focused subsystems extracted from MainWindow. See controllers/__init__.py.
 from controllers import (
+    FoxHoundController,
     HealthMonitor,
     HuntCoordinator,
+    IonisIntegration,
     UpdateChecker,
 )
 
@@ -256,6 +249,8 @@ def parse_target_activity(message, target_call, my_call):
 
 # --- MAIN APPLICATION WINDOW ---
 class MainWindow(QMainWindow):
+    solar_update_signal = pyqtSignal(dict)
+
     def __init__(self):
         super().__init__()
         self.config = ConfigManager()
@@ -300,12 +295,16 @@ class MainWindow(QMainWindow):
         self._inferred_competitors = {}  # {callsign: timestamp} — competitors inferred from target responses
         self._activity_idle_timeout = 120  # Seconds before state goes to 'idle'
         
-        # v2.3.0: Fox/Hound mode state
+        # v2.3.0: Fox/Hound mode state.
+        # FoxHoundController manages transitions, but state lives here because
+        # several non-FH paths read these flags (outcome snapshot, activity
+        # handling, target clearing). The controller mutates them in place.
         self._fh_active = False           # Master F/H state (from any trigger)
         self._fh_source = None            # What triggered F/H: 'manual', 'udp', 'inferred'
         self._fh_type = None              # 'fh' (old-style) or 'superfh' — controls clamping behavior
         self._fh_fox_qso = False          # Fox is controlling our TX frequency
         self._fh_dialog_shown = False     # Prevent repeated dialogs in same session
+        self.fox_hound = FoxHoundController(self)
         
         # --- UPDATE CHECK ---
         self.update_checker = UpdateChecker(self)
@@ -336,10 +335,12 @@ class MainWindow(QMainWindow):
         self.hunt_manager = self.hunt_coordinator.hunt_manager
         
         # --- v2.4.0: IONIS PROPAGATION ---
+        # State (_ionis_engine, _ionis_shown) is set by IonisIntegration but
+        # also read in a few non-IONIS code paths; the controller writes to
+        # it on MainWindow so those readers keep working.
         self._ionis_engine = None
-        self._ionis_shown = False  # Track whether prediction is displayed
-        if IONIS_AVAILABLE:
-            self._init_ionis()
+        self._ionis_shown = False
+        self.ionis = IonisIntegration(self)
         
         # --- OUTCOME RECORDER: Silent data collector for performance analysis ---
         self.outcome_recorder = None
@@ -418,25 +419,6 @@ class MainWindow(QMainWindow):
             self.local_intel = None
     
 
-    def _init_ionis(self):
-        """Initialize IONIS propagation engine v2.4.0."""
-        try:
-            ionis_enabled = self.config.get('IONIS', 'enabled', fallback='true') == 'true'
-            if not ionis_enabled:
-                logger.info("IONIS propagation engine disabled in settings")
-                return
-            
-            self._ionis_engine = IonisEngine()
-            if self._ionis_engine.is_available():
-                logger.info("IONIS propagation engine initialized")
-            else:
-                logger.warning("IONIS engine created but model not available")
-                self._ionis_engine = None
-        except Exception as e:
-            logger.error(f"Failed to initialize IONIS engine: {e}")
-            self._ionis_engine = None
-
-    solar_update_signal = pyqtSignal(dict)
 
     def init_ui(self):
         # --- v2.1.0: DOCK LAYOUT ---
@@ -545,7 +527,7 @@ class MainWindow(QMainWindow):
             "Auto-detected from WSJT-X or decode patterns when possible."
         )
         self.cmb_fh_mode.setCurrentIndex(0)
-        self.cmb_fh_mode.currentIndexChanged.connect(self._on_fh_combo_changed)
+        self.cmb_fh_mode.currentIndexChanged.connect(self.fox_hound.on_combo_changed)
         self.cmb_fh_mode.setStyleSheet("""
             QComboBox {
                 color: #CCCCCC;
@@ -1012,7 +994,7 @@ class MainWindow(QMainWindow):
         self._fh_dialog_shown = False
         self.band_map.set_fox_qso(False)
         if self._fh_source == 'inferred':
-            self._set_fox_hound_active(False, None, None)
+            self.fox_hound.set_active(False, None, None)
         
         # --- 4. Table highlighting ---
         self.model.set_target_call(call if call else None)
@@ -1080,9 +1062,9 @@ class MainWindow(QMainWindow):
         # --- 10. IONIS propagation prediction (v2.4.0) ---
         self._ionis_shown = False
         if is_clearing:
-            self._clear_ionis_prediction()
+            self.ionis.clear_prediction()
         elif self._ionis_engine:
-            self._update_ionis_prediction()
+            self.ionis.update_prediction()
         
         # --- 11. OUTCOME RECORDER: Register new target ---
         if self.outcome_recorder and call:
@@ -1532,7 +1514,7 @@ class MainWindow(QMainWindow):
                 )
             
             # v2.3.0: SuperFox auto-detection from decode content
-            self._check_superfox_from_decodes(item.get('message', ''))
+            self.fox_hound.check_superfox_from_decodes(item.get('message', ''))
         
         # Disable sorting during batch add to prevent jitter
         self.table_view.setSortingEnabled(False)
@@ -1613,7 +1595,7 @@ class MainWindow(QMainWindow):
                 # v2.4.0: Re-predict IONIS on band change (if target still set)
                 if (self.current_target_call and self._ionis_engine and
                         old_band and new_band != old_band):
-                    self._update_ionis_prediction()
+                    self.ionis.update_prediction()
                     
             except Exception as e:
                 logger.error(f"Error in band change detection: {e}")
@@ -1631,10 +1613,10 @@ class MainWindow(QMainWindow):
         is_hound = special_mode in (6, 7)
         if is_hound and not self._fh_active:
             logger.info(f"Fox/Hound: UDP special_mode={special_mode} — showing disambiguation dialog")
-            self._show_fh_disambiguation_dialog('udp')
+            self.fox_hound.show_disambiguation_dialog('udp')
         elif not is_hound and self._fh_source == 'udp':
             logger.info(f"Fox/Hound: UDP special_mode={special_mode} — deactivating (was udp-triggered)")
-            self._set_fox_hound_active(False, None, None)
+            self.fox_hound.set_active(False, None, None)
         
         # --- LOCAL INTELLIGENCE: Update TX status ---
         if self.local_intel:
@@ -1718,10 +1700,10 @@ class MainWindow(QMainWindow):
         # v2.3.0: Fox QSO detection — when F/H active and Fox responds to us
         if self._fh_active:
             if state in ('working_you', 'completing_with_you'):
-                self._set_fox_qso_active(True)
+                self.fox_hound.set_fox_qso_active(True)
             elif self._fh_fox_qso and state not in ('working_you', 'completing_with_you'):
                 # Fox stopped responding to us — restore click-to-set
-                self._set_fox_qso_active(False)
+                self.fox_hound.set_fox_qso_active(False)
     
     def _check_target_activity_idle(self):
         """v2.3.0: Check if target activity should transition to idle.
@@ -1738,168 +1720,10 @@ class MainWindow(QMainWindow):
     # v2.3.0: FOX/HOUND MODE MANAGEMENT
     # =========================================================================
     
-    def _on_fh_combo_changed(self, index):
-        """Handle F/H combo box selection: 0=Off, 1=F/H, 2=SuperF/H."""
-        labels = ['Off', 'F/H', 'SuperF/H']
-        logger.info(f"Fox/Hound: Combo box changed to {labels[index]} (index={index})")
-        if index == 0:
-            self._set_fox_hound_active(False, None, None)
-        elif index == 1:
-            self._set_fox_hound_active(True, 'manual', 'fh')
-        elif index == 2:
-            self._set_fox_hound_active(True, 'manual', 'superfh')
     
-    def _show_fh_disambiguation_dialog(self, source):
-        """Show dialog asking user to choose between old F/H and SuperF/H.
-        
-        Called when UDP detects Hound mode but can't tell which type.
-        Only shown once per session (reset on target change or manual override).
-        
-        Args:
-            source: 'udp' — what triggered the detection
-        """
-        if self._fh_dialog_shown:
-            return
-        self._fh_dialog_shown = True
-        
-        logger.info(f"Fox/Hound: Disambiguation dialog triggered (source={source})")
-        
-        title = "Hound Mode Detected"
-        text = "WSJT-X reports Hound mode is active."
-        
-        msg = QMessageBox(self)
-        msg.setWindowTitle(title)
-        msg.setText(f"{text}\n\nWhich type of operation?")
-        msg.setInformativeText(
-            "Fox/Hound — TX clamped to 1000+ Hz, Fox controls your TX during QSO\n\n"
-            "SuperFox/Hound — Full band (200-2800 Hz), you keep your calling frequency"
-        )
-        msg.setIcon(QMessageBox.Icon.Question)
-        
-        btn_fh = msg.addButton("Fox/Hound", QMessageBox.ButtonRole.AcceptRole)
-        btn_sfh = msg.addButton("SuperFox/Hound", QMessageBox.ButtonRole.AcceptRole)
-        btn_cancel = msg.addButton("Ignore", QMessageBox.ButtonRole.RejectRole)
-        
-        msg.exec()
-        
-        clicked = msg.clickedButton()
-        if clicked == btn_fh:
-            logger.info("Fox/Hound: User selected Fox/Hound (old-style)")
-            self._set_fox_hound_active(True, source, 'fh')
-        elif clicked == btn_sfh:
-            logger.info("Fox/Hound: User selected SuperFox/Hound")
-            self._set_fox_hound_active(True, source, 'superfh')
-        else:
-            logger.info("Fox/Hound: User clicked Ignore")
     
-    def _set_fox_hound_active(self, active, source, fh_type):
-        """Master F/H state setter — called by all triggers.
-        
-        Args:
-            active: True to enable F/H mode
-            source: 'manual', 'udp', or 'inferred'
-            fh_type: 'fh' (old-style, clamp 1000+) or 'superfh' (full band)
-        """
-        if active == self._fh_active and source == self._fh_source and fh_type == self._fh_type:
-            return  # No change
-        
-        prev_active = self._fh_active
-        prev_type = self._fh_type
-        self._fh_active = active
-        self._fh_source = source if active else None
-        self._fh_type = fh_type if active else None
-        
-        # Only clamp to 1000+ Hz for old-style F/H, not SuperFox
-        use_clamping = active and fh_type == 'fh'
-        self.band_map.set_hound_mode(use_clamping)
-        
-        # Update combo box (without re-triggering signal)
-        self.cmb_fh_mode.blockSignals(True)
-        if not active:
-            self.cmb_fh_mode.setCurrentIndex(0)  # Off
-        elif fh_type == 'fh':
-            self.cmb_fh_mode.setCurrentIndex(1)  # F/H
-        elif fh_type == 'superfh':
-            self.cmb_fh_mode.setCurrentIndex(2)  # SuperF/H
-        self.cmb_fh_mode.blockSignals(False)
-        
-        # Toast on state change
-        if active and not prev_active:
-            if fh_type == 'fh':
-                self.tactical_toast.show_toast(
-                    "🦊 F/H mode — recommendations clamped to 1000+ Hz", 'info'
-                )
-            elif fh_type == 'superfh':
-                self.tactical_toast.show_toast(
-                    "🦊 SuperFox mode — full band available, finding best frequency", 'info'
-                )
-            logger.info(f"Fox/Hound: ACTIVATED (source={source}, type={fh_type})")
-        elif active and prev_active and fh_type != prev_type:
-            # Type changed while active
-            logger.info(f"Fox/Hound: Type changed to {fh_type}")
-        elif not active and prev_active:
-            self.tactical_toast.show_toast(
-                "F/H mode disabled — full frequency range restored", 'info'
-            )
-            # Reset Fox QSO state
-            self._fh_fox_qso = False
-            self.band_map.set_fox_qso(False)
-            self._fh_dialog_shown = False
-            logger.info("Fox/Hound: DEACTIVATED")
     
-    def _check_superfox_from_decodes(self, message):
-        """v2.3.0: Detect SuperFox from decode content.
-        
-        Looks for "verified" or "$VERIFY$" tokens in decoded messages,
-        which are definitive SuperFox indicators. Only works with WSJT-X
-        (JTDX cannot decode SuperFox).
-        
-        Note: Layer 2 F/H inference (frequency counting) was removed in v2.3.2.
-        On standard frequencies nobody runs Fox, and on non-standard frequencies
-        the frequency itself is sufficient — the counting logic was either
-        wrong (false positive on standard freq) or redundant (non-standard freq).
-        F/H detection now relies on manual combo box and UDP field 18 only.
-        
-        Args:
-            message: Raw decoded message string
-        """
-        if not self.current_target_call or not message:
-            return
-        
-        msg_lower = message.lower()
-        if (('verified' in msg_lower or '$verify$' in msg_lower) and 
-            self.current_target_call.upper() in message.upper() and
-            self._fh_type != 'superfh'):
-            logger.info(f"Fox/Hound: SuperFox detected — 'verified' in decode for {self.current_target_call}")
-            self._set_fox_hound_active(True, 'inferred', 'superfh')
-            self.tactical_toast.show_toast(
-                f"🦊 {self.current_target_call} is verified SuperFox — full band available", 'info'
-            )
     
-    def _set_fox_qso_active(self, active):
-        """v2.3.0: Set Fox QSO state — Fox is controlling our TX frequency.
-        
-        When active, click-to-set is disabled and recommendation line hidden.
-        Called when activity state detects Fox responding to us.
-        """
-        if active == self._fh_fox_qso:
-            return
-        
-        self._fh_fox_qso = active
-        self.band_map.set_fox_qso(active)
-        
-        if active:
-            if self._fh_type == 'superfh':
-                self.tactical_toast.show_toast(
-                    "🎯 Fox is calling you — stay on your frequency!", 'success'
-                )
-            else:
-                self.tactical_toast.show_toast(
-                    "🎯 Fox is calling you — TX frequency under Fox control!", 'success'
-                )
-            logger.info("Fox/Hound: Fox QSO active — click-to-set disabled")
-        else:
-            logger.info("Fox/Hound: Fox QSO ended — click-to-set restored")
 
     def _update_local_intel_path_status(self, row_data):
         """Update Local Intelligence with current path status."""
@@ -2001,7 +1825,7 @@ class MainWindow(QMainWindow):
             # v2.4.0: Re-attempt IONIS prediction if not yet shown
             # (grid may not have been available when target was first set)
             if self._ionis_engine and not self._ionis_shown:
-                self._update_ionis_prediction()
+                self.ionis.update_prediction()
 
     def _update_perspective_display(self):
         """Fetch and display target perspective data on band map."""
@@ -2146,7 +1970,7 @@ class MainWindow(QMainWindow):
         
         # v2.4.0: Re-predict IONIS when solar conditions change
         if self.current_target_call and self._ionis_engine:
-            self._update_ionis_prediction()
+            self.ionis.update_prediction()
 
     
     
@@ -2228,151 +2052,9 @@ class MainWindow(QMainWindow):
     
     # --- v2.4.0: IONIS PROPAGATION METHODS ---
     
-    def _update_ionis_prediction(self):
-        """Recompute IONIS propagation prediction for current target.
-        
-        Called on: target change, band change, solar data refresh.
-        Pushes results to PropagationWidget in Insights Panel.
-        """
-        if not self._ionis_engine or not self._ionis_engine.is_available():
-            return
-        
-        # Need target grid and current band
-        if not self.current_target_grid:
-            self._show_ionis_waiting("Awaiting target grid…")
-            return
-        band = getattr(self, '_current_band', None)
-        # v2.4.4: Derive band from MQTT dial frequency if UDP not connected
-        if not band and self.analyzer.current_dial_freq > 0:
-            band = self._freq_to_band(self.analyzer.current_dial_freq)
-        if not band:
-            self._show_ionis_waiting("Awaiting band info…")
-            return
-        
-        # Need our own grid
-        my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
-        if not my_grid or my_grid == 'FN00aa':
-            return
-        
-        # Get solar conditions (default to safe values if not yet fetched)
-        sfi = 100
-        kp = 2
-        if hasattr(self, '_solar_data') and self._solar_data:
-            sfi = self._solar_data.get('sfi', 100)
-            kp = self._solar_data.get('k', 2)
-        
-        try:
-            # Single prediction for current conditions
-            prediction = self._ionis_engine.predict(
-                my_grid, self.current_target_grid, band, sfi, kp
-            )
-            
-            if prediction:
-                prediction['tx_grid'] = my_grid[:4].upper()
-                prediction['rx_grid'] = self.current_target_grid[:4].upper()
-            
-            # 12-hour forecast
-            forecast = self._ionis_engine.predict_range(
-                my_grid, self.current_target_grid, band, sfi, kp, hours=12
-            )
-            
-            # vs-reality comparison
-            vs_reality = self._compute_ionis_vs_reality(prediction)
-            
-            # Push to widget
-            if (self.local_intel and
-                    hasattr(self.local_intel, 'insights_panel') and
-                    self.local_intel.insights_panel):
-                panel = self.local_intel.insights_panel
-                panel.propagation_widget.show()
-                panel.propagation_widget.update_display(
-                    prediction, forecast, vs_reality)
-                panel.propagation_widget.set_conditions(sfi, kp)
-                self._ionis_shown = True
-                
-        except Exception as e:
-            logger.debug(f"IONIS prediction error: {e}")
     
-    def _compute_ionis_vs_reality(self, prediction: dict) -> str:
-        """Compare IONIS prediction against PSK Reporter observations.
-        
-        Checks whether there are recent spots from our field arriving
-        at the target's area — not just any activity at the target.
-        This confirms the specific path IONIS is predicting.
-        
-        Args:
-            prediction: dict from IonisEngine.predict()
-            
-        Returns:
-            One of: confirmed, unconfirmed, better_than_expected,
-                    closed, unexpected_opening, unknown
-        """
-        if not prediction:
-            return 'unknown'
-        
-        ionis_open = prediction.get('ft8_open', False)
-        ionis_snr = prediction.get('snr_db', -40)
-        
-        # Check PSK Reporter data: are there spots FROM OUR AREA
-        # arriving at the target's area? Filter tier 1-3 spots by
-        # sender grid matching our field (first 2 chars).
-        psk_has_path_spots = False
-        try:
-            my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
-            my_field = my_grid[:2].upper() if len(my_grid) >= 2 else ''
-            
-            if my_field and hasattr(self, 'analyzer') and self.analyzer:
-                perspective = self.analyzer.get_target_perspective(
-                    self.current_target_call, self.current_target_grid
-                )
-                if perspective:
-                    # Count spots where sender is from our field
-                    for tier_key in ('tier1', 'tier2', 'tier3'):
-                        for spot in perspective.get(tier_key, []):
-                            sender_grid = spot.get('sender_grid', '')
-                            if (len(sender_grid) >= 2 and
-                                    sender_grid[:2].upper() == my_field):
-                                psk_has_path_spots = True
-                                break
-                        if psk_has_path_spots:
-                            break
-        except Exception:
-            pass
-        
-        MARGINAL_THRESHOLD = -25.0
-        
-        if ionis_open and psk_has_path_spots:
-            return 'confirmed'
-        elif ionis_open and not psk_has_path_spots:
-            return 'unconfirmed'
-        elif not ionis_open and ionis_snr >= MARGINAL_THRESHOLD and psk_has_path_spots:
-            return 'better_than_expected'
-        elif not ionis_open and not psk_has_path_spots:
-            return 'closed'
-        elif not ionis_open and psk_has_path_spots:
-            return 'unexpected_opening'
-        return 'unknown'
     
-    def _clear_ionis_prediction(self):
-        """Clear and hide the IONIS propagation display."""
-        if (self.local_intel and
-                hasattr(self.local_intel, 'insights_panel') and
-                self.local_intel.insights_panel):
-            panel = self.local_intel.insights_panel
-            panel.propagation_widget.clear()
-            panel.propagation_widget.hide()
     
-    def _show_ionis_waiting(self, message: str):
-        """Show a waiting message in the IONIS widget."""
-        if (self.local_intel and
-                hasattr(self.local_intel, 'insights_panel') and
-                self.local_intel.insights_panel):
-            panel = self.local_intel.insights_panel
-            panel.propagation_widget.show()
-            panel.propagation_widget.prediction_label.setText(message)
-            panel.propagation_widget.prediction_label.setStyleSheet("color: #888888;")
-    
-    # --- v2.1.0: HUNT MODE METHODS ---
     
     
     
