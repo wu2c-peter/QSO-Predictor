@@ -42,12 +42,19 @@ from .models import (
     AnalysisConfig,
 )
 
-from .log_discovery import LogFileDiscovery, discover_log_files
-from .log_parser import LogParser, MessageParser, QSOExtractor, parse_log_files
-from .session_tracker import SessionTracker, MultiTargetTracker
-from .model_manager import ModelManager, PredictionCache
-from .predictor import BayesianPredictor, HeuristicPredictor
-from .background_scanner import BackgroundScanner
+# Heavy modules require optional deps (numpy, pandas, scikit-learn). The
+# domain types in .models are pure-stdlib and must remain importable even
+# when those deps are absent, so the rest of the app can still render the
+# UI / dispatch on PathStatus in a degraded mode.
+try:
+    from .log_discovery import LogFileDiscovery, discover_log_files
+    from .log_parser import LogParser, MessageParser, QSOExtractor, parse_log_files
+    from .session_tracker import SessionTracker, MultiTargetTracker
+    from .model_manager import ModelManager, PredictionCache
+    from .predictor import BayesianPredictor, HeuristicPredictor
+    from .background_scanner import BackgroundScanner
+except ImportError:
+    pass
 
 __all__ = [
     # Enums

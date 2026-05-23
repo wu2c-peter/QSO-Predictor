@@ -59,7 +59,7 @@ class LocalIntelligence(QObject):
         self.local_intel.process_decode(decode_data)
         
         # When path status changes:
-        self.local_intel.set_path_status(PathStatus.CONNECTED)
+        self.local_intel.set_path_status(PathStatus.HEARD_BY_TARGET)
     """
     
     # Signals

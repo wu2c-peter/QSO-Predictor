@@ -27,11 +27,117 @@ class PickingStyle(Enum):
 
 
 class PathStatus(Enum):
-    """Your signal path status to a target."""
-    CONNECTED = "connected"
-    PATH_OPEN = "path_open"
-    NO_PATH = "no_path"
+    """Your signal path status to a target.
+
+    Each value carries the historic display label used in the UI and persisted
+    by the outcome recorder — `display_label` must stay byte-identical so
+    on-disk event logs remain readable. Display attributes (color, tooltip,
+    short_label) live on the enum so dispatch logic is not duplicated at
+    call sites.
+    """
+    HEARD_BY_TARGET = "heard_by_target"
+    REPORTED_IN_REGION = "reported_in_region"
+    NOT_REPORTED_IN_REGION = "not_reported_in_region"
+    NOT_TRANSMITTING = "not_transmitting"
+    NO_REPORTERS = "no_reporters"
     UNKNOWN = "unknown"
+
+    @property
+    def display_label(self) -> str:
+        return _PATH_DISPLAY[self]
+
+    @property
+    def short_label(self) -> str:
+        return _PATH_SHORT[self]
+
+    @property
+    def color(self) -> str:
+        return _PATH_COLOR[self]
+
+    @property
+    def row_background(self) -> Optional[str]:
+        """Optional row background highlight for the decode table.
+
+        Returns None when the row should use default alternating colors.
+        """
+        return _PATH_ROW_BACKGROUND.get(self)
+
+    @property
+    def tooltip(self) -> str:
+        return _PATH_TOOLTIP[self]
+
+    @property
+    def has_path_evidence(self) -> bool:
+        """True when the path classification reflects real propagation data.
+
+        UNKNOWN/NOT_TRANSMITTING/NO_REPORTERS all mean "no evidence" — predictor
+        and strategy code should treat them as the absence of a path signal.
+        """
+        return self not in _PATH_NO_EVIDENCE
+
+    @classmethod
+    def from_display(cls, label: str) -> "PathStatus":
+        """Parse a display label back to its enum value (exact match)."""
+        return _PATH_FROM_DISPLAY.get(label, cls.UNKNOWN)
+
+
+_PATH_DISPLAY: Dict["PathStatus", str] = {}
+_PATH_SHORT: Dict["PathStatus", str] = {}
+_PATH_COLOR: Dict["PathStatus", str] = {}
+_PATH_ROW_BACKGROUND: Dict["PathStatus", str] = {}
+_PATH_TOOLTIP: Dict["PathStatus", str] = {}
+_PATH_FROM_DISPLAY: Dict[str, "PathStatus"] = {}
+_PATH_NO_EVIDENCE: set = set()
+
+
+def _init_path_status_tables() -> None:
+    _PATH_DISPLAY.update({
+        PathStatus.HEARD_BY_TARGET: "Heard by Target",
+        PathStatus.REPORTED_IN_REGION: "Reported in Region",
+        PathStatus.NOT_REPORTED_IN_REGION: "Not Reported in Region",
+        PathStatus.NOT_TRANSMITTING: "Not Transmitting",
+        PathStatus.NO_REPORTERS: "No Reporters in Region",
+        PathStatus.UNKNOWN: "",
+    })
+    _PATH_SHORT.update({
+        PathStatus.HEARD_BY_TARGET: "Heard by Target",
+        PathStatus.REPORTED_IN_REGION: "Rprtd in Region",
+        PathStatus.NOT_REPORTED_IN_REGION: "Not Reported in Region",
+        PathStatus.NOT_TRANSMITTING: "Not Transmitting",
+        PathStatus.NO_REPORTERS: "No Reporters in Region",
+        PathStatus.UNKNOWN: "",
+    })
+    _PATH_COLOR.update({
+        PathStatus.HEARD_BY_TARGET: "#00FFFF",
+        PathStatus.REPORTED_IN_REGION: "#00FF00",
+        PathStatus.NOT_REPORTED_IN_REGION: "#FFA500",
+        PathStatus.NOT_TRANSMITTING: "#888888",
+        PathStatus.NO_REPORTERS: "#666666",
+        PathStatus.UNKNOWN: "#DDDDDD",
+    })
+    _PATH_ROW_BACKGROUND.update({
+        PathStatus.HEARD_BY_TARGET: "#004040",
+        PathStatus.REPORTED_IN_REGION: "#002800",
+    })
+    _PATH_TOOLTIP.update({
+        PathStatus.HEARD_BY_TARGET: "Target has decoded your signal",
+        PathStatus.REPORTED_IN_REGION: "",
+        PathStatus.NOT_REPORTED_IN_REGION: "",
+        PathStatus.NOT_TRANSMITTING: "",
+        PathStatus.NO_REPORTERS: "",
+        PathStatus.UNKNOWN: "",
+    })
+    _PATH_FROM_DISPLAY.update({
+        label: status for status, label in _PATH_DISPLAY.items() if label
+    })
+    _PATH_NO_EVIDENCE.update({
+        PathStatus.UNKNOWN,
+        PathStatus.NOT_TRANSMITTING,
+        PathStatus.NO_REPORTERS,
+    })
+
+
+_init_path_status_tables()
 
 
 # =============================================================================

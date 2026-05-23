@@ -393,7 +393,7 @@ class NearMeWidget(QGroupBox):
                     'proxy_count': int,
                     'my_grid': str
                 }
-            path_status: Current path status (CONNECTED, PATH_OPEN, NO_PATH, UNKNOWN)
+            path_status: Current path status (any PathStatus enum value)
                          Used to customize insight text
             my_snr: SNR (dB) reported for our signal, if available
             snr_reporter: Callsign of station that reported our SNR
@@ -433,7 +433,7 @@ class NearMeWidget(QGroupBox):
         count = len(stations)
         if count == 0:
             # Check if path column already has evidence we don't
-            if path_status == PathStatus.CONNECTED:
+            if path_status == PathStatus.HEARD_BY_TARGET:
                 self.status_label.setText("Your signal confirmed!")
                 self.status_label.setStyleSheet("color: #00ffff;")  # Cyan
                 if my_snr is not None:
@@ -444,7 +444,7 @@ class NearMeWidget(QGroupBox):
                 # Override source label — evidence came from PSK Reporter "who heard me" data
                 self.source_label.setText("✓ Confirmed via PSK Reporter")
                 self.source_label.setStyleSheet("color: #00ffff; font-size: 10px;")
-            elif path_status == PathStatus.PATH_OPEN:
+            elif path_status == PathStatus.REPORTED_IN_REGION:
                 self.status_label.setText("Your signal reported nearby")
                 self.status_label.setStyleSheet("color: #00ff00;")  # Green
                 if my_snr is not None and snr_reporter:
@@ -476,11 +476,11 @@ class NearMeWidget(QGroupBox):
             
             # Customize insight based on path status
             # Path column now says "Not Reported in Region" which is clearer alongside this data
-            if path_status == PathStatus.CONNECTED:
+            if path_status == PathStatus.HEARD_BY_TARGET:
                 self.insight_label.setText("💡 Target hears you too!")
-            elif path_status == PathStatus.PATH_OPEN:
+            elif path_status == PathStatus.REPORTED_IN_REGION:
                 self.insight_label.setText("💡 Path confirmed - keep calling!")
-            elif path_status == PathStatus.NO_PATH:
+            elif path_status == PathStatus.NOT_REPORTED_IN_REGION:
                 # This is the key insight: others are getting through, you should too!
                 self.insight_label.setText("💡 Others getting through — you can too!")
             else:
@@ -1583,13 +1583,13 @@ class InsightsPanel(QWidget):
                 }
                 
                 # v2.1.5: Compute effective path status
-                # If path column says NO_PATH but near-me stations from our area
+                # If path column says NOT_REPORTED_IN_REGION but near-me stations from our area
                 # ARE getting through, the path is open — we just aren't confirmed yet.
                 # This resolves the contradiction between Path Intelligence showing
                 # "Others getting through" and Recommendation saying "TRY LATER".
                 effective_path = self._path_status
-                if self._path_status == PathStatus.NO_PATH and self._near_me_count > 0:
-                    effective_path = PathStatus.PATH_OPEN
+                if self._path_status == PathStatus.NOT_REPORTED_IN_REGION and self._near_me_count > 0:
+                    effective_path = PathStatus.REPORTED_IN_REGION
                 
                 prediction = self.predictor.predict_success(
                     self._current_target, 

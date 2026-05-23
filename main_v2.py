@@ -226,10 +226,15 @@ try:
 except ImportError:
     SOLAR_AVAILABLE = False
 
+# PathStatus is the canonical domain type for path classification and is used
+# unconditionally for UI dispatch (dashboard, decode table). It lives in the
+# pure-stdlib models module so it stays importable even when the heavier
+# local-intel stack (numpy/pandas/sklearn) isn't available.
+from local_intel.models import PathStatus
+
 # --- LOCAL INTELLIGENCE v2.0 ---
 try:
     from local_intel_integration import LocalIntelligence
-    from local_intel import PathStatus
     LOCAL_INTEL_AVAILABLE = True
 except ImportError as e:
     LOCAL_INTEL_AVAILABLE = False
@@ -536,63 +541,47 @@ class TargetDashboard(QFrame):
         
         # Path status
         path = str(data.get('path', '--'))
+        status = PathStatus.from_display(path)
         my_snr = data.get('my_snr_at_target', None)
         path_age = data.get('path_heard_age', None)  # v2.5.1: seconds since heard
         path_stale = data.get('path_stale', False)    # v2.5.1: target uploaded without us
-        
+
         # v2.5.1: Build path display with freshness and staleness
         path_display = path
-        if path in ("Heard by Target", "Reported in Region"):
-            # Base label (shortened to fit)
-            short = "Heard by Target" if path == "Heard by Target" else "Rprtd in Region"
-            
-            # SNR component
+        if status in (PathStatus.HEARD_BY_TARGET, PathStatus.REPORTED_IN_REGION):
+            short = status.short_label
+
             snr_part = ""
             if my_snr is not None:
                 snr_str = f"{my_snr:+d}" if isinstance(my_snr, int) else str(my_snr)
                 snr_part = f" ({snr_str} dB)"
-            
-            # Freshness component
+
             age_part = ""
             if path_age is not None:
                 if path_age < 60:
                     age_part = f" {path_age}s"
                 else:
                     age_part = f" {path_age // 60}m ago"
-            
-            if path_stale and path == "Heard by Target":
+
+            if path_stale and status == PathStatus.HEARD_BY_TARGET:
                 # Target's decoder was active after hearing us but didn't
                 # hear us in latest batch — signal may have faded
                 age_str = f"{path_age // 60}m" if path_age and path_age >= 60 else f"{path_age}s"
                 path_display = f"Was Heard ({age_str} ago)"
             else:
                 path_display = f"{short}{snr_part}{age_part}"
-        
+
         self.val_path.setText(path_display)
-        
-        # Color coding — stale gets warning color
-        if path_stale and "Heard by Target" in path:
-            self.val_path.setStyleSheet("color: #FFAA00; font-weight: bold;")  # Amber — was heard, fading
+
+        # Color coding — stale-heard gets a distinct amber warning; otherwise
+        # let the enum drive color and tooltip.
+        if path_stale and status == PathStatus.HEARD_BY_TARGET:
+            self.val_path.setStyleSheet("color: #FFAA00; font-weight: bold;")
             self.val_path.setToolTip("Target uploaded newer spots without you — signal may have faded")
-        elif "Heard by Target" in path:
-            self.val_path.setStyleSheet("color: #00FFFF; font-weight: bold;")  # Cyan
-            self.val_path.setToolTip("Target has decoded your signal")
-        elif "Not Reported in Region" in path:
-            # MUST check "Not Reported" BEFORE "Reported" — substring match issue
-            self.val_path.setStyleSheet("color: #FFA500; font-weight: bold;")  # Orange
-            self.val_path.setToolTip("")
-        elif "Reported in Region" in path:
-            self.val_path.setStyleSheet("color: #00FF00; font-weight: bold;")  # Green
-            self.val_path.setToolTip("")
-        elif "Not Transmitting" in path:
-            self.val_path.setStyleSheet("color: #888888; font-weight: bold;")  # Gray
-            self.val_path.setToolTip("")
-        elif "No Reporters" in path:
-            self.val_path.setStyleSheet("color: #666666; font-weight: bold;")  # Dark gray
-            self.val_path.setToolTip("")
         else:
-            self.val_path.setStyleSheet("color: #DDDDDD;")
-            self.val_path.setToolTip("")
+            weight = "" if status == PathStatus.UNKNOWN else " font-weight: bold;"
+            self.val_path.setStyleSheet(f"color: {status.color};{weight}")
+            self.val_path.setToolTip(status.tooltip)
         
         comp = str(data.get('competition', ''))
         self._raw_competition = comp  # v2.3.5: Cache real value for override logic
@@ -841,14 +830,18 @@ class TacticalToast(QFrame):
         """Detect and toast path status changes."""
         prev = self._prev_path_status
         self._prev_path_status = new_path_status
-        
+
         if not prev or not target_call:
             return
-        
+
+        good = (PathStatus.HEARD_BY_TARGET, PathStatus.REPORTED_IN_REGION)
+        bad = (PathStatus.NOT_REPORTED_IN_REGION,)  # other no-evidence states stay quiet
+        new_status = PathStatus.from_display(new_path_status)
+        prev_status = PathStatus.from_display(prev)
+
         # Path opened (wasn't connected/open, now is)
-        if new_path_status in ('Heard by Target', 'Reported in Region') and \
-           prev not in ('Heard by Target', 'Reported in Region'):
-            if new_path_status == 'Heard by Target':
+        if new_status in good and prev_status not in good:
+            if new_status == PathStatus.HEARD_BY_TARGET:
                 self.show_toast(
                     f"🎯 {target_call} has decoded YOU — call now!",
                     'success'
@@ -859,8 +852,7 @@ class TacticalToast(QFrame):
                     'success'
                 )
         # Path lost
-        elif new_path_status in ('Not Reported in Region', 'No Path') and \
-             prev in ('Heard by Target', 'Reported in Region'):
+        elif new_status in bad and prev_status in good:
             self.show_toast(
                 f"🔴 Path to {target_call}'s region no longer confirmed",
                 'warning'
@@ -951,31 +943,16 @@ class DecodeTableModel(QAbstractTableModel):
                     elif val < 30: return QColor("#FF5555")
                 except: pass
             if key == "path":
-                path = str(row_item.get('path', ''))
-                if "Heard by Target" in path:
-                    return QColor("#00FFFF")  # Cyan - target hears you!
-                elif "Not Reported in Region" in path:
-                    # MUST check "Not Reported" BEFORE "Reported" — substring match issue
-                    return QColor("#FFA500")  # Orange - reporters exist but haven't spotted you
-                elif "Reported in Region" in path:
-                    return QColor("#00FF00")  # Green - path to region confirmed
-                elif "Not Transmitting" in path:
-                    return QColor("#888888")  # Gray - not transmitting recently
-                elif "No Reporters" in path:
-                    return QColor("#666666")  # Dark gray - no data available
+                status = PathStatus.from_display(str(row_item.get('path', '')))
+                if status != PathStatus.UNKNOWN:
+                    return QColor(status.color)
 
         elif role == Qt.ItemDataRole.BackgroundRole:
             # Highlight rows based on path status and hunt mode
-            path = str(row_item.get('path', ''))
-            
-            # Heard by Target = highest priority (target hears you!)
-            if "Heard by Target" in path:
-                return QColor("#004040")  # Teal background
-            
-            # Reported in Region = propagation confirmed to region
-            # Exclude "Not Reported" — substring match issue
-            if "Reported in Region" in path and "Not Reported" not in path:
-                return QColor("#002800")  # Dark green background
+            status = PathStatus.from_display(str(row_item.get('path', '')))
+            bg = status.row_background
+            if bg is not None:
+                return QColor(bg)
             
             # v2.1.0: Hunt Mode - highlight hunted stations with gold background
             call = row_item.get('call', '')
@@ -2852,21 +2829,15 @@ class MainWindow(QMainWindow):
         """Update Local Intelligence with current path status."""
         if not self.local_intel:
             return
-        
-        path = str(row_data.get('path', ''))
+
+        status = PathStatus.from_display(str(row_data.get('path', '')))
         my_snr = row_data.get('my_snr_at_target', None)
         my_snr_reporter = row_data.get('my_snr_reporter', None)
-        
-        if "Heard by Target" in path:
-            self.local_intel.set_path_status(PathStatus.CONNECTED, my_snr=my_snr, reporter=my_snr_reporter)
-        elif "Not Reported in Region" in path:
-            # MUST check "Not Reported" BEFORE "Reported" — 
-            # "Not Reported in Region" contains "Reported in Region"
-            self.local_intel.set_path_status(PathStatus.NO_PATH)
-        elif "Reported in Region" in path:
-            self.local_intel.set_path_status(PathStatus.PATH_OPEN, my_snr=my_snr, reporter=my_snr_reporter)
+
+        if status in (PathStatus.HEARD_BY_TARGET, PathStatus.REPORTED_IN_REGION):
+            self.local_intel.set_path_status(status, my_snr=my_snr, reporter=my_snr_reporter)
         else:
-            self.local_intel.set_path_status(PathStatus.UNKNOWN)
+            self.local_intel.set_path_status(status)
 
     def refresh_target_perspective(self):
         """Called periodically by timer to keep target perspective current."""

@@ -235,11 +235,11 @@ class BayesianPredictor:
                     factors['behavior_match'] = 1.0
         
         # Factor 4: Path status (most important)
-        if path_status == PathStatus.CONNECTED:
+        if path_status == PathStatus.HEARD_BY_TARGET:
             factors['path'] = 2.0  # They've heard you!
-        elif path_status == PathStatus.PATH_OPEN:
+        elif path_status == PathStatus.REPORTED_IN_REGION:
             factors['path'] = 1.3  # Path exists
-        elif path_status == PathStatus.NO_PATH:
+        elif path_status == PathStatus.NOT_REPORTED_IN_REGION:
             factors['path'] = 0.3  # Not reaching them
         else:
             factors['path'] = 1.0  # Unknown
@@ -328,9 +328,9 @@ class BayesianPredictor:
                 parts.append(f"↑{name}")
         
         # Path status callout
-        if path_status == PathStatus.CONNECTED:
+        if path_status == PathStatus.HEARD_BY_TARGET:
             parts.append("★CONNECTED")
-        elif path_status == PathStatus.NO_PATH:
+        elif path_status == PathStatus.NOT_REPORTED_IN_REGION:
             parts.append("⚠no_path")
         
         # Final probability
@@ -361,14 +361,14 @@ class BayesianPredictor:
         recommended_frequency = None
         
         # Check path status first - most important factor
-        if path_status == PathStatus.NO_PATH:
+        if path_status == PathStatus.NOT_REPORTED_IN_REGION:
             recommended_action = "try_later"
             reasons.append("No path or no TX")
-        elif path_status == PathStatus.CONNECTED:
+        elif path_status == PathStatus.HEARD_BY_TARGET:
             reasons.append("Target hears you!")
-        elif path_status == PathStatus.PATH_OPEN:
+        elif path_status == PathStatus.REPORTED_IN_REGION:
             reasons.append("Path is open")
-        elif path_status == PathStatus.UNKNOWN:
+        elif not path_status.has_path_evidence:
             recommended_action = "call_blind"
             reasons.append("No target area data")
         
@@ -386,7 +386,7 @@ class BayesianPredictor:
                 reasons.append("No competition")
             elif effective_size > 10:
                 reasons.append(f"Heavy pileup ({effective_size} stations)")
-                if path_status != PathStatus.CONNECTED:
+                if path_status != PathStatus.HEARD_BY_TARGET:
                     recommended_action = "wait"
             elif effective_size >= 4:
                 # v2.2.0: Moderate competition — flag it
@@ -548,11 +548,11 @@ class HeuristicPredictor:
                 factors['pileup'] = 0.4
         
         # Path factor
-        if path_status == PathStatus.CONNECTED:
+        if path_status == PathStatus.HEARD_BY_TARGET:
             factors['path'] = 2.0
-        elif path_status == PathStatus.PATH_OPEN:
+        elif path_status == PathStatus.REPORTED_IN_REGION:
             factors['path'] = 1.3
-        elif path_status == PathStatus.NO_PATH:
+        elif path_status == PathStatus.NOT_REPORTED_IN_REGION:
             factors['path'] = 0.2
         
         # Apply factors
@@ -563,7 +563,7 @@ class HeuristicPredictor:
         probability = max(0.01, min(0.99, probability))
         
         explanation = f"Heuristic: SNR {target_snr} dB"
-        if path_status != PathStatus.UNKNOWN:
+        if path_status.has_path_evidence:
             explanation += f" | Path: {path_status.value}"
         explanation += f" → {probability:.0%}"
         
@@ -596,16 +596,16 @@ class HeuristicPredictor:
         action = 'call_now'  # Default
         
         # Check path status first - most important factor
-        if path_status == PathStatus.NO_PATH:
+        if path_status == PathStatus.NOT_REPORTED_IN_REGION:
             action = 'try_later'
             reasons.append("No path to target")
-        elif path_status == PathStatus.CONNECTED:
+        elif path_status == PathStatus.HEARD_BY_TARGET:
             action = 'call_now'
             reasons.append("Target hears you!")
-        elif path_status == PathStatus.PATH_OPEN:
+        elif path_status == PathStatus.REPORTED_IN_REGION:
             action = 'call_now'
             reasons.append("Path is open")
-        elif path_status == PathStatus.UNKNOWN:
+        elif not path_status.has_path_evidence:
             action = 'call_blind'
             reasons.append("No target area data")
         
@@ -636,7 +636,7 @@ class HeuristicPredictor:
                 else:
                     reasons.append(f"Moderate pileup ({effective_size} callers)")
             else:
-                if action != 'call_now' or path_status == PathStatus.UNKNOWN:
+                if action != 'call_now' or not path_status.has_path_evidence:
                     action = 'wait'
                 if target_count > local_size:
                     reasons.append(f"Heavy hidden pileup ({target_count} at target)")
