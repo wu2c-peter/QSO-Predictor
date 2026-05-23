@@ -8,6 +8,8 @@ from typing import List, Dict, Optional
 from PyQt6.QtCore import QObject, pyqtSignal
 from mqtt_client import MQTTClient
 
+from . import geometry
+
 # v2.5.5: psutil for memory diagnostics in cache health log.
 # Defensive import so missing dep doesn't crash the analyzer for dev/source runs.
 try:
@@ -533,8 +535,8 @@ class QSOAnalyzer(QObject):
                 result['insights'].append(f"ℹ️ Only {len(my_spots)} recent spot(s) — need 3+ for beaming analysis")
             else:
                 # 3. Calculate THIS station's sector distribution
-                my_sectors = self._calculate_sector_distribution(my_spots, grid)
-                my_concentration = self._get_max_concentration(my_sectors)
+                my_sectors = geometry.sector_distribution(my_spots, grid)
+                my_concentration = geometry.max_concentration(my_sectors)
                 
                 # Log this station's pattern
                 sector_names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
@@ -547,8 +549,8 @@ class QSOAnalyzer(QObject):
                     for peer_call, peer_spots in peer_spots_by_call.items():
                         peer_grid = next((p.get('grid', '') for p in all_near_me if p.get('call', '').upper() == peer_call), '')
                         if peer_grid:
-                            peer_sectors = self._calculate_sector_distribution(peer_spots, peer_grid)
-                            peer_conc = self._get_max_concentration(peer_sectors)
+                            peer_sectors = geometry.sector_distribution(peer_spots, peer_grid)
+                            peer_conc = geometry.max_concentration(peer_sectors)
                             peer_concentrations.append(peer_conc)
                             
                             peer_sector_str = ', '.join([f"{sector_names[i]}:{peer_sectors[i]}" for i in range(8) if peer_sectors[i] > 0])
@@ -575,7 +577,7 @@ class QSOAnalyzer(QObject):
                             result['is_beaming'] = True
                             # Find dominant direction
                             max_sector = my_sectors.index(max(my_sectors))
-                            result['beam_direction'] = self._bearing_to_region_simple(max_sector * 45 + 22.5)
+                            result['beam_direction'] = geometry.bearing_to_region(max_sector * 45 + 22.5)
                             result['beam_confidence'] = my_concentration
                             result['insights'].append(
                                 f"📡 Likely beaming — {my_concentration}% concentrated vs {avg_peer_concentration:.0f}% peer avg{confidence_note}"
@@ -588,7 +590,7 @@ class QSOAnalyzer(QObject):
                         elif my_concentration >= 85 and avg_peer_concentration >= 85:
                             # BOTH are highly concentrated in same direction — ambiguous!
                             max_sector = my_sectors.index(max(my_sectors))
-                            direction = self._bearing_to_region_simple(max_sector * 45 + 22.5)
+                            direction = geometry.bearing_to_region(max_sector * 45 + 22.5)
                             if peer_count >= 3:
                                 # With 3+ peers all showing same pattern, more likely propagation
                                 result['insights'].append(
@@ -644,58 +646,6 @@ class QSOAnalyzer(QObject):
             logger.error(f"Phase 2 analysis error: {e}", exc_info=True)
         
         return result
-    
-    def _calculate_sector_distribution(self, spots: list, from_grid: str) -> List[int]:
-        """Calculate how spots are distributed across 8 compass sectors."""
-        from psk_reporter_api import calculate_bearing
-        
-        sectors = [0] * 8  # N, NE, E, SE, S, SW, W, NW
-        
-        for spot in spots:
-            receiver_grid = spot.get('grid', '')
-            if receiver_grid and len(receiver_grid) >= 4 and from_grid and len(from_grid) >= 4:
-                bearing = calculate_bearing(from_grid, receiver_grid)
-                if bearing is not None:
-                    sector = int(bearing / 45) % 8
-                    sectors[sector] += 1
-        
-        return sectors
-    
-    def _get_max_concentration(self, sectors: List[int]) -> int:
-        """Get the max concentration in any 3 adjacent sectors (135° arc)."""
-        total = sum(sectors)
-        if total == 0:
-            return 0
-        
-        max_conc = 0
-        for i in range(8):
-            # 3 adjacent sectors
-            left = (i - 1) % 8
-            right = (i + 1) % 8
-            concentrated = sectors[left] + sectors[i] + sectors[right]
-            conc_pct = int(100 * concentrated / total)
-            if conc_pct > max_conc:
-                max_conc = conc_pct
-        
-        return max_conc
-    
-    def _bearing_to_region_simple(self, bearing: float) -> str:
-        """Simple bearing to region conversion."""
-        bearing = bearing % 360
-        if 20 <= bearing < 70:
-            return "EU"
-        elif 70 <= bearing < 120:
-            return "AF/ME"
-        elif 120 <= bearing < 180:
-            return "AS"
-        elif 180 <= bearing < 240:
-            return "OC"
-        elif 240 <= bearing < 300:
-            return "SA"
-        elif 300 <= bearing < 340:
-            return "CA"
-        else:
-            return "NA"
     
     def _get_freq_density(self, audio_freq: int) -> int:
         """Get signal density at a frequency from cached data."""
@@ -767,14 +717,6 @@ class QSOAnalyzer(QObject):
     #   Proves DH2YBG decoded WU2C — no PSK Reporter needed.
     # =========================================================================
     
-    @staticmethod
-    def _is_callsign(s):
-        """Check if string looks like an amateur radio callsign."""
-        if not s or len(s) < 3 or len(s) > 10:
-            return False
-        s = s.strip('<>')
-        return any(c.isdigit() for c in s) and all(c.isalnum() or c == '/' for c in s)
-
     def _record_decode_evidence(self, decode_data):
         """
         Extract QSO evidence from an FT8 decoded message.
@@ -806,7 +748,7 @@ class QSOAnalyzer(QObject):
         to_call = parts[0].strip('<>').upper()
         from_call = parts[1].strip('<>').upper()
         
-        if not self._is_callsign(to_call) or not self._is_callsign(from_call):
+        if not geometry.is_callsign(to_call) or not geometry.is_callsign(from_call):
             return
         
         # Record: FROM responded to TO (FROM decoded TO)
@@ -1427,7 +1369,7 @@ class QSOAnalyzer(QObject):
                     dial_display = ""
                     if self.current_dial_freq > 0:
                         freq_mhz = self.current_dial_freq / 1_000_000
-                        band = self._freq_to_band(self.current_dial_freq)
+                        band = geometry.freq_to_band(self.current_dial_freq)
                         dial_display = f"{band} ({freq_mhz:.3f} MHz) | "
                 
                 # v2.2.0: "reporting" not "hear"; add near-target count
@@ -1484,19 +1426,3 @@ class QSOAnalyzer(QObject):
                 # FIX v2.0.4: Log error but don't die - keep cleaning
                 logger.warning(f"Maintenance: Error during cleanup: {e}")
                 # Continue running - next iteration may succeed
-    
-    def _freq_to_band(self, freq):
-        """Convert frequency in Hz to band name."""
-        f = freq / 1_000_000
-        if 1.8 <= f <= 2.0: return "160m"
-        if 3.5 <= f <= 4.0: return "80m"
-        if 5.3 <= f <= 5.4: return "60m"
-        if 7.0 <= f <= 7.3: return "40m"
-        if 10.1 <= f <= 10.15: return "30m"
-        if 14.0 <= f <= 14.35: return "20m"
-        if 18.068 <= f <= 18.168: return "17m"
-        if 21.0 <= f <= 21.45: return "15m"
-        if 24.89 <= f <= 24.99: return "12m"
-        if 28.0 <= f <= 29.7: return "10m"
-        if 50.0 <= f <= 54.0: return "6m"
-        return "??m"
