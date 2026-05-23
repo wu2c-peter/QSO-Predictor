@@ -1545,8 +1545,8 @@ class MainWindow(QMainWindow):
     
 
     def open_user_guide(self):
-        """Open the User Guide on GitHub (renders markdown nicely)."""
-        webbrowser.open("https://github.com/wu2c-peter/qso-predictor/blob/main/docs/USER_GUIDE.md")
+        """Open the User Guide on the project website."""
+        webbrowser.open("https://qsop.wu2c.net/user-guide/")
     
     # v2.0.9: Debug logging menu handlers
     def _toggle_debug_logging(self, checked):
