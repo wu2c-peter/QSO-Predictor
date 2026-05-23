@@ -35,11 +35,38 @@ class StartupHealthDialog(QDialog):
         self.mqtt_ok = mqtt_ok
         self.configured_port = configured_port
         self.dont_show_again = False
-        
-        self.setWindowTitle("No Data Detected")
+
+        # Pick title/header/intro to match actual data state. Dialog was
+        # originally always shown only on no-data startup, so the copy
+        # assumed both flags were False; now it can also be opened manually
+        # when data IS flowing, where the old "No Data Detected" header
+        # contradicted the green checkmarks in the Status panel below.
+        if udp_ok and mqtt_ok:
+            self._title = "Data Sources Connected"
+            self._header_emoji = "✓"
+            self._intro = (
+                "Both data sources are active. The checklist below describes "
+                "the configuration QSO Predictor expects."
+            )
+        elif udp_ok or mqtt_ok:
+            self._title = "Partial Data"
+            self._header_emoji = "⚠️"
+            self._intro = (
+                "Only one data source is active. The checklist below covers "
+                "common configuration issues:"
+            )
+        else:
+            self._title = "No Data Detected"
+            self._header_emoji = "⚠️"
+            self._intro = (
+                "QSO Predictor isn't receiving data from WSJT-X or JTDX.\n"
+                "Here's what to check:"
+            )
+
+        self.setWindowTitle(self._title)
         self.setMinimumWidth(520)
         self.setModal(True)
-        
+
         self.setup_ui()
     
     def setup_ui(self):
@@ -47,18 +74,15 @@ class StartupHealthDialog(QDialog):
         layout.setSpacing(15)
         
         # Header
-        header = QLabel("⚠️ No Data Detected")
+        header = QLabel(f"{self._header_emoji} {self._title}")
         header_font = QFont()
         header_font.setPointSize(14)
         header_font.setBold(True)
         header.setFont(header_font)
         layout.addWidget(header)
-        
+
         # Intro text
-        intro = QLabel(
-            "QSO Predictor isn't receiving data from WSJT-X or JTDX.\n"
-            "Here's what to check:"
-        )
+        intro = QLabel(self._intro)
         intro.setWordWrap(True)
         layout.addWidget(intro)
         
