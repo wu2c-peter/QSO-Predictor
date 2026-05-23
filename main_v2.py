@@ -120,86 +120,7 @@ except ImportError as e:
     logger.warning(f"OutcomeRecorder not available: {e}")
 
 
-def get_version():
-    """Get version from git tag or VERSION file."""
-    # Determine base path (handles PyInstaller frozen exe)
-    if getattr(sys, 'frozen', False):
-        # Running as compiled exe
-        base_path = Path(sys._MEIPASS)
-    else:
-        # Running as script
-        base_path = Path(__file__).parent
-    
-    # Try git first (works for developers running from repo)
-    if not getattr(sys, 'frozen', False):
-        try:
-            result = subprocess.run(
-                ["git", "describe", "--tags", "--always"],
-                capture_output=True, text=True, cwd=base_path
-            )
-            if result.returncode == 0:
-                return result.stdout.strip().lstrip('v')
-        except:
-            pass
-    
-    # Fall back to VERSION file (works for zip downloads and frozen exe)
-    try:
-        return (base_path / "VERSION").read_text().strip()
-    except:
-        return "dev"
-
-
-def compare_versions(current, latest):
-    """Compare version strings. Returns True if latest > current."""
-    try:
-        # Handle versions like "1.2.3" or "1.2.3-5-gabcdef"
-        def parse(v):
-            # Take only the numeric part before any dash
-            v = v.split('-')[0]
-            return [int(x) for x in v.split('.')]
-        
-        curr_parts = parse(current)
-        latest_parts = parse(latest)
-        
-        # Pad shorter list with zeros
-        max_len = max(len(curr_parts), len(latest_parts))
-        curr_parts += [0] * (max_len - len(curr_parts))
-        latest_parts += [0] * (max_len - len(latest_parts))
-        
-        return latest_parts > curr_parts
-    except:
-        # If parsing fails, do simple string comparison
-        return latest != current and latest > current
-
-
-def is_packaged_install():
-    """Detect if running from MSIX/AppX package (e.g. Microsoft Store install).
-    
-    Microsoft Store handles updates for Store-installed apps automatically,
-    so the in-app GitHub-based update check is redundant (and worse, points
-    users somewhere they cannot install from). When this returns True, callers
-    should skip update checks and hide update-related UI.
-    
-    Uses the Windows GetCurrentPackageFullName API — the canonical way per
-    Microsoft documentation. Returns ERROR_INSUFFICIENT_BUFFER (122) for
-    packaged apps (telling caller the buffer needs sizing) or
-    APPMODEL_ERROR_NO_PACKAGE (15700) for non-packaged processes.
-    
-    Defensive: any unexpected error returns False, meaning "treat as
-    non-packaged, show update notifications." That's the safe default —
-    if detection fails, source/GitHub users are not affected, and at worst
-    MSIX users see a slightly noisy notification (the status quo before
-    this function existed).
-    """
-    if sys.platform != 'win32':
-        return False
-    try:
-        kernel32 = ctypes.windll.kernel32
-        length = ctypes.c_uint(0)
-        result = kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
-        return result == 122  # ERROR_INSUFFICIENT_BUFFER = packaged
-    except Exception:
-        return False
+from utils.version import compare_versions, get_version, is_packaged_install
 
 
 try:
@@ -260,7 +181,13 @@ from widgets import (
     TargetDashboard,
 )
 
-
+# --- CONTROLLERS ---
+# Focused subsystems extracted from MainWindow. See controllers/__init__.py.
+from controllers import (
+    HealthMonitor,
+    HuntCoordinator,
+    UpdateChecker,
+)
 
 
 # --- v2.3.0: TARGET ACTIVITY STATE PARSER ---
@@ -380,9 +307,12 @@ class MainWindow(QMainWindow):
         self._fh_fox_qso = False          # Fox is controlling our TX frequency
         self._fh_dialog_shown = False     # Prevent repeated dialogs in same session
         
-        # --- UPDATE CHECK STATE ---
-        self.update_available = None  # Will hold version string if update available
+        # --- UPDATE CHECK ---
+        self.update_checker = UpdateChecker(self)
         self._normal_status = ""     # v2.1.1: Last non-warning status message
+
+        # --- HEALTH MONITOR ---
+        self.health_monitor = HealthMonitor(self)
         
         # --- UDP STATUS TRACKING ---
         self._decode_count = 0
@@ -401,9 +331,9 @@ class MainWindow(QMainWindow):
             self._init_local_intelligence()
         
         # --- v2.1.0: HUNT MODE ---
-        self.hunt_manager = None
-        if HUNT_MODE_AVAILABLE:
-            self._init_hunt_mode()
+        self.hunt_coordinator = HuntCoordinator(self)
+        # Convenience alias — many MainWindow paths still reference hunt_manager directly.
+        self.hunt_manager = self.hunt_coordinator.hunt_manager
         
         # --- v2.4.0: IONIS PROPAGATION ---
         self._ionis_engine = None
@@ -451,19 +381,13 @@ class MainWindow(QMainWindow):
         # delivery for those users; an in-app GitHub-based notification would
         # only confuse them (they cannot install from GitHub over an MSIX).
         if not is_packaged_install():
-            self.check_for_updates(manual=False)
-        
+            self.update_checker.start_check(manual=False)
+
         # v2.1.1: Periodic data health check (detects UDP/MQTT data loss)
-        self._data_health_timer = QTimer()
-        self._data_health_timer.timeout.connect(self._check_data_health)
-        self._data_health_timer.start(10000)  # Check every 10 seconds
-        self._last_health_warning = ""  # Track to avoid redundant status updates
-        
+        self.health_monitor.start_periodic_check()
+
         # Check for unconfigured callsign/grid on startup
         QTimer.singleShot(500, self._check_first_run_config)
-        
-        # v2.0.9: Start health check timer (checks for UDP data after 20 seconds)
-        #self._start_health_check_timer()
     
     def _check_first_run_config(self):
         """Warn user if callsign/grid haven't been configured."""
@@ -493,22 +417,6 @@ class MainWindow(QMainWindow):
             logger.error(f"Failed to initialize Local Intelligence: {e}")
             self.local_intel = None
     
-    def _init_hunt_mode(self):
-        """Initialize Hunt Mode v2.1.0 features."""
-        try:
-            self.hunt_manager = HuntManager(config_manager=self.config)
-            
-            # Set user's grid for "working nearby" detection
-            my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
-            self.hunt_manager.set_my_grid(my_grid)
-            
-            # Connect hunt alerts to notification handler
-            self.hunt_manager.hunt_alert.connect(self._on_hunt_alert)
-            
-            logger.info(f"Hunt Mode initialized with {len(self.hunt_manager.get_list())} items")
-        except Exception as e:
-            logger.error(f"Failed to initialize Hunt Mode: {e}")
-            self.hunt_manager = None
 
     def _init_ionis(self):
         """Initialize IONIS propagation engine v2.4.0."""
@@ -529,7 +437,6 @@ class MainWindow(QMainWindow):
             self._ionis_engine = None
 
     solar_update_signal = pyqtSignal(dict)
-    update_check_signal = pyqtSignal(str, bool)  # (version_or_status, was_manual)
 
     def init_ui(self):
         # --- v2.1.0: DOCK LAYOUT ---
@@ -561,10 +468,7 @@ class MainWindow(QMainWindow):
         self.info_bar.setFixedHeight(25) 
         self.info_bar.setStyleSheet("background-color: #2A2A2A; color: #AAA; padding: 4px;")
         main_layout.addWidget(self.info_bar)
-        
-        # Connect update check signal
-        self.update_check_signal.connect(self.on_update_check_result)
-        
+
         # --- v2.0.3: TOOLBAR WITH CLEAR TARGET ---
         toolbar = QToolBar("Main Toolbar")
         toolbar.setObjectName("main_toolbar")  # Required for saveState
@@ -700,7 +604,7 @@ class MainWindow(QMainWindow):
         
         # v2.1.0: Enable context menu for hunt mode
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.table_view.customContextMenuRequested.connect(self._show_table_context_menu)
+        self.table_view.customContextMenuRequested.connect(self.hunt_coordinator.show_table_context_menu)
         
         self.table_view.setAlternatingRowColors(False)  # Let model control backgrounds
         self.table_view.setStyleSheet("""
@@ -837,7 +741,7 @@ class MainWindow(QMainWindow):
             hunt_list_action = QAction("Hunt List...", self)
             hunt_list_action.setShortcut(QKeySequence("Ctrl+H"))
             hunt_list_action.setToolTip("Manage stations you're hunting")
-            hunt_list_action.triggered.connect(self._show_hunt_list_dialog)
+            hunt_list_action.triggered.connect(self.hunt_coordinator.show_list_dialog)
             tools_menu.addAction(hunt_list_action)
             tools_menu.addSeparator()
         
@@ -858,7 +762,7 @@ class MainWindow(QMainWindow):
         
         # v2.0.9: Connection Help menu item
         connection_help_action = QAction("Connection Help...", self)
-        connection_help_action.triggered.connect(self._show_connection_help)
+        connection_help_action.triggered.connect(self.health_monitor.show_connection_help)
         help_menu.addAction(connection_help_action)
         
         help_menu.addSeparator()
@@ -883,7 +787,7 @@ class MainWindow(QMainWindow):
         # Store-installed users get updates through the Store, not GitHub.
         if not is_packaged_install():
             check_update_action = QAction("Check for Updates", self)
-            check_update_action.triggered.connect(lambda: self.check_for_updates(manual=True))
+            check_update_action.triggered.connect(lambda: self.update_checker.start_check(manual=True))
             help_menu.addAction(check_update_action)
         
         about_action = QAction("About", self)
@@ -1051,7 +955,7 @@ class MainWindow(QMainWindow):
         
         # v2.1.0: Hunt Mode - check MQTT spots against hunt list
         if self.hunt_manager:
-            self.analyzer.spot_received.connect(self._check_hunt_spot)
+            self.analyzer.spot_received.connect(self.hunt_coordinator.check_spot)
     
     # --- v2.3.3: Unified target-change handler ---
     def _set_new_target(self, call, grid="", freq=0, row_data=None):
@@ -2164,7 +2068,6 @@ class MainWindow(QMainWindow):
                 self.local_intel.update_near_me(None)
 
 
-
     def on_recommendation(self, freq):
         cur = self.band_map.current_tx_freq
         self.dashboard.update_rec(freq, cur)
@@ -2177,21 +2080,22 @@ class MainWindow(QMainWindow):
         self.update_header()
 
     def update_header(self):
+        update_available = self.update_checker.update_available
         s_update = ""
-        if self.update_available:
-            s_update = f"⬆ v{self.update_available} available — click to download   |   "
+        if update_available:
+            s_update = f"⬆ v{update_available} available — click to download   |   "
             self.info_bar.update_url = "https://github.com/wu2c-peter/qso-predictor/releases"
             self.info_bar.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         else:
             self.info_bar.update_url = None
             self.info_bar.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
-        
+
         s_solar = getattr(self, 'str_solar', "")
         s_status = getattr(self, 'str_status', "")
         self.info_bar.setText(f"{s_update}{s_solar}   |   {s_status}")
-        
+
         # Update styling based on state
-        if self.update_available:
+        if update_available:
             # Gold/amber for update available
             self.info_bar.setStyleSheet(
                 "background-color: #3D3D00; color: #FFD700; padding: 4px; font-weight: bold;"
@@ -2223,211 +2127,13 @@ class MainWindow(QMainWindow):
         if self.current_target_call and self._ionis_engine:
             self._update_ionis_prediction()
 
-    def check_for_updates(self, manual=False):
-        """Check GitHub for newer release (runs in background thread)."""
-        t = threading.Thread(target=self._update_check_worker, args=(manual,), daemon=True)
-        t.start()
     
-    def _update_check_worker(self, manual):
-        """Worker thread for update check."""
-        try:
-            import requests  # Lazy import - app works without it
-        except ImportError:
-            if manual:
-                self.update_check_signal.emit("NO_REQUESTS", manual)
-            return
-        
-        try:
-            r = requests.get(
-                "https://api.github.com/repos/wu2c-peter/qso-predictor/releases/latest",
-                timeout=10
-            )
-            if r.status_code == 200:
-                latest = r.json().get('tag_name', '').lstrip('v')
-                current = get_version()
-                if latest and compare_versions(current, latest):
-                    # Update available
-                    self.update_check_signal.emit(latest, manual)
-                elif manual:
-                    # No update, but user asked - tell them they're up to date
-                    self.update_check_signal.emit("UP_TO_DATE", manual)
-            elif manual:
-                # API error
-                self.update_check_signal.emit("ERROR", manual)
-        except Exception as e:
-            if manual:
-                self.update_check_signal.emit("ERROR", manual)
-            # Fail silently for automatic checks
     
-    def on_update_check_result(self, result, was_manual):
-        """Handle update check result."""
-        if result == "UP_TO_DATE":
-            QMessageBox.information(
-                self, 
-                "Up to Date", 
-                f"You're running the latest version (v{get_version()})."
-            )
-        elif result == "ERROR":
-            QMessageBox.warning(
-                self, 
-                "Update Check Failed",
-                "Couldn't reach GitHub to check for updates.\nPlease check your internet connection."
-            )
-        elif result == "NO_REQUESTS":
-            QMessageBox.warning(
-                self,
-                "Update Check Unavailable",
-                "The 'requests' module is not installed.\n\n"
-                "To enable update checking, run:\n"
-                "  pip install requests"
-            )
-        else:
-            # It's a version number - update available
-            self.update_available = result
-            self.update_header()
-            
-            if was_manual:
-                # User manually checked - show dialog with option to download
-                reply = QMessageBox.information(
-                    self,
-                    "Update Available",
-                    f"A new version is available: v{result}\n\n"
-                    f"You're currently running v{get_version()}.\n\n"
-                    f"Would you like to open the download page?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.Yes
-                )
-                if reply == QMessageBox.StandardButton.Yes:
-                    webbrowser.open("https://github.com/wu2c-peter/qso-predictor/releases")
-
-    # --- v2.1.1: Periodic Data Health Check ---
-    def _check_data_health(self):
-        """Check if UDP and MQTT data sources are flowing.
-        
-        Called every 10 seconds. Shows/clears status bar warnings when data
-        sources go silent, without blocking the main thread.
-        """
-        warnings = []
-        
-        # Check UDP health
-        if hasattr(self, 'udp') and self.udp:
-            udp_ok, udp_msg = self.udp.check_data_health()
-            if not udp_ok and udp_msg:
-                warnings.append(udp_msg)
-        
-        # Check MQTT health
-        if hasattr(self, 'mqtt') and self.mqtt:
-            mqtt_ok, mqtt_msg = self.mqtt.check_data_health()
-            if not mqtt_ok and mqtt_msg:
-                warnings.append(mqtt_msg)
-        
-        # Update status bar if warning state changed
-        warning_text = "   |   ".join(warnings) if warnings else ""
-        if warning_text != self._last_health_warning:
-            self._last_health_warning = warning_text
-            if warning_text:
-                self.update_status_msg(warning_text)
-            else:
-                # Clear warning - restore normal status
-                self.update_status_msg(getattr(self, '_normal_status', ''))
     
-    # --- v2.0.9: Startup Health Check ---
-    def _start_health_check_timer(self):
-        """Start a timer to check if data is being received after startup.
-        
-        Shows a help dialog if no UDP data detected after 20 seconds.
-        Feature added based on user feedback from Doug McDonald.
-        """
-        # Check after 20 seconds - enough time for:
-        # - MQTT to connect
-        # - At least one FT8 cycle (15 sec) to complete
-        # - Some buffer for slow startup
-        QTimer.singleShot(20000, self._check_startup_health)
-    
-    def _check_startup_health(self):
-        """Check if we're receiving data. Show help dialog if not."""
-        # Check if user has disabled this popup
-        skip_check = self.config.get('UI', 'skip_startup_health_check', fallback='false') == 'true'
-        if skip_check:
-            return
-        
-        # Check UDP status using the message counter on udp handler
-        has_udp = False
-        if hasattr(self, 'udp') and self.udp:
-            has_udp = getattr(self.udp, 'messages_received', 0) > 0
-        
-        # Alternative check using decode count (should match)
-        if not has_udp:
-            has_udp = self._decode_count > 0
-        
-        # Check MQTT status - look for indication in status message
-        has_mqtt = False
-        if hasattr(self, 'str_status'):
-            # If status contains "tracking X stations", MQTT is working
-            has_mqtt = 'tracking' in self.str_status.lower() or 'stations' in self.str_status.lower()
-        
-        # If UDP is working, we're good - don't show popup
-        if has_udp:
-            return
-        
-        # Show the help dialog
-        self._show_startup_health_dialog(has_udp, has_mqtt)
-    
-    def _show_startup_health_dialog(self, udp_ok, mqtt_ok):
-        """Display the startup health check dialog."""
-        if not STARTUP_HEALTH_AVAILABLE:
-            # Fallback if dialog module not available
-            configured_port = self.config.get('NETWORK', 'udp_port', fallback='2237')
-            QMessageBox.warning(
-                self,
-                "No Data Detected",
-                f"QSO Predictor isn't receiving data from WSJT-X or JTDX.\n\n"
-                f"Please check:\n"
-                f"• WSJT-X/JTDX Settings → Reporting → UDP Server\n"
-                f"• Port in WSJT-X/JTDX matches QSO Predictor ({configured_port})\n"
-                f"• 'Accept UDP Requests' is checked\n\n"
-                f"See Help → Documentation for more details."
-            )
-            return
-        
-        # Get the configured port to show in dialog
-        configured_port = int(self.config.get('NETWORK', 'udp_port', fallback='2237'))
-        
-        dialog = StartupHealthDialog(
-            parent=self,
-            udp_ok=udp_ok,
-            mqtt_ok=mqtt_ok,
-            configured_port=configured_port
-        )
-        
-        result = dialog.exec()
-        
-        # Handle "don't show again"
-        if dialog.dont_show_again:
-            self.config.save_setting('UI', 'skip_startup_health_check', 'true')
-        
-        # Handle "Open Settings" button (custom return code 2)
-        if result == 2:
-            self.open_settings()
-    
-    def _show_connection_help(self):
-        """Manually show the connection help dialog (from Help menu)."""
-        # Get current status
-        has_udp = False
-        if hasattr(self, 'udp') and self.udp:
-            has_udp = getattr(self.udp, 'messages_received', 0) > 0
-        if not has_udp:
-            has_udp = self._decode_count > 0
-        
-        has_mqtt = False
-        if hasattr(self, 'str_status'):
-            has_mqtt = 'tracking' in self.str_status.lower() or 'stations' in self.str_status.lower()
-        
-        self._show_startup_health_dialog(has_udp, has_mqtt)
 
     def open_settings(self):
         # Calculate UDP status for settings dialog
-        udp_status = self._get_udp_status()
+        udp_status = self.health_monitor.get_udp_status()
         dlg = SettingsDialog(self.config, self, udp_status=udp_status)
         if dlg.exec():
             self.udp.stop()
@@ -2438,23 +2144,6 @@ class MainWindow(QMainWindow):
             self._decode_count = 0
             self._decode_start_time = None
     
-    def _get_udp_status(self):
-        """Get current UDP connection status."""
-        from datetime import datetime
-        
-        if self._decode_start_time is None or self._decode_count == 0:
-            return {'receiving': False, 'rate': 0}
-        
-        elapsed = (datetime.now() - self._decode_start_time).total_seconds()
-        if elapsed < 1:
-            elapsed = 1  # Avoid division by zero
-        
-        rate = (self._decode_count / elapsed) * 60  # decodes per minute
-        
-        return {
-            'receiving': self._decode_count > 0,
-            'rate': rate
-        }
 
     def open_user_guide(self):
         """Open the User Guide on GitHub (renders markdown nicely)."""
@@ -2664,70 +2353,10 @@ class MainWindow(QMainWindow):
     
     # --- v2.1.0: HUNT MODE METHODS ---
     
-    def _show_hunt_list_dialog(self):
-        """Show the Hunt List management dialog."""
-        if not self.hunt_manager:
-            return
-        dialog = HuntListDialog(self.hunt_manager, self)
-        dialog.exec()
-        # Refresh table to update highlighting
-        self.model.layoutChanged.emit()
     
-    def _show_table_context_menu(self, pos):
-        """Show context menu for decode table with Hunt Mode options."""
-        index = self.table_view.indexAt(pos)
-        if not index.isValid():
-            return
-        
-        # Get the callsign from the clicked row
-        row_data = self.model._data[index.row()]
-        callsign = row_data.get('call', '')
-        
-        if not callsign:
-            return
-        
-        menu = QMenu(self)
-        
-        # Hunt Mode actions
-        if self.hunt_manager:
-            if self.hunt_manager.is_hunted(callsign):
-                remove_action = menu.addAction(f"Remove {callsign} from Hunt List")
-                remove_action.triggered.connect(lambda: self._remove_from_hunt(callsign))
-            else:
-                add_action = menu.addAction(f"Add {callsign} to Hunt List")
-                add_action.triggered.connect(lambda: self._add_to_hunt(callsign))
-            
-            menu.addSeparator()
-        
-        # Set as Target action
-        target_action = menu.addAction(f"Set {callsign} as Target")
-        target_action.triggered.connect(lambda: self.on_row_click(index))
-        
-        menu.exec(self.table_view.viewport().mapToGlobal(pos))
     
-    def _add_to_hunt(self, callsign):
-        """Add callsign to hunt list from context menu."""
-        if self.hunt_manager and self.hunt_manager.add(callsign):
-            self.model.layoutChanged.emit()  # Refresh highlighting
-            self.tray_icon.showMessage(
-                "Hunt Mode",
-                f"Added {callsign} to hunt list",
-                QSystemTrayIcon.MessageIcon.Information,
-                2000
-            )
     
-    def _remove_from_hunt(self, callsign):
-        """Remove callsign from hunt list from context menu."""
-        if self.hunt_manager and self.hunt_manager.remove(callsign):
-            self.model.layoutChanged.emit()  # Refresh highlighting
     
-    def _check_hunt_spot(self, spot):
-        """Check incoming MQTT spot against hunt list."""
-        if not self.hunt_manager or self.hunt_manager.is_empty():
-            return
-        
-        # Check spot against hunt list (handles cooldown internally)
-        self.hunt_manager.check_spot(spot, time.time())
     
     def _on_path_analyze_requested(self, stations: list):
         """
@@ -2771,30 +2400,6 @@ class MainWindow(QMainWindow):
         if self.local_intel and self.local_intel.insights_panel:
             self.local_intel.insights_panel.update_path_analysis_results(results)
     
-    def _on_hunt_alert(self, call, band, alert_type, details):
-        """Handle hunt alert - show notification to user."""
-        # Don't show notifications if we're closing
-        if getattr(self, '_closing', False):
-            return
-        
-        if alert_type == 'working_nearby':
-            # High priority - propagation path to your region confirmed!
-            title = f"🎯 {call} Heard Nearby!"
-            message = f"{call} on {band}: {details}"
-            icon = QSystemTrayIcon.MessageIcon.Warning
-            duration = 5000
-        else:
-            # Normal - they're just active
-            title = f"📡 {call} Active"
-            message = f"{call} spotted on {band}"
-            icon = QSystemTrayIcon.MessageIcon.Information
-            duration = 3000
-        
-        # System tray notification
-        self.tray_icon.showMessage(title, message, icon, duration)
-        
-        # Also update status bar briefly
-        self.update_status_msg(f"Hunt: {call} {alert_type} on {band}")
 
     def closeEvent(self, event):
         # --- v2.1.0: Flag to prevent notifications during shutdown ---
