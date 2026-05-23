@@ -126,6 +126,12 @@ def setup_logging(console: bool = True, file: bool = True) -> None:
     
     # Console handler (for terminal/development)
     if console:
+        # Force UTF-8 on stdout so Unicode chars (e.g. "→" in info logs) don't
+        # raise UnicodeEncodeError on Windows consoles (default cp1252).
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
+        except (AttributeError, ValueError):
+            pass  # stdout detached (pythonw/MSIX) or already non-text stream
         _console_handler = logging.StreamHandler(sys.stdout)
         _console_handler.setLevel(logging.INFO)  # Default to INFO level
         _console_handler.setFormatter(formatter)
