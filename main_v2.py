@@ -88,7 +88,6 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
-from collections import deque
 
 # Initialize logging FIRST before other imports
 from logging_config import setup_logging, set_debug_mode, get_log_file_path, open_log_folder
