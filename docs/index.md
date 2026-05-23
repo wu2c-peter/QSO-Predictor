@@ -3,6 +3,8 @@ layout: home
 title: QSO Predictor
 ---
 
+![QSO Predictor — full application window showing the decode table, target-perspective band map, score graph, and insights panel](/screenshot.png)
+
 **Real-time tactical assistant for FT8 and FT4 amateur radio.**
 
 QSO Predictor shows you the view from the *other* end of the QSO — what the DX
