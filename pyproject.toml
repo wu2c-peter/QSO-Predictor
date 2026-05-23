@@ -1,0 +1,12 @@
+[tool.pytest.ini_options]
+# Tests live in tests/ and are pure-Python — they intentionally do not import
+# anything that drags in PyQt or numpy at collection time. PyQt UI testing
+# would require pytest-qt and a display server; that's deferred.
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",                # Show summary of all non-passing outcomes
+    "--strict-markers",   # Unknown @pytest.mark.X is an error, not a typo
+]
