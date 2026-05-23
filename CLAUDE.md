@@ -107,3 +107,11 @@ Branches use `refactor/…`, `fix/…`, `feat/…` prefixes. Direct pushes to `m
 are fine for small/personal commits; larger changes typically merge via
 fast-forward after Windows-machine verification. See git log on `main` for
 recent commit message style.
+
+## Cutting a release
+
+**Use the checklist** — `dev-docs/RELEASE_CHECKLIST.md` lists every file
+that needs to move on a release, including the easy-to-miss ones (the
+`docs/USER_GUIDE.md` "Current as of Version" header in particular). The
+GitHub Actions workflow `.github/workflows/build-release.yml` builds and
+publishes the Release page automatically when a `v*` tag is pushed.
