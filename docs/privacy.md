@@ -2,6 +2,11 @@
 layout: page
 title: Privacy Policy
 permalink: /privacy/
+description: >-
+  QSO Predictor's privacy posture: no data collection, no telemetry, no
+  tracking. The app runs entirely locally and reads only data sources you
+  already use (your WSJT-X / JTDX logs) and public services (PSK Reporter,
+  NOAA space weather).
 ---
 
 

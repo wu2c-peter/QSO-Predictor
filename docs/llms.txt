@@ -1,0 +1,41 @@
+# QSO Predictor
+
+> A free, open-source desktop tactical assistant for FT8 and FT4 amateur
+> radio operators. Reconstructs the DX station's perspective using PSK
+> Reporter spot data so you can see the pileup *they're* hearing, find
+> frequencies clear at *their* location, and confirm propagation paths
+> before calling. Runs on Windows, macOS, and Linux alongside WSJT-X or
+> JTDX via UDP integration. Advisory only — the operator keeps full
+> control of the radio.
+
+QSO Predictor is written by Peter Hirst (WU2C), licensed under GPLv3.
+Built in Python with PyQt6. Distribution: free GitHub releases (Windows
+zip, signed-and-notarized macOS dmg, source for all platforms) and a
+Microsoft Store listing (Windows only, easiest install).
+
+The app does not collect, transmit, or store any personal data. It reads
+local WSJT-X/JTDX log files, subscribes read-only to the public PSK
+Reporter MQTT stream, and fetches space weather from NOAA SWPC. No
+telemetry. No tracking.
+
+## Primary documentation
+
+- [User Guide](https://qsop.wu2c.net/user-guide/): Installation, configuration, and how to use each feature of the app.
+- [Home page](https://qsop.wu2c.net/): Project overview, installation options, key features.
+
+## Technical and deeper documentation
+
+- [How and Why It Works](https://github.com/wu2c-peter/QSO-Predictor/wiki/QSO-Predictor-How-and-Why-It-Works): Algorithms, architecture, and design rationale.
+- [Quick Usage Guide](https://github.com/wu2c-peter/QSO-Predictor/wiki/Quick-Usage-Guide): Operational workflows for common scenarios.
+- [Help and Troubleshooting](https://github.com/wu2c-peter/QSO-Predictor/wiki/Help-and-Troubleshooting): Common problems and solutions.
+- [Source code on GitHub](https://github.com/wu2c-peter/qso-predictor): Repository, issue tracker, contributing guidelines.
+
+## Releases and changes
+
+- [Latest release](https://github.com/wu2c-peter/qso-predictor/releases/latest): Download Windows .zip and macOS .dmg.
+- [Release history](https://github.com/wu2c-peter/QSO-Predictor/releases): All published versions with release notes.
+
+## Optional
+
+- [Privacy Policy](https://qsop.wu2c.net/privacy/): What data is read, why, and where it stays (locally, in all cases).
+- [Support](https://qsop.wu2c.net/support/): Bug reports, feature requests, and direct contact.

@@ -2,6 +2,11 @@
 layout: page
 title: User Guide
 permalink: /user-guide/
+description: >-
+  How to install, configure, and use QSO Predictor — a tactical FT8 / FT4
+  assistant for WSJT-X and JTDX operators. Covers setup, the target
+  perspective band map, frequency recommendations, path intelligence,
+  Hunt Mode, and Fox/Hound mode.
 ---
 
 

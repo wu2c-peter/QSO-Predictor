@@ -2,6 +2,9 @@
 layout: page
 title: Support
 permalink: /support/
+description: >-
+  How to get help with QSO Predictor: bug reports, feature requests, and
+  direct contact. Issue tracker, troubleshooting wiki, and email.
 ---
 
 ## Bug reports and feature requests

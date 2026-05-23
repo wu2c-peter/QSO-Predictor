@@ -5,9 +5,24 @@ title: QSO Predictor
 tagline: Real-time tactical assistant for FT8 and FT4 amateur radio
 description: >-
   QSO Predictor shows you what the DX station hears — the pileup, the clear
-  frequencies, the path status — so you call smarter, not harder.
+  frequencies, the path status — so you call smarter, not harder. A free,
+  open-source tactical assistant for FT8 / FT4 / WSJT-X / JTDX operators.
 url: https://qsop.wu2c.net
 baseurl: ""
+
+# Picked up by jekyll-seo-tag as the default Open Graph / Twitter card image,
+# and by JSON-LD as the site logo. Per-page `image:` front matter overrides.
+image: /screenshot.png
+logo: /screenshot.png
+
+# Author info — feeds JSON-LD Person/author metadata via jekyll-seo-tag.
+author:
+  name: Peter Hirst (WU2C)
+  url: https://wu2c.net
+
+# Public-facing identity for social-card attribution (and Twitter/X cards).
+twitter:
+  card: summary_large_image
 
 theme: minima
 
@@ -25,6 +40,15 @@ header_pages:
 
 plugins:
   - jekyll-seo-tag
+  - jekyll-sitemap
+
+# Defaults applied to all pages so jekyll-seo-tag has the right image to
+# advertise even when a page doesn't set `image:` in its own front matter.
+defaults:
+  - scope:
+      path: ""
+    values:
+      image: /screenshot.png
 
 # Defensive: exclude dev-doc patterns if any ever leak into docs/ by mistake.
 # Normally all dev docs live in /dev-docs (outside the Pages source).
