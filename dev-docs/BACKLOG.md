@@ -18,14 +18,6 @@ For the active development roadmap (Hunt Mode, multi-source spot collector, etc.
 
 ---
 
-### Wiki install instructions need the same update as README/USER_GUIDE
-
-The GitHub Wiki Home page still shows Windows-only install with Mac/Linux as "from source." Same fix pattern applied in the in-repo docs should be mirrored to the Wiki. Wiki is maintained outside the normal commit flow so this needs a separate manual edit on GitHub.
-
-**When to do it:** Next time the Wiki is being edited for any other reason.
-
----
-
 ## Code Quality
 
 ### Target View "No Reporters in Region" contradicts Path Intelligence when target is uploading
