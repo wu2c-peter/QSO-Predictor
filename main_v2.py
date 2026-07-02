@@ -82,6 +82,7 @@
 import ctypes
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -978,10 +979,10 @@ class MainWindow(QMainWindow):
                 if row.get('call') == self.current_target_call:
                     path = str(row.get('path', ''))
                     comp_str = str(row.get('competition', ''))
-                    try:
-                        competition = int(comp_str.split()[0])  # "3 local" → 3
-                    except (ValueError, IndexError):
-                        competition = 0
+                    # "Low (2)", "Medium (3) + QRM", "High (4) local" → count
+                    # in parens; "Clear"/"Unknown"/"--" have none → 0
+                    m = re.search(r'\((\d+)\)', comp_str)
+                    competition = int(m.group(1)) if m else 0
                     break
         
         # Reporter count from scoring context
