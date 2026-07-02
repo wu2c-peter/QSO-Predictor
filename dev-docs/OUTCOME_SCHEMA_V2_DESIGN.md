@@ -45,6 +45,12 @@ Enables survival/hazard analysis: per-cycle P(success | covariates), decay of ex
 ```
 
 - `c` cycle number; `rank` own rank (null if unknown); `comp` target-side competition; `lcall` local callers; `path` compact code (H=Heard by Target, R=Reported in Region, N=Not Reported, X=No Reporters, T=Not Transmitting, ""=blank); `t1` tier-1 count at own TX bucket; `txf` TX audio offset Hz.
+- **Compact path codes live on `PathStatus`**, not in the recorder: add a
+  `compact_code` property to `local_intel/models.py::PathStatus` next to
+  `display_label`/`short_label`, and derive the trace value via
+  `PathStatus.from_display(...).compact_code`. Keeps the enum the single
+  canonical mapping (per project convention) instead of an ad-hoc dict in
+  `outcome_recorder.py`.
 - **Hook (verified in clone 2026-07-01):** `OutcomeRecorder.on_status_update()` — rising-edge detection of the UDP Type 1 `transmitting` flag already increments `_tx_cycle_count` (`outcome_recorder.py` ~line 284, called from `main_v2.py:1208`). The trace append goes at that exact point. Values must be *passed in or read from already-current UI state* — no new queries.
 - **Cap:** 40 entries; beyond that, append every other cycle (`c` values make gaps explicit). Median attempts are 4–5 cycles, so typical growth is a few hundred bytes/event; the 21-hour-selected-target outliers don't explode because the trace tracks TX cycles, not wall time.
 - Trace supplements, never replaces, the at-select scalars. Static context stays top-level.
