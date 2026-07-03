@@ -73,9 +73,38 @@ Terminal: record_outcome(trigger, snapshot)  ← main_v2.py:1053
 
 **Open design choice:** extend `on_target_selected()`'s signature vs pass a single `tactical_snapshot: dict`. Recommend the dict — one parameter, forward-compatible, mirrors `record_outcome(trigger, snapshot)`.
 
+## Verified capture sources (traced 2026-07-03)
+
+All line numbers against main @ v2.5.7 (abf3d5d).
+
+| Field | Verified source | Notes / null semantics |
+|---|---|---|
+| `success_prob` | **NEW** `InsightsPanel._last_prediction` — retain the `prediction` local in `refresh()` (insights_panel.py:1594-1599); capture `int(probability*100)` | Null when predictor failed / no target. **Do NOT use `local_intel_integration.get_prediction()`** — it recomputes with `PathStatus.UNKNOWN` and local-only competition (lines 436-476), i.e. NOT what the user saw. |
+| `strategy` | **NEW** `InsightsPanel._last_strategy` — retain the `strategy` local (insights_panel.py:1601-1605); capture `.recommended_action` | Same caveat: the integration's `get_strategy()` getter recomputes differently. Clear both new attrs in `clear()`. |
+| `competition_at_select` | `row_data.get('competition')` in the same target_coordinator block that reads `path_at_select` (~line 300), parsed with the paren regex | Third competition parser in the codebase (main_v2.py:983, insights_panel.py:1622) — consolidate into one helper as part of v2. |
+| `competition_max` | recorder-internal running max, fed per cycle | — |
+| `local_callers_at_select` | `mw.local_intel.session_tracker.get_pileup_info()['size']` (session_tracker.py:408) | 0 when getter returns None. |
+| `my_rank_at_select` | `session_tracker.get_your_status()['rank']` (session_tracker.py:503) | Can be int, None, or `'?'` (in pileup, own signal not decodable) — map non-int → null. |
+| `my_snr_at_target` | `row_data.get('my_snr_at_target')` (set by analyzer/core.py:1010) | Null when target hasn't uploaded spots of us. |
+| `best_rival_snr_at_target` | **Needs a ~3-line analyzer addition**: the tier1/tier2 competition loop (analyzer/core.py:1029-1038) already reads each rival spot's `snr` for the strong-QRM flag but discards it; track the max → `decode_data['best_rival_snr']` | Only field not already computed. Alternative: drop from v2. |
+| `near_me_heard` | `InsightsPanel._near_me_count` (set in `update_near_me`, insights_panel.py:1655) | 0 means both "none heard" and "never updated" — acceptable, documented. |
+| `behavior_pattern` / `behavior_confidence` / `behavior_source` | `session_tracker.get_target_behavior()` → `bayesian_style` / `bayesian_confidence` / `bayesian_source` (session_tracker.py:485-501) | Canonical source is the getter (what BehaviorWidget renders). Null when no target session. |
+| `persona` | same getter → `bayesian_metadata` dict | Metadata dict verified present; exact persona key inside it to confirm at implementation. |
+| `target_state` | `mw._target_activity_state` (updated in target_coordinator.py:440-490) | Values: unknown/idle/active states; capture with `_target_activity_other` optional. |
+| `rec_reason` | `band_map.score_reason[rec_freq]` — same guard pattern the snapshot builder already uses for tx_freq (main_v2.py:968-971) | Terminal capture, trivial addition. |
+| `tier1_count_at_tx_bucket` | `band_map._scoring_context['tier1_buckets']` (band_map_widget.py:673; `bucket_size` in same dict) | Key verified; per-bucket lookup shape to confirm at implementation. |
+| trace `txf` | `status['tx_df']` from the UDP status already flowing through `handle_status_update` | — |
+| trace `rank`/`comp`/`lcall`/`path`/`t1` | same sources as their at-select scalars, read at TX rising edge | `path` via **NEW** `PathStatus.compact_code` property. |
+
+**Trace hot-path design:** `on_status_update()` is called on *every* status
+message (many/sec), pre-throttle (main_v2.py:1208). Building a snapshot dict
+per message would be wasteful. Pass a zero-arg callable instead —
+`on_status_update(transmitting, cycle_context_fn=...)` — which the recorder
+invokes only on the rising edge (~once per 15s TX cycle).
+
 ## Pre-implementation checklist (per WU2C code-quality checklist)
 
-- [ ] For each scalar: grep the exact attribute/structure holding the value at select time; confirm readable from `target_coordinator` scope without recomputation. **Verified so far:** widget classes exist (`insights_panel.py`: PileupStatusWidget:42, NearMeWidget:229, BehaviorWidget:554, PredictionWidget:813, StrategyWidget:894); path_at_select pattern (`outcome_recorder.py:176,261,424`); tx-cycle hook. **Not yet verified:** exact attribute names for prob/strategy/rank/SNR values (labels exist; underlying data structures need per-field tracing), SNR-at-target and target-state storage locations.
+- [x] For each scalar: grep the exact attribute/structure holding the value at select time; confirm readable from `target_coordinator` scope without recomputation. **Done 2026-07-03 — see "Verified capture sources" table above.** One exception flagged: `best_rival_snr_at_target` needs a small analyzer addition.
 - [ ] Confirm data flow summary above with Peter before writing code.
 - [ ] Trace one full path mentally: select → 3 TX cycles → QSO logged → written event contains all fields.
 - [ ] Null-handling in every branch; a missing widget or hidden panel must degrade to null, never raise (follow the IONIS capture's defensive try/except + isVisible pattern, `main_v2.py` ~993–1009).
