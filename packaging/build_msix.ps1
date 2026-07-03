@@ -10,7 +10,7 @@
 # Run from repo root:
 #   .\packaging\build_msix.ps1
 #
-# Output: packaging\QSOPredictor_2.5.5.0_x64.msix
+# Output: packaging\QSOPredictor_<version>_x64.msix (version read from AppxManifest.xml)
 
 $ErrorActionPreference = "Stop"
 
@@ -21,7 +21,12 @@ $StagingDir = Join-Path $PackagingDir "staging"
 $PyInstallerOutput = Join-Path $RepoRoot "dist\QSO Predictor"
 $AssetsDir = Join-Path $PackagingDir "Assets"
 $ManifestPath = Join-Path $PackagingDir "AppxManifest.xml"
-$OutputMsix = Join-Path $PackagingDir "QSOPredictor_2.5.5.0_x64.msix"
+
+# Output filename derives from the manifest version — the single source of truth
+[xml]$Manifest = Get-Content $ManifestPath
+$PackageVersion = $Manifest.Package.Identity.Version
+$OutputMsix = Join-Path $PackagingDir "QSOPredictor_${PackageVersion}_x64.msix"
+Write-Host "Package version from manifest: $PackageVersion" -ForegroundColor Cyan
 
 # Find MakeAppx.exe (handle any SDK version)
 $SdkBinRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
