@@ -1,7 +1,8 @@
 [tool.pytest.ini_options]
-# Tests live in tests/ and are pure-Python — they intentionally do not import
-# anything that drags in PyQt or numpy at collection time. PyQt UI testing
-# would require pytest-qt and a display server; that's deferred.
+# Tests live in tests/. They may import QtCore-based modules (udp_handler,
+# mqtt_client, hunt_manager) — QObject/pyqtSignal work headless with signals
+# connected DirectConnection. No QtWidgets / QApplication anywhere: PyQt UI
+# testing would require pytest-qt and a display server; that's deferred.
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]

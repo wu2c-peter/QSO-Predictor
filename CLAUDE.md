@@ -12,8 +12,26 @@ propagation, pileup competition, and the target's observed behavior.
 venv\Scripts\python.exe main_v2.py   # Windows
 ```
 
-No tests at the moment. After code changes, smoke-test by launching the app
-and watching the log at `~/Library/Application Support/QSO Predictor/logs/qso_predictor.log`
+## Tests
+
+```
+./venv/bin/python3 -m pytest        # from project root
+```
+
+The suite (`tests/`) covers protocol parsing (WSJT-X/JTDX UDP), persisted-
+format contracts (PathStatus display labels, outcome-recorder JSONL schema),
+pure helpers (geometry, bearing, version), cross-module consistency
+(`freq_to_band` copies), and architectural conventions (no `main_v2` imports,
+`utils/` stays stdlib-only). Config lives in `pyproject.toml`. CI runs it on
+every push (`.github/workflows/tests.yml`: Ubuntu 3.10–3.12 + Windows/macOS).
+Tests import QtCore-based modules but never QtWidgets — no display needed.
+
+**When fixing a bug, add a test that reproduces it first** — most of the
+suite's parser cases encode historical user-reported regressions.
+
+UI behavior isn't covered by tests: after UI-touching changes, smoke-test by
+launching the app and watching the log at
+`~/Library/Application Support/QSO Predictor/logs/qso_predictor.log`
 (macOS) or `%APPDATA%\QSO Predictor\logs\qso_predictor.log` (Windows).
 
 ## Module layout
