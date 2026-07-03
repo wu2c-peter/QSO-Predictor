@@ -63,8 +63,18 @@ def _haversine_km(grid1: str, grid2: str) -> int:
 
 
 def _grid_to_latlon(grid: str) -> tuple:
-    """Convert Maidenhead grid to (latitude, longitude) center point."""
+    """Convert Maidenhead grid to (latitude, longitude) center point.
+
+    Raises ValueError for grids with out-of-range characters (e.g. 'ZZ99',
+    which would otherwise convert to an impossible lat 169.5) — callers
+    reach this through _haversine_km, whose except-clause maps it to -1.
+    """
     grid = grid.upper()
+    if not ('A' <= grid[0] <= 'R' and 'A' <= grid[1] <= 'R'):
+        raise ValueError(f"invalid grid field: {grid!r}")
+    if len(grid) >= 6 and not ('A' <= grid[4] <= 'X' and 'A' <= grid[5] <= 'X'):
+        raise ValueError(f"invalid grid subsquare: {grid!r}")
+    # square digits (chars 3-4) are validated by int() below
     lon = (ord(grid[0]) - ord('A')) * 20 - 180
     lat = (ord(grid[1]) - ord('A')) * 10 - 90
     lon += int(grid[2]) * 2

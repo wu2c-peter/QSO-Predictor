@@ -256,21 +256,41 @@ def calculate_bearing(from_grid: str, to_grid: str) -> Optional[float]:
         return None
 
 
+def _is_valid_grid(grid: str) -> bool:
+    """Character-range check for an (already uppercased) Maidenhead locator.
+
+    Validates only the characters the conversion actually reads: field
+    letters A-R, square digits 0-9, subsquare letters A-X. Extra precision
+    beyond 6 chars is ignored, matching the conversion. Without this,
+    junk like 'ZZ99' converts to impossible coordinates (lat 169.5) and
+    poisons downstream bearing/sector math instead of being rejected.
+    """
+    if len(grid) < 2:
+        return False
+    if not ('A' <= grid[0] <= 'R' and 'A' <= grid[1] <= 'R'):
+        return False
+    if len(grid) >= 4 and not ('0' <= grid[2] <= '9' and '0' <= grid[3] <= '9'):
+        return False
+    if len(grid) >= 6 and not ('A' <= grid[4] <= 'X' and 'A' <= grid[5] <= 'X'):
+        return False
+    return True
+
+
 def grid_to_latlon(grid: str) -> Tuple[Optional[float], Optional[float]]:
     """
     Convert Maidenhead grid to lat/lon (center of grid square).
-    
+
     Args:
         grid: Maidenhead locator (2-6 chars)
-        
+
     Returns:
         (latitude, longitude) or (None, None) if invalid
     """
     grid = grid.upper().strip()
-    
-    if len(grid) < 2:
+
+    if not _is_valid_grid(grid):
         return None, None
-    
+
     try:
         # Field (2 chars)
         lon = (ord(grid[0]) - ord('A')) * 20 - 180

@@ -46,10 +46,22 @@ def test_missing_grids_return_none():
     assert calculate_bearing("Z", "FN30") is None
 
 
-@pytest.mark.xfail(reason="grid_to_latlon length-checks but does not "
-                          "range-check characters: 'ZZ99' yields lat 169.5. "
-                          "Known gap — see the range-check follow-up task.",
-                   strict=True)
-def test_junk_grids_would_ideally_return_none():
+def test_junk_grids_return_none():
+    """grid_to_latlon range-checks characters — junk that passes length
+    checks (a malformed 4-char grid in a PSK Reporter spot) must be
+    rejected, not converted to impossible coordinates."""
     assert calculate_bearing("!!", "FN30") is None
     assert calculate_bearing("ZZ99", "FN30") is None
+    assert calculate_bearing("FN30", "ZZ99") is None
+    assert calculate_bearing("FNAA", "FN30") is None    # letters where digits go
+    assert calculate_bearing("FN30ZZ", "FN30") is None  # subsquare past 'X'
+
+
+def test_valid_grids_still_accepted():
+    """Guard against over-tightening: all real locator shapes must pass."""
+    assert_bearing_near(calculate_bearing("fn30", "FN31"), 0)       # lowercase
+    assert_bearing_near(calculate_bearing("FN30as", "FN31as"), 0)   # 6-char
+    assert calculate_bearing("FN", "JO") is not None              # 2-char field
+    assert calculate_bearing("RR73", "FN30") is not None  # valid grid (Siberia)
+                                                          # despite doubling as
+                                                          # the FT8 ack token

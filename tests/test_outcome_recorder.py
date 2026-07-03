@@ -165,6 +165,15 @@ def test_session_end_written_on_app_close(outcome_recorder_home):
     assert events[2]['outcomes'] == 1
 
 
+def test_junk_grid_yields_no_distance():
+    """_grid_to_latlon range-checks characters; _haversine_km maps the
+    rejection to its -1 sentinel (persisted as distance_km: null)."""
+    from outcome_recorder import _haversine_km
+    assert _haversine_km('FN30', 'ZZ99') == -1
+    assert _haversine_km('!!!!', 'FN30') == -1
+    assert _haversine_km('FN30', 'PM95') > 0   # valid pair unaffected
+
+
 def test_followed_false_when_far_from_recommendation(outcome_recorder_home):
     rec = OutcomeRecorder('WU2C', 'FN30')
     make_attempt(rec)
