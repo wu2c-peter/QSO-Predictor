@@ -127,6 +127,7 @@ from utils.version import compare_versions, get_version, is_packaged_install
 try:
     from config_manager import ConfigManager
     from udp_handler import UDPHandler
+    from ft8web_handler import FT8WebHandler
     from analyzer import QSOAnalyzer
     from band_map_widget import BandMapWidget
     from settings_dialog import SettingsDialog
@@ -283,6 +284,7 @@ class MainWindow(QMainWindow):
 
         self.analyzer = QSOAnalyzer(self.config)
         self.udp = UDPHandler(self.config)
+        self.ft8web = FT8WebHandler(self.config)
         
         # --- TARGET TRACKING STATE ---
         self.current_target_call = ""
@@ -376,7 +378,8 @@ class MainWindow(QMainWindow):
         self.perspective_timer.start(3000)  # Refresh every 3 seconds
         
         self.udp.start()
-        
+        self.ft8web.start()
+
         # --- v2.0.6: Solar data fetch with periodic refresh ---
         if SOLAR_AVAILABLE:
             self.fetch_solar_data()
@@ -937,6 +940,11 @@ class MainWindow(QMainWindow):
         self.udp.status_update.connect(self.handle_status_update)
         # v2.0.3: Connect QSO Logged signal
         self.udp.qso_logged.connect(self.on_qso_logged)
+        # FT8web External Data Stream — same slots as the UDP source
+        self.ft8web.new_decode.connect(self.handle_decode)
+        self.ft8web.status_update.connect(self.handle_status_update)
+        self.ft8web.qso_logged.connect(self.on_qso_logged)
+        self.ft8web.client_state_changed.connect(self._on_ft8web_state)
         # Note: Removed cache_updated -> refresh_analysis connection
         # With target perspective, re-analyzing all 500 rows every 2 seconds is too expensive.
         # Reconnect cache_updated to lightweight path refresh (not full analysis)
@@ -1539,11 +1547,21 @@ class MainWindow(QMainWindow):
             self.udp.stop()
             self.udp = UDPHandler(self.config)
             self.udp.start()
+            self.ft8web.stop()
+            self.ft8web = FT8WebHandler(self.config)
+            self.ft8web.start()
             self.setup_connections()
             # Reset decode tracking after settings change
             self._decode_count = 0
             self._decode_start_time = None
     
+
+    def _on_ft8web_state(self, connected):
+        """FT8web stream connected/disconnected — surface it in the status bar."""
+        if connected:
+            self.update_status_msg("FT8web connected — receiving browser decode stream")
+        else:
+            self.update_status_msg("FT8web disconnected")
 
     def open_user_guide(self):
         """Open the User Guide on the project website."""
@@ -1681,6 +1699,7 @@ class MainWindow(QMainWindow):
         
         self.analyzer.stop()
         self.udp.stop()
+        self.ft8web.stop()
         
         # --- v2.1.0: Hide and cleanup tray icon to stop notifications ---
         if hasattr(self, 'tray_icon') and self.tray_icon:

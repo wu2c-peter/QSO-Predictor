@@ -141,7 +141,36 @@ class SettingsDialog(QDialog):
         fwd_help.setStyleSheet("color: #888888;")
         fwd_layout.addRow(fwd_help)
         net_layout.addWidget(fwd_group)
-        
+
+        # FT8web browser client stream
+        ft8web_group = QGroupBox("FT8web Browser Client (Optional)")
+        ft8web_layout = QFormLayout(ft8web_group)
+        self.chk_ft8web = QCheckBox("Listen for FT8web data stream")
+        self.chk_ft8web.setChecked(
+            str(self.config.get('FT8WEB', 'enabled', fallback='false')).lower() == 'true')
+        ft8web_layout.addRow(self.chk_ft8web)
+        self.inp_ft8web_port = QSpinBox()
+        self.inp_ft8web_port.setRange(1024, 65535)
+        try:
+            self.inp_ft8web_port.setValue(
+                int(self.config.get('FT8WEB', 'ws_port', fallback='2442')))
+        except (TypeError, ValueError):
+            self.inp_ft8web_port.setValue(2442)
+        ft8web_layout.addRow("WebSocket port:", self.inp_ft8web_port)
+        ft8web_help = QLabel(
+            "<small>Accepts decodes from <a href='https://ft8web.ok1cdj.com/'>FT8web</a> "
+            "(browser-based FT8/FT4 client) as an alternative to WSJT-X/JTDX.<br>"
+            "In FT8web: Settings → External Data Stream → Enabled, "
+            "URL <b>ws://localhost:2442</b>.<br>"
+            "Received data is also re-broadcast to the forward ports above in "
+            "WSJT-X format, so GridTracker etc. keep working.</small>"
+        )
+        ft8web_help.setWordWrap(True)
+        ft8web_help.setOpenExternalLinks(True)
+        ft8web_help.setStyleSheet("color: #888888;")
+        ft8web_layout.addRow(ft8web_help)
+        net_layout.addWidget(ft8web_group)
+
         net_layout.addStretch()
         tabs.addTab(tab_net, "Network")
 
@@ -338,6 +367,9 @@ class SettingsDialog(QDialog):
         self.config.save_setting('NETWORK', 'udp_ip', self.inp_ip.text())
         self.config.save_setting('NETWORK', 'udp_port', str(self.inp_port.value()))
         self.config.save_setting('NETWORK', 'forward_ports', self.inp_fwd.text())
+        self.config.save_setting('FT8WEB', 'enabled',
+                                'true' if self.chk_ft8web.isChecked() else 'false')
+        self.config.save_setting('FT8WEB', 'ws_port', str(self.inp_ft8web_port.value()))
         self.config.save_setting('APPEARANCE', 'font_family', self.inp_font.currentText())
         self.config.save_setting('APPEARANCE', 'font_size', self.inp_size.text())
         self.config.save_setting('APPEARANCE', 'high_prob_color', self.inp_hi.text())

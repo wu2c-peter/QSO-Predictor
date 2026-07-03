@@ -31,6 +31,53 @@ from PyQt6.QtCore import QObject, pyqtSignal
 logger = logging.getLogger(__name__)
 
 
+def parse_decode_message(message):
+    """Extract (call, grid) of the transmitting station from an FT8/FT4 message.
+
+    Shared by UDPHandler and FT8WebHandler so both sources classify decodes
+    identically. Returns ("", "") when no callsign can be extracted.
+    """
+    # v2.1.3: Strip WSJT-X/JTDX AP (a priori) decoding indicators
+    # These appear as trailing " a1" through " a7" and confuse callsign extraction
+    # (Reported by Brian KB1OPD)
+    message_clean = re.sub(r'\s+a[1-7]$', '', message.strip())
+    parts = message_clean.split()
+    grid = ""
+    call = ""
+
+    def is_suffix(s):
+        s = s.upper()
+        if s in ['73', 'RR73', 'RRR']: return True
+        if s.startswith(('+', '-', 'R+', 'R-')) and len(s) > 1: return True
+        return False
+
+    def is_grid(s):
+        # v2.1.2: Validate Maidenhead grid [A-R][A-R][0-9][0-9]
+        # Previous check was too loose - accepted RR73 (FT8 ack) as grid
+        if len(s) != 4: return False
+        return (s[0].upper() in 'ABCDEFGHIJKLMNOPQR' and
+                s[1].upper() in 'ABCDEFGHIJKLMNOPQR' and
+                s[2].isdigit() and s[3].isdigit())
+
+    if len(parts) >= 3:
+        last = parts[-1]
+        # v2.1.2: Check is_suffix FIRST to prevent FT8 tokens (RR73)
+        # from being misidentified as grid squares
+        if is_suffix(last):
+            call = parts[-2]
+        elif is_grid(last):
+            grid = last
+            call = parts[-2]
+        else:
+            call = last
+
+    elif len(parts) == 2:
+        call = parts[1]
+
+    call = call.strip('<>')
+    return call, grid
+
+
 class UDPHandler(QObject):
     new_decode = pyqtSignal(dict)
     status_update = pyqtSignal(dict)
@@ -406,46 +453,7 @@ class UDPHandler(QObject):
             # 8. Message
             message, idx = self._read_utf8(data, idx)
 
-            # --- Parsing Logic ---
-            # v2.1.3: Strip WSJT-X/JTDX AP (a priori) decoding indicators
-            # These appear as trailing " a1" through " a7" and confuse callsign extraction
-            # (Reported by Brian KB1OPD)
-            message_clean = re.sub(r'\s+a[1-7]$', '', message.strip())
-            parts = message_clean.split()
-            grid = ""
-            call = ""
-
-            def is_suffix(s):
-                s = s.upper()
-                if s in ['73', 'RR73', 'RRR']: return True
-                if s.startswith(('+', '-', 'R+', 'R-')) and len(s) > 1: return True
-                return False
-
-            def is_grid(s):
-                # v2.1.2: Validate Maidenhead grid [A-R][A-R][0-9][0-9]
-                # Previous check was too loose - accepted RR73 (FT8 ack) as grid
-                if len(s) != 4: return False
-                return (s[0].upper() in 'ABCDEFGHIJKLMNOPQR' and
-                        s[1].upper() in 'ABCDEFGHIJKLMNOPQR' and
-                        s[2].isdigit() and s[3].isdigit())
-
-            if len(parts) >= 3:
-                last = parts[-1]
-                # v2.1.2: Check is_suffix FIRST to prevent FT8 tokens (RR73)
-                # from being misidentified as grid squares
-                if is_suffix(last):
-                    call = parts[-2]
-                elif is_grid(last):
-                    grid = last
-                    call = parts[-2]
-                else:
-                    call = last
-
-            elif len(parts) == 2:
-                call = parts[1]
-
-            call = call.strip('<>')
-            # ---------------------
+            call, grid = parse_decode_message(message)
 
             self._decodes_received += 1
             

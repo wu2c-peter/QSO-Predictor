@@ -58,9 +58,13 @@ class HealthMonitor(QObject):
         mw = self.main_window
         warnings = []
 
-        # Check UDP health
+        # Check UDP health — but a live FT8web stream is a valid substitute
+        # source, so UDP silence is expected (and not a problem) while the
+        # browser client is connected.
+        ft8web = getattr(mw, 'ft8web', None)
+        ft8web_active = bool(ft8web and ft8web.is_client_connected())
         udp = getattr(mw, 'udp', None)
-        if udp:
+        if udp and not ft8web_active:
             udp_ok, udp_msg = udp.check_data_health()
             if not udp_ok and udp_msg:
                 warnings.append(udp_msg)

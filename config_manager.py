@@ -58,6 +58,10 @@ DEFAULT_CONFIG = {
     },
     'IONIS': {
         'enabled': 'true'
+    },
+    'FT8WEB': {
+        'enabled': 'false',
+        'ws_port': '2442'
     }
 }
 
