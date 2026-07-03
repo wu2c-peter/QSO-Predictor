@@ -19,6 +19,7 @@
 | `success_prob` | int/null | PredictionWidget | **Calibration**: is QSOP's own prospect index predictive? Brier-style scoring. Note: widget explicitly documents this as "not a statistical probability" — calibration analysis either converts it into one or shows it needs rework. Highest-value field in v2. |
 | `strategy` | str/null | StrategyWidget (`call_now`/`wait`/…) | Does following CALL NOW vs WAIT correlate with outcomes? |
 | `competition_at_select` | int | target row (fixed parser) | Does target-side pileup size at decision time hurt conversion? |
+| `competition_src` | str/null | `'local'` suffix presence in the row's competition string | Preserves provenance the paren parser drops: target-side rivals vs locally-heard callers are distinct phenomena, and the v2.2.1 dedup rule (`effective = max` with local-suffix exclusion) is only reproducible in analysis if the source survives capture. |
 | `competition_max` | int | running max during attempt | Peak pileup vs at-select pileup — which predicts better? |
 | `local_callers_at_select` | int | local caller tracking | Local vs target-side competition are distinct phenomena (v2.2.0 split); which matters? |
 | `my_rank_at_select` | int/null | PileupStatusWidget data | Does SNR rank among callers predict success — the loudest-first thesis applied to own station? |
@@ -95,6 +96,17 @@ All line numbers against main @ v2.5.7 (abf3d5d).
 | `tier1_count_at_tx_bucket` | `band_map._scoring_context['tier1_buckets']` (band_map_widget.py:673; `bucket_size` in same dict) | Key verified; per-bucket lookup shape to confirm at implementation. |
 | trace `txf` | `status['tx_df']` from the UDP status already flowing through `handle_status_update` | — |
 | trace `rank`/`comp`/`lcall`/`path`/`t1` | same sources as their at-select scalars, read at TX rising edge | `path` via **NEW** `PathStatus.compact_code` property. |
+
+**Display-consistency audit (2026-07-03):** historically documented display
+contradictions are fixed (effective_path v2.1.5, competition dedup
+v2.2.0/2.2.1, centralized set_target v2.3.3). The divergent
+`local_intel_integration.get_prediction()/get_strategy()` getters are dead
+code — delete them during v2 implementation so nothing ever captures
+through them. Raw-vs-effective path remains a *by-design* dual
+representation: v2 captures the inputs (raw path + near_me_heard) and the
+displayed conclusions (success_prob, strategy), so effective values are
+derivable and every record doubles as a consistency check between inputs
+and conclusions.
 
 **Trace hot-path design:** `on_status_update()` is called on *every* status
 message (many/sec), pre-throttle (main_v2.py:1208). Building a snapshot dict
