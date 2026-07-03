@@ -46,27 +46,28 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.5.6
+## 🆕 What's New in v2.5.7
 
-### Windows console no longer spams logging errors
+### Better outcome data capture — groundwork for v2.6's personalized recommendations
 
-Python's default Windows console encoding (cp1252) couldn't render the Unicode characters in QSOP's status messages, producing `--- Logging error ---` tracebacks on every target change. The console stream is now reconfigured to UTF-8 with a safe fallback. The file log was always fine; only the console mirror was affected.
+QSO Predictor logs the outcome of every calling attempt locally (what it recommended, what you did, the competition you faced, whether the target came back). **The planned v2.6 will use that history to tune recommendations to how *you* operate.** This release fixes two bugs that were quietly degrading the data:
 
-### Connection-help dialog shows accurate state
+- **Competition was recorded as 0 in every outcome event** due to a format mismatch — one of the most informative signals for "did following the recommendation pay off?" was being lost on every record. Now captured correctly.
+- **Malformed grid squares** (e.g. a junk locator in a PSK Reporter spot) converted to impossible coordinates instead of being rejected, skewing bearing/sector analysis and recorded distances. Grids are now validated character-by-character.
 
-Help → "Connection Help" now reflects whether data is actually flowing — green check for "Data Sources Connected", yellow warning for partial data, original red wording reserved for the no-data case. Previously the dialog always said "No Data Detected" even when both UDP and MQTT were clearly running.
+Worth upgrading promptly: outcome data only accumulates while you operate, and records written by older versions carry the empty competition field forever. The sooner 2.5.7 runs, the more of your own history v2.6 can learn from on day one.
 
-### UDP-silent warning stays visible
+### Also in this release
 
-When WSJT-X / JTDX stops sending decodes, the resulting `⚠ No UDP data received` warning now stays in the status bar instead of flashing once and being overwritten by the analyzer's ~2 s "Tracking N stations" updates. Status warnings are sticky until the underlying condition clears.
-
-### Internal architecture refactor
-
-`main_v2.py` shrank from 3,723 lines to 1,728 lines (-54%) through a multi-stage extraction of widgets, controllers, and pure helpers into focused packages (`widgets/`, `controllers/`, `analyzer/`, `utils/`). No feature behavior changed — every stage was Mac + Windows tested against live WSJT-X / JTDX before merging. Conventions documented in [DEVELOPMENT_NOTES.md](dev-docs/DEVELOPMENT_NOTES.md) and [CLAUDE.md](CLAUDE.md). See [RELEASE_NOTES_v2.5.6.md](dev-docs/RELEASE_NOTES_v2.5.6.md) for the full story.
+Help → User Guide now opens the always-current guide at [qsop.wu2c.net](https://qsop.wu2c.net), and the codebase gained a 285-test automated suite running on Windows/macOS/Linux for every change — the safety net for the v2.6 work. See [RELEASE_NOTES_v2.5.7.md](dev-docs/RELEASE_NOTES_v2.5.7.md) for details.
 
 ---
 
 ## Previous Releases
+
+### v2.5.6
+
+**Windows console logging errors fixed** — the console stream is reconfigured to UTF-8 so Unicode status messages no longer produce `--- Logging error ---` tracebacks. **Connection-help dialog shows accurate state** — green/yellow/red now reflect whether data is actually flowing. **UDP-silent warnings stay visible** instead of being overwritten by routine status updates. **Major internal refactor** — `main_v2.py` shrank 54% into focused packages (`widgets/`, `controllers/`, `analyzer/`, `utils/`) with no behavior change. See [RELEASE_NOTES_v2.5.6.md](dev-docs/RELEASE_NOTES_v2.5.6.md) for the full story.
 
 ### v2.5.5
 
