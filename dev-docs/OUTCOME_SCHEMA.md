@@ -1,6 +1,14 @@
-# OutcomeRecorder Schema v2 — Design
+# OutcomeRecorder Schema — living reference
 
-**Status:** DESIGN — not yet implemented
+**Status:** v2 IMPLEMENTED 2026-07-03 (branch `feat/outcome-schema-v2`);
+this file is the living schema reference (was OUTCOME_SCHEMA_V2_DESIGN.md).
+**Measured size:** 1,205 bytes/event with a 5-cycle trace (~64 bytes per
+trace entry); the 50 MB rotation cap ≈ 40k events.
+**Capture-timing note (implementation):** `success_prob`, `strategy` and
+`target_state` are promoted into the at-select snapshot at the **first TX
+cycle**, not at select — at select the insights panel still displays the
+previous target and `_target_activity_state` was just reset. First
+non-null value wins; later cycles never overwrite.
 **Drafted:** 2026-07-01, WU2C + Claude
 **Motivation:** `OUTCOME_ANALYSIS_2026-07.md`. v1 logs the scoring engine's view of each attempt but discards the tactical picture the operator actually saw — competition, rank, behavioral assessment, the tool's own predictions. v2 captures the *inputs to the decision*, plus a compact per-cycle trace enabling survival/hazard analysis.
 

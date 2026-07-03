@@ -1263,6 +1263,12 @@ class InsightsPanel(QWidget):
         self._my_snr_reporter = None   # v2.3.0: Who reported our SNR
         self._target_competition: str = ""  # v2.2.0: target-side competition from PSK Reporter
         self._near_me_count: int = 0  # v2.1.5: near-me stations for effective path status
+        # Schema v2: retain the last DISPLAYED prediction/strategy objects so
+        # the outcome recorder captures exactly what the user saw. (The
+        # integration-layer getters recompute with different inputs — do not
+        # capture through them.)
+        self._last_prediction: Optional[Prediction] = None
+        self._last_strategy: Optional[StrategyRecommendation] = None
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -1592,18 +1598,20 @@ class InsightsPanel(QWidget):
                     effective_path = PathStatus.REPORTED_IN_REGION
                 
                 prediction = self.predictor.predict_success(
-                    self._current_target, 
+                    self._current_target,
                     features,
                     effective_path
                 )
                 self.prediction_widget.update_display(prediction)
-                
+                self._last_prediction = prediction
+
                 strategy = self.predictor.get_strategy(
                     self._current_target, effective_path,
                     target_competition=self._target_competition
                 )
                 self.strategy_widget.update_display(strategy)
-                
+                self._last_strategy = strategy
+
             except Exception as e:
                 # Log error once, then suppress further attempts
                 if not self._predictor_error_logged:
@@ -1614,26 +1622,30 @@ class InsightsPanel(QWidget):
                 self._predictor_failed = True
                 self.prediction_widget.clear()
                 self.strategy_widget.clear()
+                self._last_prediction = None
+                self._last_strategy = None
         else:
             self.prediction_widget.clear()
             self.strategy_widget.clear()
+            self._last_prediction = None
+            self._last_strategy = None
     
     @staticmethod
     def _parse_competition_count(competition_str: str) -> int:
-        """Extract numeric count from competition string like 'High (5)'."""
-        if not competition_str or competition_str == '--':
-            return 0
-        try:
-            if '(' in competition_str:
-                return int(competition_str.split('(')[1].split(')')[0])
-        except (ValueError, IndexError):
-            pass
-        return 0
+        """Extract numeric count from competition string like 'High (5)'.
+
+        Delegates to the shared parser (utils.parsing) so all competition
+        string consumers agree.
+        """
+        from utils.parsing import parse_competition
+        return parse_competition(competition_str)[0]
     
     def clear(self):
         """Clear all displays."""
         self._current_target = None
         self._near_me_count = 0  # v2.1.5
+        self._last_prediction = None
+        self._last_strategy = None
         self.target_label.setText("Target: —")
         self.pileup_widget.clear()
         self.near_me_widget.clear()  # v2.1.0: Path Intelligence

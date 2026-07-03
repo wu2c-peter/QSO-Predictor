@@ -75,7 +75,7 @@ Single operator, single station, self-selected targets — the operator chooses 
 ## Actions taken / queued
 
 1. ✅ Competition parser fixed (2026-07-01).
-2. Schema v2 (at-select tactical snapshot + per-cycle trace) — see `OUTCOME_SCHEMA_V2_DESIGN.md`.
+2. Schema v2 (at-select tactical snapshot + per-cycle trace) — see `OUTCOME_SCHEMA.md`.
 3. UX candidates motivated by this data: callability ranking in decode table; CONNECTED-interrupt toast; cycle counter with expectation marker; cycle-budget coaching nudge; stall detector; honest rec-confidence display; IONIS reframed as path predictor.
 4. Publishing: the 76%-vs-30% field result is the strongest available pitch material.
 

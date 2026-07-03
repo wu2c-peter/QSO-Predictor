@@ -21,6 +21,8 @@ import time as _time
 
 from PyQt6.QtCore import QObject
 
+from utils.parsing import parse_competition
+
 logger = logging.getLogger(__name__)
 
 
@@ -302,8 +304,56 @@ class TargetCoordinator(QObject):
                 call, grid,
                 band=getattr(mw, '_current_band', ''),
                 sfi=sfi, k=k,
-                path_at_select=path_now
+                path_at_select=path_now,
+                tactical=self._build_tactical_snapshot(mw, row_data)
             )
+
+    def _build_tactical_snapshot(self, mw, row_data):
+        """Schema v2: copy already-computed tactical state at selection time.
+
+        Every value is a copy of state some widget/row already displays —
+        no new computation, no I/O. Missing sources degrade to absent keys
+        (the recorder nulls them). success_prob, strategy and target_state
+        are deliberately NOT captured here: at this instant the insights
+        panel's retained prediction/strategy still describe the previous
+        target (its refresh runs ~1 s later), and set_target has just reset
+        _target_activity_state to 'unknown' (step 2 above). All three are
+        promoted into the snapshot at the first TX cycle instead
+        (OutcomeRecorder._append_trace), by which point they describe THIS
+        target.
+        """
+        t = {}
+        try:
+            if row_data:
+                count, src = parse_competition(str(row_data.get('competition', '')))
+                t['competition_at_select'] = count
+                t['competition_src'] = src
+                t['my_snr_at_target'] = row_data.get('my_snr_at_target')
+                t['best_rival_snr_at_target'] = row_data.get('best_rival_snr')
+
+            intel = getattr(mw, 'local_intel', None)
+            tracker = getattr(intel, 'session_tracker', None) if intel else None
+            if tracker:
+                pileup = tracker.get_pileup_info()
+                t['local_callers_at_select'] = pileup.get('size', 0) if pileup else 0
+                rank = (tracker.get_your_status() or {}).get('rank')
+                t['my_rank_at_select'] = rank if isinstance(rank, int) else None
+                behavior = tracker.get_target_behavior()
+                if behavior:
+                    t['behavior_pattern'] = behavior.get('bayesian_style')
+                    conf = behavior.get('bayesian_confidence')
+                    t['behavior_confidence'] = (int(round(conf * 100))
+                                                if isinstance(conf, (int, float)) else None)
+                    t['behavior_source'] = behavior.get('bayesian_source')
+                    meta = behavior.get('bayesian_metadata')
+                    t['persona'] = meta.get('persona') if isinstance(meta, dict) else None
+
+            panel = getattr(intel, 'insights_panel', None) if intel else None
+            if panel is not None:
+                t['near_me_heard'] = getattr(panel, '_near_me_count', None)
+        except Exception as e:
+            logger.debug(f"Tactical snapshot capture failed: {e}")
+        return t
 
     def clear(self):
         """Clear the current target selection.

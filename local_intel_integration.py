@@ -433,76 +433,12 @@ class LocalIntelligence(QObject):
         for decode_data in decodes:
             self.process_decode(decode_data)
     
-    def get_prediction(self) -> Optional[dict]:
-        """
-        Get current success prediction for target.
-        
-        Returns:
-            Dict with prediction info, or None
-        """
-        if not self._current_target:
-            return None
-        
-        predictor = self.predictor or self.heuristic_predictor
-        if not predictor:
-            return None
-        
-        try:
-            # Build features from current state
-            pileup = self.session_tracker.get_pileup_info()
-            your_status = self.session_tracker.get_your_status()
-            
-            features = {
-                'target_snr': -10,  # Would come from actual decode
-                'your_snr': -10,
-                'band_encoded': 5,
-                'hour_utc': 12,
-                'competition': pileup.get('size', 0) if pileup else 0,
-                'region_encoded': 0,
-                'calls_made': your_status.get('calls_made', 0),
-            }
-            
-            prediction = predictor.predict_success(
-                self._current_target,
-                features,
-                PathStatus.UNKNOWN
-            )
-            
-            return {
-                'probability': prediction.probability,
-                'confidence': prediction.confidence,
-                'explanation': prediction.explanation,
-            }
-        except Exception as e:
-            logger.debug(f"Prediction failed: {e}")
-            return None
-    
-    def get_strategy(self) -> Optional[dict]:
-        """
-        Get current strategy recommendation.
-        
-        Returns:
-            Dict with strategy info, or None
-        """
-        if not self._current_target:
-            return None
-        
-        predictor = self.predictor or self.heuristic_predictor
-        if not predictor or not hasattr(predictor, 'get_strategy'):
-            return None
-        
-        try:
-            strategy = predictor.get_strategy(self._current_target)
-            
-            return {
-                'action': strategy.recommended_action,
-                'frequency': strategy.recommended_frequency,
-                'reasons': strategy.reasons,
-            }
-        except Exception as e:
-            logger.debug(f"Strategy failed: {e}")
-            return None
-    
+    # Schema v2 note: the former get_prediction()/get_strategy() getters were
+    # deleted here. They recomputed prediction/strategy with different inputs
+    # (PathStatus.UNKNOWN, local-only competition) than InsightsPanel.refresh()
+    # displays, and nothing called them. Capture the DISPLAYED objects via
+    # InsightsPanel._last_prediction/_last_strategy instead.
+
     def show_training_dialog(self):
         """Show the training dialog."""
         if hasattr(self, '_main_window'):

@@ -79,6 +79,31 @@ class TestFromDisplay:
         )
 
 
+class TestCompactCodes:
+    """compact_code strings are persisted in outcome_history.jsonl schema-v2
+    trace entries — frozen like display_label."""
+
+    @pytest.mark.parametrize("status,code", [
+        (PathStatus.HEARD_BY_TARGET, "H"),
+        (PathStatus.REPORTED_IN_REGION, "R"),
+        (PathStatus.NOT_REPORTED_IN_REGION, "N"),
+        (PathStatus.NOT_TRANSMITTING, "T"),
+        (PathStatus.NO_REPORTERS, "X"),
+        (PathStatus.UNKNOWN, ""),
+    ])
+    def test_compact_code_frozen(self, status, code):
+        assert status.compact_code == code
+
+    def test_codes_are_distinct(self):
+        codes = [s.compact_code for s in PathStatus]
+        assert len(set(codes)) == len(codes)
+
+    def test_display_label_round_trips_to_compact(self):
+        # The recorder derives trace codes via from_display(...).compact_code
+        assert PathStatus.from_display("Heard by Target").compact_code == "H"
+        assert PathStatus.from_display("garbage").compact_code == ""
+
+
 class TestHasPathEvidence:
     """has_path_evidence partitions the enum into 'real signal' vs 'no data'.
 

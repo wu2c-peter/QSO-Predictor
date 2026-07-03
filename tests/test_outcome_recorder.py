@@ -25,21 +25,48 @@ from local_intel.models import PathStatus
 
 
 SNAPSHOT = {
-    'rec_freq': 1687, 'rec_score': 82.0, 'tx_freq': 1690, 'tx_score': 81.5,
-    'score_reason': 3, 'path': 'Heard by Target', 'competition': 4,
+    'rec_freq': 1687, 'rec_score': 82.0, 'rec_reason': 4,
+    'tx_freq': 1690, 'tx_score': 81.5,
+    'score_reason': 3, 'tier1_count_at_tx_bucket': 2,
+    'path': 'Heard by Target', 'competition': 4,
     'reporters': 12, 'ionis': 'OPEN', 'fh_mode': 'normal',
     'band': '20m', 'sfi': 155, 'k': 2,
 }
 
-# Schema v1 field set — a superset breaks nothing, but a missing or renamed
-# key breaks every analysis script that reads historic files.
+TACTICAL = {
+    'competition_at_select': 3, 'competition_src': 'target',
+    'local_callers_at_select': 2, 'my_rank_at_select': 2,
+    'my_snr_at_target': -11, 'best_rival_snr_at_target': -4,
+    'near_me_heard': 1,
+    'behavior_pattern': 'loudest_first', 'behavior_confidence': 62,
+    'behavior_source': 'historical', 'persona': None,
+}
+
+CYCLE_CTX = {
+    'rank': 3, 'comp': 4, 'lcall': 2, 'path': 'R', 't1': 1, 'txf': 1831,
+    'success_prob': 41, 'strategy': 'call_now', 'target_state': 'cq',
+}
+
+# Schema v2 field set — a superset breaks nothing, but a missing or renamed
+# key breaks every analysis script that reads historic files. The v1 subset
+# must never shrink (v1 events remain valid for the fields they have).
 OUTCOME_FIELDS = {
+    # v1
     'v', 'type', 'ts', 'band', 'outcome',
     'rec_freq', 'rec_score', 'tx_freq', 'tx_score', 'followed',
     'score_delta', 'score_reason',
     'path', 'path_at_select', 'competition', 'reporters', 'ionis', 'fh_mode',
     'sfi', 'k', 'a', 'tx_cycles', 'elapsed_s',
     'hour_utc', 'dow', 'distance_km', 'target_continent',
+    # v2: at-select tactical snapshot
+    'success_prob', 'strategy',
+    'competition_at_select', 'competition_src', 'competition_max',
+    'local_callers_at_select', 'my_rank_at_select',
+    'my_snr_at_target', 'best_rival_snr_at_target', 'near_me_heard',
+    'behavior_pattern', 'behavior_confidence', 'behavior_source',
+    'persona', 'target_state',
+    # v2: terminal additions + per-cycle trace
+    'rec_reason', 'tier1_count_at_tx_bucket', 'trace',
 }
 
 
@@ -49,20 +76,23 @@ def read_events(filepath):
     return [json.loads(line) for line in filepath.read_text().splitlines()]
 
 
-def make_attempt(recorder, call='JA1XYZ', grid='PM95', path=''):
-    """Select a target and simulate one full TX cycle, backdated so the
+def make_attempt(recorder, call='JA1XYZ', grid='PM95', path='',
+                 tactical=None, cycle_ctx=None, cycles=1):
+    """Select a target and simulate TX cycles, backdated so the
     15-second churn filter doesn't discard the attempt."""
     recorder.on_target_selected(call, grid, band='20m', sfi=155, k=2,
-                                path_at_select=path)
-    recorder.on_status_update(True)    # TX rising edge
-    recorder.on_status_update(False)
+                                path_at_select=path, tactical=tactical)
+    fn = (lambda: dict(cycle_ctx)) if cycle_ctx else None
+    for _ in range(cycles):
+        recorder.on_status_update(True, cycle_context_fn=fn)   # rising edge
+        recorder.on_status_update(False, cycle_context_fn=fn)
     if recorder._target_selected_at is not None:   # None when disabled
         recorder._target_selected_at -= timedelta(seconds=60)
 
 
 def test_qso_logged_event_schema(outcome_recorder_home):
     rec = OutcomeRecorder('WU2C', 'FN30')
-    make_attempt(rec)
+    make_attempt(rec, tactical=TACTICAL, cycle_ctx=CYCLE_CTX, cycles=2)
     rec.record_outcome('QSO_LOGGED', SNAPSHOT)
 
     events = read_events(outcome_recorder_home)
@@ -71,14 +101,101 @@ def test_qso_logged_event_schema(outcome_recorder_home):
 
     ev = events[1]
     assert set(ev.keys()) == OUTCOME_FIELDS
-    assert ev['v'] == SCHEMA_VERSION
+    assert ev['v'] == SCHEMA_VERSION == 2
     assert ev['outcome'] == 'QSO_LOGGED'
     assert ev['band'] == '20m'
-    assert ev['tx_cycles'] == 1
+    assert ev['tx_cycles'] == 2
     assert ev['followed'] is True          # |1690-1687| < 100 Hz
     assert ev['score_delta'] == 0.5
     assert ev['target_continent'] == 'AS'  # PM95 = Japan
     assert 9000 < ev['distance_km'] < 12000  # FN30 (NY) -> PM95 (Tokyo)
+
+    # v2: at-select tactical fields pass through verbatim
+    for key, expected in TACTICAL.items():
+        assert ev[key] == expected, key
+    # v2: terminal additions
+    assert ev['rec_reason'] == 4
+    assert ev['tier1_count_at_tx_bucket'] == 2
+    # v2: first-TX promotion — lifted from cycle context, NOT in trace
+    assert ev['success_prob'] == 41
+    assert ev['strategy'] == 'call_now'
+    assert ev['target_state'] == 'cq'
+    # v2: trace — one entry per cycle, promotion keys absent, c increments
+    assert [t['c'] for t in ev['trace']] == [1, 2]
+    for entry in ev['trace']:
+        assert set(entry.keys()) == {'c', 'rank', 'comp', 'lcall',
+                                     'path', 't1', 'txf'}
+    # v2: competition_max = max(at-select 3, per-cycle 4)
+    assert ev['competition_max'] == 4
+
+
+def test_v2_fields_null_without_tactical_data(outcome_recorder_home):
+    """A bare attempt (no tactical snapshot, no cycle context) must still
+    record — every v2 field degrades to null/0/[] per graceful-absence."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    make_attempt(rec)
+    rec.record_outcome('QSO_LOGGED', SNAPSHOT)
+
+    ev = [e for e in read_events(outcome_recorder_home)
+          if e['type'] == 'outcome'][0]
+    assert set(ev.keys()) == OUTCOME_FIELDS
+    assert ev['success_prob'] is None
+    assert ev['strategy'] is None
+    assert ev['my_rank_at_select'] is None
+    assert ev['behavior_pattern'] is None
+    assert ev['competition_at_select'] == 0
+    assert ev['competition_src'] is None
+    assert ev['trace'] == []
+
+
+def test_trace_promotion_only_first_non_null(outcome_recorder_home):
+    """Promotion keys are lifted on the first cycle that has a non-null
+    value and never overwritten by later cycles."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    contexts = iter([
+        {'comp': 2, 'success_prob': None, 'strategy': None, 'target_state': None},
+        {'comp': 5, 'success_prob': 38, 'strategy': 'wait', 'target_state': 'in_qso'},
+        {'comp': 1, 'success_prob': 70, 'strategy': 'call_now', 'target_state': 'cq'},
+    ])
+    rec.on_target_selected('JA1XYZ', 'PM95', band='20m',
+                           tactical={'competition_at_select': 1})
+    for _ in range(3):
+        rec.on_status_update(True, cycle_context_fn=lambda: next(contexts))
+        rec.on_status_update(False)
+    rec._target_selected_at -= timedelta(seconds=60)
+    rec.record_outcome('CLEARED', SNAPSHOT)
+
+    ev = [e for e in read_events(outcome_recorder_home)
+          if e['type'] == 'outcome'][0]
+    assert ev['success_prob'] == 38          # cycle 2 wins, cycle 3 ignored
+    assert ev['strategy'] == 'wait'
+    assert ev['target_state'] == 'in_qso'
+    assert ev['competition_max'] == 5        # running max across cycles
+    assert len(ev['trace']) == 3
+    assert all('success_prob' not in t for t in ev['trace'])
+
+
+def test_trace_cap_halves_rate_beyond_40(outcome_recorder_home):
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    rec.on_target_selected('JA1XYZ', 'PM95', band='20m')
+    for _ in range(50):
+        rec.on_status_update(True, cycle_context_fn=lambda: {'comp': 1})
+        rec.on_status_update(False)
+    cycles = [t['c'] for t in rec._trace]
+    assert cycles[:40] == list(range(1, 41))
+    # Beyond the cap only even cycles are kept; gaps stay explicit
+    assert cycles[40:] == [42, 44, 46, 48, 50]
+
+
+def test_trace_capture_failure_never_breaks_cycle_counting(outcome_recorder_home):
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    def boom():
+        raise RuntimeError("widget went away")
+    rec.on_target_selected('JA1XYZ', 'PM95', band='20m')
+    rec.on_status_update(True, cycle_context_fn=boom)
+    rec.on_status_update(False)
+    assert rec._tx_cycle_count == 1
+    assert rec._trace == []
 
 
 def test_path_status_labels_persist_byte_identical(outcome_recorder_home):

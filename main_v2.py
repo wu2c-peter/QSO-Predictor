@@ -121,6 +121,7 @@ except ImportError as e:
     logger.warning(f"OutcomeRecorder not available: {e}")
 
 
+from utils.parsing import parse_competition
 from utils.version import compare_versions, get_version, is_packaged_install
 
 
@@ -967,9 +968,12 @@ class MainWindow(QMainWindow):
         # Recommended frequency and score
         rec_freq = getattr(self.band_map, 'best_offset', 0) or 0
         rec_score = 0
+        rec_reason = 0
         if hasattr(self.band_map, 'score_map') and 0 <= rec_freq < len(self.band_map.score_map):
             rec_score = float(self.band_map.score_map[rec_freq])
-        
+        if hasattr(self.band_map, 'score_reason') and 0 <= rec_freq < len(self.band_map.score_reason):
+            rec_reason = int(self.band_map.score_reason[rec_freq])
+
         # Actual TX frequency and score
         tx_freq = getattr(self.band_map, 'current_tx_freq', 0) or 0
         tx_score = 0
@@ -982,16 +986,10 @@ class MainWindow(QMainWindow):
         # Path and competition from current target row
         path = ''
         competition = 0
-        if self.current_target_call:
-            for row in self.model._data:
-                if row.get('call') == self.current_target_call:
-                    path = str(row.get('path', ''))
-                    comp_str = str(row.get('competition', ''))
-                    # "Low (2)", "Medium (3) + QRM", "High (4) local" → count
-                    # in parens; "Clear"/"Unknown"/"--" have none → 0
-                    m = re.search(r'\((\d+)\)', comp_str)
-                    competition = int(m.group(1)) if m else 0
-                    break
+        row = self._current_target_row()
+        if row:
+            path = str(row.get('path', ''))
+            competition, _ = parse_competition(str(row.get('competition', '')))
         
         # Reporter count from scoring context
         reporters = 0
@@ -1028,12 +1026,22 @@ class MainWindow(QMainWindow):
             sfi = self._solar_data.get('sfi', 0)
             k = self._solar_data.get('k', 0)
         
+        # Schema v2: tier-1 count at the bucket containing the TX frequency
+        tier1_at_tx = None
+        ctx = getattr(self.band_map, '_scoring_context', None) or {}
+        if tx_freq and ctx.get('tier1_buckets') is not None:
+            bucket_size = ctx.get('bucket_size', 60) or 60
+            bucket = round(tx_freq / bucket_size) * bucket_size
+            tier1_at_tx = ctx['tier1_buckets'].get(bucket, 0)
+
         return {
             'rec_freq': rec_freq,
             'rec_score': rec_score,
+            'rec_reason': rec_reason,
             'tx_freq': tx_freq,
             'tx_score': tx_score,
             'score_reason': score_reason,
+            'tier1_count_at_tx_bucket': tier1_at_tx,
             'path': path,
             'competition': competition,
             'reporters': reporters,
@@ -1044,6 +1052,66 @@ class MainWindow(QMainWindow):
             'k': k,
             'a': None,  # A-index not yet implemented
         }
+
+    def _current_target_row(self):
+        """Return the decode-table row dict for the current target, or None."""
+        if not self.current_target_call:
+            return None
+        for row in self.model._data:
+            if row.get('call') == self.current_target_call:
+                return row
+        return None
+
+    def _build_cycle_context(self, status):
+        """Schema v2: per-TX-cycle trace entry for the OutcomeRecorder.
+
+        Invoked only on TX rising edges (~once per 15 s) via the lazy
+        callable passed to on_status_update — never on the many-per-second
+        status messages. Copies already-computed UI state; every source is
+        optional and degrades to a missing/None value.
+
+        success_prob / strategy / target_state ride along for first-TX
+        promotion into the at-select snapshot (the recorder pops them out;
+        they never appear in trace entries).
+        """
+        ctx = {}
+        try:
+            row = self._current_target_row()
+            if row:
+                comp, _ = parse_competition(str(row.get('competition', '')))
+                ctx['comp'] = comp
+                ctx['path'] = PathStatus.from_display(
+                    str(row.get('path', ''))).compact_code
+
+            intel = self.local_intel
+            tracker = getattr(intel, 'session_tracker', None) if intel else None
+            if tracker:
+                pileup = tracker.get_pileup_info()
+                ctx['lcall'] = pileup.get('size', 0) if pileup else 0
+                rank = (tracker.get_your_status() or {}).get('rank')
+                ctx['rank'] = rank if isinstance(rank, int) else None
+
+            tx_df = status.get('tx_df', 0)
+            ctx['txf'] = tx_df
+            sctx = getattr(self.band_map, '_scoring_context', None) or {}
+            if tx_df and sctx.get('tier1_buckets') is not None:
+                bucket_size = sctx.get('bucket_size', 60) or 60
+                bucket = round(tx_df / bucket_size) * bucket_size
+                ctx['t1'] = sctx['tier1_buckets'].get(bucket, 0)
+
+            panel = getattr(intel, 'insights_panel', None) if intel else None
+            if panel is not None:
+                pred = getattr(panel, '_last_prediction', None)
+                ctx['success_prob'] = (int(round(pred.probability * 100))
+                                       if pred is not None else None)
+                strat = getattr(panel, '_last_strategy', None)
+                ctx['strategy'] = (getattr(strat, 'recommended_action', None)
+                                   if strat is not None else None)
+            state = getattr(self, '_target_activity_state', None)
+            ctx['target_state'] = state if state and state != 'unknown' else None
+        except Exception as e:
+            logger.debug(f"Cycle context capture failed: {e}")
+        return ctx
     
     def _record_outcome_for_current_target(self, trigger: str):
         """Record outcome for the current target if OutcomeRecorder is active.
@@ -1212,9 +1280,12 @@ class MainWindow(QMainWindow):
         
         # --- OUTCOME RECORDER: Track TX cycle edges (before throttle) ---
         # Must run on every status update for reliable rising-edge detection.
-        # Single boolean comparison — zero cost.
+        # Single boolean comparison — zero cost. The context lambda is only
+        # invoked on TX rising edges (~once per 15 s), never per message.
         if self.outcome_recorder:
-            self.outcome_recorder.on_status_update(status.get('transmitting', False))
+            self.outcome_recorder.on_status_update(
+                status.get('transmitting', False),
+                cycle_context_fn=lambda: self._build_cycle_context(status))
         
         # Throttle remaining UI updates: JTDX sends status many times per second
         if hasattr(self, '_last_status_time') and (now - self._last_status_time) < 0.5:

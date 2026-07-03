@@ -67,6 +67,15 @@ class PathStatus(Enum):
         return _PATH_TOOLTIP[self]
 
     @property
+    def compact_code(self) -> str:
+        """One-letter code for the outcome recorder's per-cycle trace.
+
+        Persisted to outcome_history.jsonl (schema v2) — frozen like
+        display_label. UNKNOWN maps to "" so absent evidence stays falsy.
+        """
+        return _PATH_COMPACT[self]
+
+    @property
     def has_path_evidence(self) -> bool:
         """True when the path classification reflects real propagation data.
 
@@ -86,6 +95,7 @@ _PATH_SHORT: Dict["PathStatus", str] = {}
 _PATH_COLOR: Dict["PathStatus", str] = {}
 _PATH_ROW_BACKGROUND: Dict["PathStatus", str] = {}
 _PATH_TOOLTIP: Dict["PathStatus", str] = {}
+_PATH_COMPACT: Dict["PathStatus", str] = {}
 _PATH_FROM_DISPLAY: Dict[str, "PathStatus"] = {}
 _PATH_NO_EVIDENCE: set = set()
 
@@ -125,6 +135,14 @@ def _init_path_status_tables() -> None:
         PathStatus.NOT_REPORTED_IN_REGION: "",
         PathStatus.NOT_TRANSMITTING: "",
         PathStatus.NO_REPORTERS: "",
+        PathStatus.UNKNOWN: "",
+    })
+    _PATH_COMPACT.update({
+        PathStatus.HEARD_BY_TARGET: "H",
+        PathStatus.REPORTED_IN_REGION: "R",
+        PathStatus.NOT_REPORTED_IN_REGION: "N",
+        PathStatus.NOT_TRANSMITTING: "T",
+        PathStatus.NO_REPORTERS: "X",
         PathStatus.UNKNOWN: "",
     })
     _PATH_FROM_DISPLAY.update({

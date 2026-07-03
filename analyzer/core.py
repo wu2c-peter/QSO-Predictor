@@ -1025,7 +1025,8 @@ class QSOAnalyzer(QObject):
             seen_senders = set()
             competition_count = 0
             strong_qrm = False
-            
+            best_rival_snr = None  # schema v2: strongest rival at target's end
+
             # Count Tier 1 and Tier 2 at full weight
             for tier_name in ['tier1', 'tier2']:
                 for spot in perspective.get(tier_name, []):
@@ -1035,8 +1036,12 @@ class QSOAnalyzer(QObject):
                         if sender and sender not in seen_senders:
                             competition_count += 1
                             seen_senders.add(sender)
-                            if spot.get('snr', -99) > 0:
-                                strong_qrm = True
+                            snr = spot.get('snr', None)
+                            if snr is not None:
+                                if snr > 0:
+                                    strong_qrm = True
+                                if best_rival_snr is None or snr > best_rival_snr:
+                                    best_rival_snr = snr
             
             # Count Tier 3 at 50% weight
             tier3_count = 0
@@ -1101,6 +1106,7 @@ class QSOAnalyzer(QObject):
             # in the Path field (with freshness). Competition shows actual pileup count.
             
             decode_data['competition'] = comp_str
+            decode_data['best_rival_snr'] = best_rival_snr  # schema v2
             geo_bonus -= qrm_penalty  # Factor competition into probability
         else:
             # For bulk analysis, just use path status as competition placeholder

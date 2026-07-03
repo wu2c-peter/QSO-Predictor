@@ -32,7 +32,12 @@ logger = logging.getLogger(__name__)
 MAX_FILE_SIZE_MB = 50
 
 # Schema version — increment when event format changes
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Per-cycle trace: hard cap on entries. Beyond the cap, only every other
+# cycle is appended ('c' values make the gaps explicit), so marathon
+# attempts can't bloat events.
+TRACE_CAP = 40
 
 
 def _haversine_km(grid1: str, grid2: str) -> int:
@@ -188,6 +193,10 @@ class OutcomeRecorder:
         self._tx_cycle_count = 0
         self._target_responded = False
         self._was_transmitting = False  # Edge detection for TX cycles
+        # Schema v2: at-select tactical snapshot + per-cycle trace
+        self._at_select = {}            # tactical predictors captured at select
+        self._trace = []                # one compact entry per TX cycle
+        self._competition_max = 0       # running max across the attempt
         
         # Session tracking — sessions are tied to target activity, not app lifetime.
         # A session starts when the first target is selected and ends when no
@@ -215,7 +224,8 @@ class OutcomeRecorder:
 
     def on_target_selected(self, call: str, grid: str,
                            band: str = "", sfi: int = 0, k: int = 0,
-                           path_at_select: str = ""):
+                           path_at_select: str = "",
+                           tactical: dict = None):
         """Called when user selects a new target.
         
         If no session is active (or the gap since last activity exceeds
@@ -234,6 +244,10 @@ class OutcomeRecorder:
             k: K-index (for session_start marker)
             path_at_select: Path status at moment of selection (predictive,
                            before user calls — NOT tautological with outcome)
+            tactical: Schema v2 — dict of tactical predictors captured at
+                     select time (success_prob, strategy, competition, rank,
+                     SNR margins, behavior, target_state, ...). Copied as-is
+                     into the outcome event; missing keys become nulls.
         """
         if not self._enabled:
             return
@@ -273,28 +287,37 @@ class OutcomeRecorder:
         self._tx_cycle_count = 0
         self._target_responded = False
         self._was_transmitting = False
+        # Schema v2: tactical snapshot + trace reset
+        self._at_select = dict(tactical) if tactical else {}
+        self._trace = []
+        self._competition_max = self._at_select.get('competition_at_select') or 0
 
-    def on_status_update(self, transmitting: bool):
+    def on_status_update(self, transmitting: bool, cycle_context_fn=None):
         """Called on each UDP status update — detects TX cycle edges.
-        
+
         Counts rising edges of 'transmitting' flag. This fires once
         per TX period, not continuously while transmitting.
-        
+
         Also triggers deferred session_start on first TX — ensures
         sessions only exist when the user actually transmits.
-        
+
         Args:
             transmitting: Current TX state from UDP Type 1
+            cycle_context_fn: Schema v2 — zero-arg callable returning the
+                per-cycle trace dict (rank/comp/lcall/path/t1/txf). Called
+                ONLY on the rising edge (~once per 15 s TX cycle), never on
+                the many-per-second status messages in between, so callers
+                can pass a lambda that reads UI state without hot-path cost.
         """
         if not self._enabled or not self._current_target:
             return
-        
+
         # Rising edge detection: was not transmitting, now is
         if transmitting and not self._was_transmitting:
             self._tx_cycle_count += 1
             if self._first_tx_at is None:
                 self._first_tx_at = datetime.utcnow()
-                
+
                 # Deferred session start — first TX cycle confirms
                 # the user is actually operating, not just browsing
                 if not self._session_active and self._pending_session:
@@ -304,8 +327,38 @@ class OutcomeRecorder:
                         ps['band'], ps['sfi'], ps['k']
                     )
                     self._pending_session = None
-        
+
+            self._append_trace(cycle_context_fn)
+
         self._was_transmitting = transmitting
+
+    def _append_trace(self, cycle_context_fn):
+        """Schema v2: append one compact trace entry for this TX cycle.
+
+        Never raises — trace capture must not disturb TX-edge accounting.
+        """
+        if cycle_context_fn is None:
+            return
+        # Past the cap, keep only every other cycle; 'c' preserves gaps
+        if len(self._trace) >= TRACE_CAP and self._tx_cycle_count % 2 == 1:
+            return
+        try:
+            ctx = cycle_context_fn() or {}
+            # First-TX promotion: these describe the current target only
+            # once the attempt is underway (panel refresh lag / activity
+            # state reset at select) — lift them out of the cycle context
+            # into the at-select snapshot on the first cycle that has them.
+            for key in ('success_prob', 'strategy', 'target_state'):
+                if key in ctx:
+                    value = ctx.pop(key)
+                    if self._at_select.get(key) is None and value is not None:
+                        self._at_select[key] = value
+            comp = ctx.get('comp')
+            if isinstance(comp, int) and comp > self._competition_max:
+                self._competition_max = comp
+            self._trace.append({'c': self._tx_cycle_count, **ctx})
+        except Exception as e:
+            logger.debug(f"OutcomeRecorder: trace capture failed: {e}")
 
     def on_decode(self, from_call: str, message: str):
         """Called on each decoded message — checks for target response.
@@ -436,6 +489,32 @@ class OutcomeRecorder:
             "reporters": snapshot.get('reporters', 0),
             "ionis": snapshot.get('ionis', ''),
             "fh_mode": snapshot.get('fh_mode', 'normal'),
+
+            # --- Schema v2: at-select tactical snapshot ---
+            # (see dev-docs/OUTCOME_SCHEMA.md; each field maps to a
+            # named hypothesis; nulls are expected, never blocking)
+            "success_prob": self._at_select.get('success_prob'),
+            "strategy": self._at_select.get('strategy'),
+            "competition_at_select": self._at_select.get('competition_at_select', 0),
+            "competition_src": self._at_select.get('competition_src'),
+            "competition_max": self._competition_max,
+            "local_callers_at_select": self._at_select.get('local_callers_at_select', 0),
+            "my_rank_at_select": self._at_select.get('my_rank_at_select'),
+            "my_snr_at_target": self._at_select.get('my_snr_at_target'),
+            "best_rival_snr_at_target": self._at_select.get('best_rival_snr_at_target'),
+            "near_me_heard": self._at_select.get('near_me_heard'),
+            "behavior_pattern": self._at_select.get('behavior_pattern'),
+            "behavior_confidence": self._at_select.get('behavior_confidence'),
+            "behavior_source": self._at_select.get('behavior_source'),
+            "persona": self._at_select.get('persona'),
+            "target_state": self._at_select.get('target_state'),
+
+            # --- Schema v2: terminal-capture additions ---
+            "rec_reason": snapshot.get('rec_reason', 0),
+            "tier1_count_at_tx_bucket": snapshot.get('tier1_count_at_tx_bucket'),
+
+            # --- Schema v2: per-cycle trace ---
+            "trace": self._trace,
             
             # Solar conditions
             "sfi": snapshot.get('sfi', 0),
@@ -473,6 +552,9 @@ class OutcomeRecorder:
         self._tx_cycle_count = 0
         self._first_tx_at = None
         self._was_transmitting = False
+        self._at_select = {}
+        self._trace = []
+        self._competition_max = 0
 
     def on_app_close(self):
         """Clean shutdown — flush pending outcome and close session.
