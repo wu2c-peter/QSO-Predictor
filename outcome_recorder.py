@@ -23,7 +23,7 @@ import json
 import logging
 import math
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -252,7 +252,7 @@ class OutcomeRecorder:
         if not self._enabled:
             return
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Session management: check if existing session has expired
         if self._session_active and self._last_activity_time:
@@ -316,14 +316,14 @@ class OutcomeRecorder:
         if transmitting and not self._was_transmitting:
             self._tx_cycle_count += 1
             if self._first_tx_at is None:
-                self._first_tx_at = datetime.utcnow()
+                self._first_tx_at = datetime.now(timezone.utc)
 
                 # Deferred session start — first TX cycle confirms
                 # the user is actually operating, not just browsing
                 if not self._session_active and self._pending_session:
                     ps = self._pending_session
                     self._start_session(
-                        self._target_selected_at or datetime.utcnow(),
+                        self._target_selected_at or datetime.now(timezone.utc),
                         ps['band'], ps['sfi'], ps['k']
                     )
                     self._pending_session = None
@@ -415,7 +415,7 @@ class OutcomeRecorder:
         if not self._target_selected_at:
             return
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         elapsed_s = int((now - self._target_selected_at).total_seconds())
         
         # --- Filter non-attempts ---
@@ -469,7 +469,7 @@ class OutcomeRecorder:
         event = {
             "v": SCHEMA_VERSION,
             "type": "outcome",
-            "ts": now.isoformat() + 'Z',
+            "ts": now.isoformat().replace("+00:00", "Z"),
             "band": snapshot.get('band', ''),
             "outcome": outcome,
             
@@ -594,7 +594,7 @@ class OutcomeRecorder:
         self._write_event({
             "v": SCHEMA_VERSION,
             "type": "session_start",
-            "ts": now.isoformat() + 'Z',
+            "ts": now.isoformat().replace("+00:00", "Z"),
             "band": band or "",
             "sfi": sfi,
             "k": k,
@@ -603,7 +603,7 @@ class OutcomeRecorder:
 
     def _end_session(self):
         """Write session_end marker and deactivate session."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # If last activity was long ago (e.g., app left running overnight),
         # use the last activity time as the effective session end, not now.
@@ -620,7 +620,7 @@ class OutcomeRecorder:
         self._write_event({
             "v": SCHEMA_VERSION,
             "type": "session_end",
-            "ts": effective_end.isoformat() + 'Z',
+            "ts": effective_end.isoformat().replace("+00:00", "Z"),
             "outcomes": self._session_outcome_count,
             "elapsed_s": elapsed,
         })
