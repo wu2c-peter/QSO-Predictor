@@ -779,7 +779,7 @@ class BehaviorWidget(QGroupBox):
                         # Prefix-based prediction
                         prefix = metadata['prefix']
                         sample = metadata.get('sample_stations', 0)
-                        self.advice_label.setText(f"Based on {sample} {prefix} stations ({qso_count} live)")
+                        self.advice_label.setText(f"Weak prior: {sample} {prefix} stations ({qso_count} live)")
                     else:
                         self.advice_label.setText(f"ML prediction ({qso_count} live QSOs)")
                 elif source == 'bayesian' and qso_count > 0:

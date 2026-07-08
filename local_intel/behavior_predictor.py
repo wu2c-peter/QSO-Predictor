@@ -347,10 +347,20 @@ class BehaviorPredictor:
         # loop. Safe to call on every startup — idempotent, fails gracefully.
         self._cleanup_orphaned_pending_file()
     
+    # Single-letter ITU series where one entity owns the whole letter, so the
+    # digit after it is just a call area: W1/W5 are both USA, G3/G7 both UK.
+    # Every other single letter + digit selects a country (E5 Cook Islands vs
+    # E7 Bosnia, S5 Slovenia vs S7 Seychelles) and must keep its digit.
+    _CALL_AREA_LETTERS = frozenset('BFGIKLMNRUW')
+
+    # Minimum distinct stations sharing a prefix before their aggregate is
+    # offered as a prior — below this it's an anecdote, not a statistic.
+    PREFIX_PRIOR_MIN_STATIONS = 5
+
     def _extract_prefix(self, callsign: str) -> str:
         """
         Extract country prefix from callsign for aggregation.
-        
+
         Examples:
             W1ABC -> W
             JA1ABC -> JA
@@ -358,10 +368,16 @@ class BehaviorPredictor:
             VK2ABC -> VK
             9A1ABC -> 9A
             3DA0ABC -> 3DA
+            E51WL -> E5
+            S79KW -> S7
         """
         import re
         callsign = callsign.upper().strip()
-        
+
+        match = re.match(r'^([A-Z])(\d)', callsign)
+        if match and match.group(1) not in self._CALL_AREA_LETTERS:
+            return match.group(1) + match.group(2)
+
         # Match prefix pattern: optional digit, 1-2 letters (stop before trailing digit)
         # This captures country prefix without call area: W, JA, DL, VK, 9A, 3DA, etc.
         match = re.match(r'^(\d?[A-Z]{1,2})(?:[A-Z]|\d)', callsign)
@@ -427,9 +443,9 @@ class BehaviorPredictor:
         
         stats = self._prefix_stats[prefix]
         
-        # Need meaningful sample (at least 2 stations with this prefix)
-        if stats['total_stations'] < 2:
-            logger.debug(f"prefix: {callsign} -> {prefix}: only {stats['total_stations']} station(s), need 2+")
+        # Need meaningful sample
+        if stats['total_stations'] < self.PREFIX_PRIOR_MIN_STATIONS:
+            logger.debug(f"prefix: {callsign} -> {prefix}: only {stats['total_stations']} station(s), need {self.PREFIX_PRIOR_MIN_STATIONS}+")
             return None
         
         total = stats['loudest_first'] + stats['methodical'] + stats['random']
