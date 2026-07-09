@@ -1,0 +1,507 @@
+From 1ceaa3d2069c1f4c8849dd93cbf186d358ca5c59 Mon Sep 17 00:00:00 2001
+From: Peter Hirst <peter.hirst@gmail.com>
+Date: Fri, 3 Jul 2026 10:11:34 -0400
+Subject: [PATCH] feat: optional External Data Stream (JSON over local
+ WebSocket)
+
+Pushes decodes, rig status and logged QSOs to a configurable
+ws://localhost endpoint so desktop companion tools (GridTracker,
+JTAlert, QSO Predictor, loggers) can consume FT8web the way they
+consume WSJT-X UDP today. Off by default; one-way; fire-and-forget
+with auto-reconnect. Includes a reference Python bridge that
+re-emits WSJT-X-protocol UDP datagrams for unmodified consumers.
+---
+ examples/udp-bridge/ft8web_udp_bridge.py | 166 +++++++++++++++++++++
+ src/App.tsx                              |  84 ++++++++++-
+ src/services/ExternalStreamService.ts    | 175 +++++++++++++++++++++++
+ 3 files changed, 423 insertions(+), 2 deletions(-)
+ create mode 100644 examples/udp-bridge/ft8web_udp_bridge.py
+ create mode 100644 src/services/ExternalStreamService.ts
+
+diff --git a/examples/udp-bridge/ft8web_udp_bridge.py b/examples/udp-bridge/ft8web_udp_bridge.py
+new file mode 100644
+index 0000000..2892041
+--- /dev/null
++++ b/examples/udp-bridge/ft8web_udp_bridge.py
+@@ -0,0 +1,166 @@
++#!/usr/bin/env python3
++"""FT8web -> WSJT-X UDP bridge.
++
++Accepts FT8web's External Data Stream (JSON over WebSocket, schema v1) and
++re-emits WSJT-X-protocol UDP datagrams (Heartbeat, Status, Decode,
++QSO Logged), so existing ecosystem tools — GridTracker, JTAlert,
++QSO Predictor, logging programs — work with FT8web unmodified.
++
++Usage:
++    pip install websockets
++    python3 ft8web_udp_bridge.py                  # WS :2442 -> UDP 127.0.0.1:2237
++    python3 ft8web_udp_bridge.py --udp-port 2238  # custom UDP target
++
++Then in FT8web: Settings -> External Data Stream -> Enabled,
++URL ws://localhost:2442.
++"""
++
++import argparse
++import asyncio
++import datetime
++import json
++import socket
++import struct
++
++MAGIC = 0xADBCCBDA
++SCHEMA = 2
++CLIENT_ID = "FT8web"
++
++# WSJT-X Decode packets carry a one-character mode code.
++MODE_CODES = {"FT8": "~", "FT4": "+"}
++
++
++def qutf8(s: str) -> bytes:
++    b = (s or "").encode("utf-8")
++    return struct.pack(">I", len(b)) + b
++
++
++def header(msg_type: int) -> bytes:
++    return struct.pack(">III", MAGIC, SCHEMA, msg_type) + qutf8(CLIENT_ID)
++
++
++def qtime_ms(hhmmss: str) -> int:
++    """'HHMMSS' (or 'HHMM') -> milliseconds since UTC midnight."""
++    hhmmss = (hhmmss or "").ljust(6, "0")
++    h, m, s = int(hhmmss[0:2]), int(hhmmss[2:4]), int(hhmmss[4:6])
++    return ((h * 60 + m) * 60 + s) * 1000
++
++
++def qdatetime_now() -> bytes:
++    """QDateTime: julian day (i64) + ms since midnight (u32) + timespec (u8=UTC)."""
++    now = datetime.datetime.now(datetime.timezone.utc)
++    julian_day = now.date().toordinal() + 1721425
++    ms = ((now.hour * 60 + now.minute) * 60 + now.second) * 1000
++    return struct.pack(">qIB", julian_day, ms, 1)
++
++
++def heartbeat_pkt() -> bytes:
++    return header(0) + struct.pack(">I", 3) + qutf8("2.6.1") + qutf8("FT8web-bridge")
++
++
++def status_pkt(msg: dict) -> bytes:
++    mode = msg.get("mode", "FT8")
++    p = header(1)
++    p += struct.pack(">Q", int(msg.get("dialFreqHz", 0)))   # dial frequency
++    p += qutf8(mode)                                        # mode
++    p += qutf8(msg.get("dxCall", ""))                       # DX call
++    p += qutf8("")                                          # report
++    p += qutf8(mode)                                        # TX mode
++    p += struct.pack(">?", bool(msg.get("txEnabled")))      # TX enabled
++    p += struct.pack(">?", bool(msg.get("transmitting")))   # transmitting
++    p += struct.pack(">?", False)                           # decoding
++    p += struct.pack(">I", int(msg.get("txFreqHz", 0)))     # RX DF
++    p += struct.pack(">I", int(msg.get("txFreqHz", 0)))     # TX DF
++    p += qutf8(msg.get("myCall", ""))                       # DE call
++    p += qutf8(msg.get("myGrid", ""))                       # DE grid
++    p += qutf8("")                                          # DX grid
++    p += struct.pack(">?", False)                           # TX watchdog
++    p += qutf8("")                                          # submode
++    p += struct.pack(">?", False)                           # fast mode
++    p += struct.pack(">B", 0)                               # special op mode
++    return p
++
++
++def decode_pkts(msg: dict):
++    mode_code = MODE_CODES.get(msg.get("mode", "FT8"), "~")
++    for d in msg.get("decodes", []):
++        p = header(2)
++        p += struct.pack(">?", True)                        # is new
++        p += struct.pack(">I", qtime_ms(d.get("time", ""))) # time
++        p += struct.pack(">i", int(d.get("snr", 0)))        # SNR
++        p += struct.pack(">d", 0.0)                         # delta time (n/a)
++        p += struct.pack(">I", int(d.get("freq", 0)))       # delta frequency
++        p += qutf8(mode_code)                               # mode
++        p += qutf8(d.get("message", ""))                    # message
++        p += struct.pack(">?", False)                       # low confidence
++        p += struct.pack(">?", False)                       # off air
++        yield p
++
++
++def qso_logged_pkt(msg: dict) -> bytes:
++    p = header(5)
++    p += qdatetime_now()                                    # date/time off
++    p += qutf8(msg.get("call", ""))                         # DX call
++    p += qutf8(msg.get("grid", ""))                         # DX grid
++    p += struct.pack(">Q", int(msg.get("dialFreqHz", 0)))   # TX frequency
++    p += qutf8(msg.get("mode", "FT8"))                      # mode
++    p += qutf8(msg.get("rstSent", ""))                      # report sent
++    p += qutf8(msg.get("rstRcvd", ""))                      # report received
++    p += qutf8("")                                          # TX power
++    p += qutf8("")                                          # comments
++    p += qutf8("")                                          # name
++    p += qdatetime_now()                                    # date/time on
++    return p
++
++
++async def main() -> None:
++    import websockets
++
++    ap = argparse.ArgumentParser(description=__doc__)
++    ap.add_argument("--ws-port", type=int, default=2442, help="WebSocket listen port (default 2442)")
++    ap.add_argument("--udp-host", default="127.0.0.1", help="UDP target host (default 127.0.0.1)")
++    ap.add_argument("--udp-port", type=int, default=2237, help="UDP target port (default 2237)")
++    args = ap.parse_args()
++
++    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
++    target = (args.udp_host, args.udp_port)
++
++    def emit(pkt: bytes) -> None:
++        sock.sendto(pkt, target)
++
++    async def handler(ws) -> None:
++        print(f"FT8web connected from {ws.remote_address}")
++        try:
++            async for raw in ws:
++                try:
++                    msg = json.loads(raw)
++                except json.JSONDecodeError:
++                    continue
++                mtype = msg.get("type")
++                if mtype == "decode":
++                    for pkt in decode_pkts(msg):
++                        emit(pkt)
++                elif mtype == "status":
++                    emit(status_pkt(msg))
++                elif mtype == "qso_logged":
++                    emit(qso_logged_pkt(msg))
++                    print(f"QSO logged: {msg.get('call')} {msg.get('grid')}")
++        finally:
++            print("FT8web disconnected")
++
++    async def heartbeats() -> None:
++        while True:
++            emit(heartbeat_pkt())
++            await asyncio.sleep(15)
++
++    print(f"Listening for FT8web on ws://localhost:{args.ws_port}, "
++          f"emitting WSJT-X UDP to {args.udp_host}:{args.udp_port}")
++    async with websockets.serve(handler, "localhost", args.ws_port):
++        await heartbeats()
++
++
++if __name__ == "__main__":
++    try:
++        asyncio.run(main())
++    except KeyboardInterrupt:
++        pass
+diff --git a/src/App.tsx b/src/App.tsx
+index d634c3a..d341701 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -12,6 +12,7 @@ import { logBook, QSO } from './LogBook';
+ import { CloudLogService } from './services/CloudLogService';
+ import { LogbookService } from './services/LogbookService';
+ import { dxccService } from './services/DxccService';
++import { externalStream } from './services/ExternalStreamService';
+ 
+ export interface FT8DecodedMessage {
+   time: string;
+@@ -368,6 +369,23 @@ export default function App() {
+     return localStorage.getItem('ft8_wavelogStationProfileId') || '';
+   });
+ 
++  const [streamEnabled, setStreamEnabled] = useState<boolean>(() => {
++    return localStorage.getItem('ft8_streamEnabled') === 'true';
++  });
++  const [streamUrl, setStreamUrl] = useState<string>(() => {
++    return localStorage.getItem('ft8_streamUrl') || 'ws://localhost:2442';
++  });
++  const [streamConnected, setStreamConnected] = useState<boolean>(false);
++  useEffect(() => {
++    localStorage.setItem('ft8_streamEnabled', String(streamEnabled));
++    localStorage.setItem('ft8_streamUrl', streamUrl);
++    externalStream.configure(streamEnabled, streamUrl);
++  }, [streamEnabled, streamUrl]);
++  useEffect(() => {
++    externalStream.onStateChange = setStreamConnected;
++    return () => { externalStream.onStateChange = () => {}; };
++  }, []);
++
+   const [decodeStats, setDecodeStats] = useState<{ count: number, durationMs: number } | null>(null);
+ 
+   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+@@ -731,6 +749,22 @@ export default function App() {
+     wavelogStationProfileIdRef.current = wavelogStationProfileId;
+   }, [wavelogStationProfileId]);
+ 
++  // Push a status snapshot to the external stream whenever rig/operator
++  // state changes (equivalent of the WSJT-X UDP Status message). The
++  // service caches the latest snapshot and replays it on (re)connect.
++  useEffect(() => {
++    externalStream.sendStatus({
++      dialFreqHz: vfoFreq,
++      mode,
++      myCall,
++      myGrid,
++      txFreqHz: txFreq,
++      txEnabled,
++      transmitting: isTransmitting,
++      dxCall: targetCall,
++    });
++  }, [vfoFreq, mode, myCall, myGrid, txFreq, txEnabled, isTransmitting, targetCall]);
++
+   // Core References
+ 
+   const mediaStreamRef = useRef<MediaStream | null>(null);
+@@ -896,6 +930,8 @@ export default function App() {
+         const decPeriodIndex = Math.floor(_totalSec / (modeRef.current === 'FT4' ? 7.5 : 15)) % 2;
+         payload.forEach((msg: FT8DecodedMessage) => { msg.periodIndex = decPeriodIndex; });
+ 
++        externalStream.sendDecodes(payload, vfoFreqRef.current, modeRef.current);
++
+         if (payload.length > 0) {
+             setRxLog(prev => {
+                 const timeString = payload[0].time;
+@@ -1336,6 +1372,16 @@ export default function App() {
+                 dxcc: dxccEntity?.adifCode,
+             };
+ 
++            externalStream.sendQsoLogged({
++                call: qsoRecord.call,
++                grid: qsoRecord.gridsquare,
++                rstSent: qsoRecord.rst_sent,
++                rstRcvd: qsoRecord.rst_rcvd,
++                dialFreqHz: currentVfo,
++                mode: qsoRecord.mode,
++                band: qsoRecord.band,
++            });
++
+             const id = await logBook.logQSO(qsoRecord);
+             qsoRecord.id = id;
+ 
+@@ -2361,9 +2407,43 @@ export default function App() {
+                   </button>
+                 </div>
+               )}
+-              
++
+               <hr className="border-border-subtle my-4" />
+-              
++              <div className="flex items-center justify-between">
++                <h3 className="text-xs font-bold uppercase tracking-widest text-[#8e9299]">External Data Stream</h3>
++                <button
++                    onClick={() => setStreamEnabled(!streamEnabled)}
++                    className={`bg-app border rounded px-3 py-1 text-xs font-mono focus:outline-none transition-colors ${streamEnabled ? 'border-[#4caf50] text-[#4caf50]' : 'border-border-input text-text-main'}`}
++                 >
++                    {streamEnabled ? 'Enabled' : 'Disabled'}
++                 </button>
++              </div>
++
++              {streamEnabled && (
++                <div className="flex flex-col gap-3 mt-2">
++                  <p className="text-[10px] text-text-muted leading-relaxed">
++                    Pushes decodes, status and logged QSOs as JSON to a local WebSocket so
++                    companion apps (loggers, propagation tools) can consume them — like the
++                    WSJT-X UDP protocol, but browser-friendly. One-way; nothing is received.
++                  </p>
++                  <div className="flex flex-col gap-1">
++                    <label className="text-[10px] uppercase tracking-widest text-text-muted">WebSocket URL</label>
++                    <input
++                      type="text"
++                      value={streamUrl}
++                      onChange={e => setStreamUrl(e.target.value)}
++                      className="bg-app border border-border-input rounded px-3 py-2 text-sm font-mono w-full focus:outline-none focus:border-[#4caf50] text-text-main"
++                      placeholder="ws://localhost:2442"
++                    />
++                  </div>
++                  <div className={`text-xs font-mono ${streamConnected ? 'text-[#4caf50]' : 'text-text-muted'}`}>
++                    {streamConnected ? '● Connected' : '○ Not connected (retrying…)'}
++                  </div>
++                </div>
++              )}
++
++              <hr className="border-border-subtle my-4" />
++
+               <div className="flex flex-col gap-1">
+                 <label className="text-[10px] uppercase tracking-widest text-text-muted">Audio Input (RX)</label>
+                 <select 
+diff --git a/src/services/ExternalStreamService.ts b/src/services/ExternalStreamService.ts
+new file mode 100644
+index 0000000..5bcdd80
+--- /dev/null
++++ b/src/services/ExternalStreamService.ts
+@@ -0,0 +1,175 @@
++/**
++ * ExternalStreamService — one-way JSON event stream over a local WebSocket.
++ *
++ * Lets desktop companion tools (loggers, propagation analyzers, band-activity
++ * maps — e.g. GridTracker, QSO Predictor, JTAlert via a small UDP bridge)
++ * consume FT8web's decodes, rig status and logged QSOs, the same way those
++ * tools consume the WSJT-X UDP protocol today.
++ *
++ * Browsers cannot send UDP, so the app pushes JSON to a WebSocket endpoint
++ * on localhost instead; a consumer either speaks this schema natively or a
++ * tiny bridge re-emits WSJT-X-format UDP datagrams (see examples/udp-bridge).
++ * Pages served over https are allowed to open ws:// connections to localhost
++ * (exempt from mixed-content blocking), so this works from the hosted app.
++ *
++ * Design constraints:
++ * - Off by default; enabled + endpoint URL configured in Settings.
++ * - Strictly one-way (nothing received on the socket is acted upon).
++ * - Fire-and-forget: never throws into app code, never blocks decode/TX
++ *   paths, silently drops messages while disconnected.
++ * - Reconnects with exponential backoff; replays the latest status snapshot
++ *   on reconnect so a consumer starting late gets current rig state.
++ *
++ * Message envelope (schema v1):
++ *   { "src": "FT8web", "ver": 1, "type": "decode" | "status" | "qso_logged",
++ *     "utc": "<ISO-8601>", ...payload }
++ */
++
++export interface StreamDecode {
++  /** HHMMSS UTC of the decode period */
++  time: string;
++  snr: number;
++  /** audio offset within the passband, Hz */
++  freq: number;
++  message: string;
++}
++
++export interface StreamStatus {
++  dialFreqHz: number;
++  mode: string;
++  myCall: string;
++  myGrid: string;
++  /** TX audio offset within the passband, Hz */
++  txFreqHz: number;
++  txEnabled: boolean;
++  transmitting: boolean;
++  /** callsign currently targeted by the FSM, '' if none */
++  dxCall: string;
++}
++
++export interface StreamQsoLogged {
++  call: string;
++  grid: string;
++  rstSent: string;
++  rstRcvd: string;
++  dialFreqHz: number;
++  mode: string;
++  band: string;
++}
++
++const SCHEMA_VERSION = 1;
++const RECONNECT_MIN_MS = 1000;
++const RECONNECT_MAX_MS = 30000;
++
++class ExternalStreamService {
++  private ws: WebSocket | null = null;
++  private enabled = false;
++  private url = '';
++  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
++  private backoffMs = RECONNECT_MIN_MS;
++  private lastStatus: StreamStatus | null = null;
++
++  /** UI hook for a connected/disconnected indicator in Settings. */
++  public onStateChange: (connected: boolean) => void = () => {};
++
++  get connected(): boolean {
++    return this.ws?.readyState === WebSocket.OPEN;
++  }
++
++  /** Called whenever the settings change; tears down / (re)connects as needed. */
++  configure(enabled: boolean, url: string): void {
++    if (enabled === this.enabled && url === this.url) return;
++    this.enabled = enabled;
++    this.url = url;
++    this.teardown();
++    if (this.enabled && this.url) {
++      this.backoffMs = RECONNECT_MIN_MS;
++      this.connect();
++    }
++  }
++
++  sendDecodes(decodes: StreamDecode[], dialFreqHz: number, mode: string): void {
++    if (decodes.length === 0) return;
++    this.send('decode', {
++      dialFreqHz,
++      mode,
++      decodes: decodes.map(d => ({
++        time: d.time, snr: d.snr, freq: d.freq, message: d.message,
++      })),
++    });
++  }
++
++  sendStatus(status: StreamStatus): void {
++    this.lastStatus = status;
++    this.send('status', status);
++  }
++
++  sendQsoLogged(qso: StreamQsoLogged): void {
++    this.send('qso_logged', qso);
++  }
++
++  private connect(): void {
++    try {
++      const ws = new WebSocket(this.url);
++      this.ws = ws;
++      ws.onopen = () => {
++        if (ws !== this.ws) return; // superseded by a reconfigure
++        this.backoffMs = RECONNECT_MIN_MS;
++        this.onStateChange(true);
++        // Late-starting consumers get current rig state immediately.
++        if (this.lastStatus) this.send('status', this.lastStatus);
++      };
++      ws.onclose = () => {
++        if (ws !== this.ws) return;
++        this.ws = null;
++        this.onStateChange(false);
++        this.scheduleReconnect();
++      };
++      ws.onerror = () => { /* onclose follows; nothing to do */ };
++      // One-way stream: ignore anything the consumer sends back.
++      ws.onmessage = () => {};
++    } catch {
++      this.ws = null;
++      this.scheduleReconnect();
++    }
++  }
++
++  private scheduleReconnect(): void {
++    if (!this.enabled || this.reconnectTimer) return;
++    this.reconnectTimer = setTimeout(() => {
++      this.reconnectTimer = null;
++      if (this.enabled) this.connect();
++    }, this.backoffMs);
++    this.backoffMs = Math.min(this.backoffMs * 2, RECONNECT_MAX_MS);
++  }
++
++  private teardown(): void {
++    if (this.reconnectTimer) {
++      clearTimeout(this.reconnectTimer);
++      this.reconnectTimer = null;
++    }
++    if (this.ws) {
++      const ws = this.ws;
++      this.ws = null;
++      try { ws.close(); } catch { /* already closed */ }
++      this.onStateChange(false);
++    }
++  }
++
++  private send(type: string, payload: object): void {
++    if (!this.connected || !this.ws) return;
++    try {
++      this.ws.send(JSON.stringify({
++        src: 'FT8web',
++        ver: SCHEMA_VERSION,
++        type,
++        utc: new Date().toISOString(),
++        ...payload,
++      }));
++    } catch {
++      /* never propagate into decode/TX paths */
++    }
++  }
++}
++
++export const externalStream = new ExternalStreamService();
+-- 
+2.39.5 (Apple Git-154)
+
