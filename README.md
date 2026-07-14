@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.5.4-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.5.8-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9MWCW2FTB866)
@@ -46,24 +46,32 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.5.7
+## 🆕 What's New in v2.5.8
 
-### Better outcome data capture — groundwork for v2.6's personalized recommendations
+### FT8web support — run QSO Predictor with a browser-based FT8 client
 
-QSO Predictor logs the outcome of every calling attempt locally (what it recommended, what you did, the competition you faced, whether the target came back). **The planned v2.6 will use that history to tune recommendations to how *you* operate.** This release fixes two bugs that were quietly degrading the data:
+QSO Predictor can now take its decode, status, and logged-QSO data from [FT8web](https://ft8web.ok1cdj.com/), Ondra OK1CDJ's browser-based FT8/FT4 client, as an alternative to WSJT-X/JTDX. QSOP contributed the External Data Stream feature to FT8web upstream to make this possible. Setup is two switches:
 
-- **Competition was recorded as 0 in every outcome event** due to a format mismatch — one of the most informative signals for "did following the recommendation pay off?" was being lost on every record. Now captured correctly.
-- **Malformed grid squares** (e.g. a junk locator in a PSK Reporter spot) converted to impossible coordinates instead of being rejected, skewing bearing/sector analysis and recorded distances. Grids are now validated character-by-character.
+- **In QSOP:** Settings → Network → "FT8web Browser Client (Optional)" → check **Listen for FT8web data stream** (WebSocket port 2442 by default)
+- **In FT8web:** Settings → External Data Stream → **Enabled**, URL `ws://localhost:2442`
 
-Worth upgrading promptly: outcome data only accumulates while you operate, and records written by older versions carry the empty competition field forever. The sooner 2.5.7 runs, the more of your own history v2.6 can learn from on day one.
+Everything received from FT8web is re-broadcast as standard WSJT-X UDP packets to QSOP's configured forward ports — the browser can't send UDP itself, so QSOP does it on its behalf, and downstream apps (GridTracker, JTAlert, loggers) keep working unchanged. While an FT8web client is connected, the "No data from WSJT-X/JTDX" warning is suppressed. Use one source at a time: if both WSJT-X/JTDX and FT8web are feeding QSOP simultaneously, a "Two data sources active" status-bar warning asks you to close one.
+
+### Richer outcome logging — more groundwork for personalized recommendations
+
+The local outcome log (`~/.qso-predictor/outcome_history.jsonl` — machine-local, never uploaded) now records a full tactical snapshot at the moment you select a target (competition, pileup rank, SNR margins, behavior model state, success probability, strategy) plus a compact per-TX-cycle trace of the attempt. This is the data a planned future release will learn from to tune recommendations to how *you* operate. Files written by older versions remain readable; mixed old/new files are fine.
 
 ### Also in this release
 
-Help → User Guide now opens the always-current guide at [qsop.wu2c.net](https://qsop.wu2c.net), and the codebase gained a 285-test automated suite running on Windows/macOS/Linux for every change — the safety net for the v2.6 work. See [RELEASE_NOTES_v2.5.7.md](dev-docs/RELEASE_NOTES_v2.5.7.md) for details.
+Behavior prediction no longer pools single-letter+digit DXCC prefixes (E5, …) with the wrong prefix group, and weak priors are labeled as such. Corrupt `session_end` records (negative elapsed time) in the outcome log are fixed. The automated test suite grew to ~350 tests, including coverage of the new FT8web listener. See [RELEASE_NOTES_v2.5.8.md](dev-docs/RELEASE_NOTES_v2.5.8.md) for details.
 
 ---
 
 ## Previous Releases
+
+### v2.5.7
+
+**Outcome data capture fixed — groundwork for personalized recommendations.** Competition was recorded as 0 in every outcome event due to a format mismatch — one of the most informative signals for "did following the recommendation pay off?" — now captured correctly. **Malformed grid squares** converted to impossible coordinates instead of being rejected, skewing bearing/sector analysis and recorded distances — grids are now validated character-by-character. **Help → User Guide** now opens the always-current guide at [qsop.wu2c.net](https://qsop.wu2c.net), and the codebase gained a 285-test automated suite running on Windows/macOS/Linux for every change. See [RELEASE_NOTES_v2.5.7.md](dev-docs/RELEASE_NOTES_v2.5.7.md) for details.
 
 ### v2.5.6
 
@@ -87,7 +95,7 @@ Path status messaging polish — shorter, clearer wording with richer tooltip co
 
 ### v2.5.1
 
-**OutcomeRecorder** — silent performance data collector. On each QSO attempt, QSOP now writes a compact record (~380 bytes) of the scoring context and three-tier outcome (`NO_RESPONSE` / `RESPONDED` / `QSO_LOGGED`) to `~/.qso-predictor/outcome_history.jsonl`. Sessions tied to operating activity, not app lifetime. No callsigns or grids stored. Enables Phase 2 self-evaluation and coaching features (planned v2.6).
+**OutcomeRecorder** — silent performance data collector. On each QSO attempt, QSOP now writes a compact record (~1.2 KB as of schema v2) of the scoring context and three-tier outcome (`NO_RESPONSE` / `RESPONDED` / `QSO_LOGGED`) to `~/.qso-predictor/outcome_history.jsonl`. Sessions tied to operating activity, not app lifetime. No callsigns or grids stored. Enables Phase 2 self-evaluation and coaching features planned for a future release.
 
 ### v2.5.0
 
@@ -269,6 +277,8 @@ python main_v2.py
 
 Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`. Check "Accept UDP Requests".
 
+**Using [FT8web](https://ft8web.ok1cdj.com/) instead?** In QSOP: Settings → Network → check **Listen for FT8web data stream** (port 2442). In FT8web: Settings → External Data Stream → **Enabled**, URL `ws://localhost:2442`. Use one data source at a time — QSOP warns if both WSJT-X/JTDX and FT8web are active. See the [User Guide](docs/USER_GUIDE.md) for details.
+
 ### First-Time Setup
 
 1. **File → Settings** — enter your callsign and grid
@@ -343,6 +353,14 @@ Physics-based HF propagation prediction powered by [IONIS](https://ionis-ai.com)
 * Runs entirely locally — no internet required for predictions
 * Enable/disable in Settings → Features
 
+### FT8web Browser Client Support
+
+Use QSOP with [FT8web](https://ft8web.ok1cdj.com/), a browser-based FT8/FT4 client, instead of WSJT-X/JTDX:
+
+* WebSocket listener for FT8web's External Data Stream (Settings → Network, off by default)
+* Decodes, status, and logged QSOs flow into QSOP exactly as from WSJT-X
+* Re-broadcasts everything as standard WSJT-X UDP, so GridTracker, JTAlert, and loggers keep working unchanged
+
 ## Documentation
 
 📖 **[User Guide](docs/USER_GUIDE.md)** — Complete usage documentation
@@ -361,7 +379,7 @@ Physics-based HF propagation prediction powered by [IONIS](https://ionis-ai.com)
 
 * Windows 10/11, macOS, or Linux
 * Python 3.10+ (if running from source)
-* WSJT-X or JTDX
+* WSJT-X, JTDX, or [FT8web](https://ft8web.ok1cdj.com/) (browser-based)
 * Internet connection (for PSK Reporter data; Path Prediction works offline)
 
 ## Version History

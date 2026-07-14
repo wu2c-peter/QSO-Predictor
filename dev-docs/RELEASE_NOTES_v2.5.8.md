@@ -2,7 +2,7 @@
 
 **Date:** July 2026
 **Theme:** FT8web browser-client support + a richer outcome record — the
-next step toward v2.6's personalized recommendations
+next step toward personalized recommendations
 
 ---
 
@@ -29,8 +29,8 @@ Two headline changes this release:
    you selected the target — competition, your pileup rank, SNR margins,
    what the behavior model believed, the success probability and strategy
    the app showed you — plus a compact per-TX-cycle trace of how the
-   pileup evolved while you called. This is the raw material v2.6 is
-   planned to learn from. As before: machine-local, never uploaded.
+   pileup evolved while you called. This is the raw material the planned
+   personalized-recommendation work will learn from. As before: machine-local, never uploaded.
 
 Also in this release: two fixes to the learning stack (a behavior-prior
 pooling bug that had Cook Islands stations inheriting a Bosnian behavior
@@ -89,12 +89,12 @@ records how the pileup evolved — competition, your rank, path status,
 your own TX frequency — capped so long slogs stay small (~1.2 KB per
 event with a typical trace).
 
-Why this matters: v2.6 is planned to tune recommendations from your own
-outcome history. "Did following the recommendation pay off?" can only be
+Why this matters: a planned future release will tune recommendations from
+your own outcome history. "Did following the recommendation pay off?" can only be
 answered against the situation *at the moment of the decision*, not the
 terminal result alone. Same argument as v2.5.7 — this data only
 accumulates while you operate, so the sooner v2 records start being
-written, the more v2.6 has to learn from on day one.
+written, the more that work has to learn from on day one.
 
 As always: `~/.qso-predictor/outcome_history.jsonl`, machine-local, never
 uploaded. v1 records remain valid; mixed v1/v2 files are expected and

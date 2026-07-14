@@ -5,7 +5,8 @@
 > Reporter spot data so you can see the pileup *they're* hearing, find
 > frequencies clear at *their* location, and confirm propagation paths
 > before calling. Runs on Windows, macOS, and Linux alongside WSJT-X or
-> JTDX via UDP integration. Advisory only — the operator keeps full
+> JTDX via UDP integration, or with the browser-based FT8web client via
+> a local WebSocket connection. Advisory only — the operator keeps full
 > control of the radio.
 
 QSO Predictor is written by Peter Hirst (WU2C), licensed under GPLv3.
@@ -14,9 +15,10 @@ zip, signed-and-notarized macOS dmg, source for all platforms) and a
 Microsoft Store listing (Windows only, easiest install).
 
 The app does not collect, transmit, or store any personal data. It reads
-local WSJT-X/JTDX log files, subscribes read-only to the public PSK
-Reporter MQTT stream, and fetches space weather from NOAA SWPC. No
-telemetry. No tracking.
+local WSJT-X/JTDX log files, optionally receives decode data from an
+FT8web browser client over a local WebSocket (off by default), subscribes
+read-only to the public PSK Reporter MQTT stream, and fetches space
+weather from NOAA SWPC. No telemetry. No tracking.
 
 ## Primary documentation
 

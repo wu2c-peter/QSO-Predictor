@@ -23,8 +23,9 @@ calls on paths that aren't open.
 - **Local intelligence** — learns behavior patterns of stations you observe
   and predicts their calling style
 
-Works alongside WSJT-X or JTDX via UDP integration. Advisory only — you keep
-full control of your radio.
+Works alongside WSJT-X or JTDX via UDP integration, or with the
+[FT8web](https://ft8web.ok1cdj.com/) browser-based client via its External
+Data Stream. Advisory only — you keep full control of your radio.
 
 ## Install
 

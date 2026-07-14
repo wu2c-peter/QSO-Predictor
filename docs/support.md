@@ -33,7 +33,8 @@ Please include:
 
 - **QSO Predictor version** (Help → About)
 - **Operating system** and version (Windows 10/11, macOS, Linux)
-- **WSJT-X or JTDX version**
+- **WSJT-X or JTDX version** — or, if you use the FT8web browser client
+  instead, say so and include your browser
 - **What you did**, what you expected, and what happened instead
 - **Error messages** from the console, if any
 

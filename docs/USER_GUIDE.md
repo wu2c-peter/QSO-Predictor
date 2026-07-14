@@ -12,7 +12,7 @@ description: >-
 
 # QSO Predictor User Guide
 
-**Current as of Version 2.5.7**  
+**Current as of Version 2.5.8**  
 **By Peter Hirst (WU2C)**
 
 > 📋 **See [README](https://github.com/wu2c-peter/qso-predictor/blob/main/README.md) for What's New, Version History, and Installation**
@@ -151,6 +151,41 @@ python main_v2.py
 2. Set UDP Server: `127.0.0.1`
 3. Set Port: `2237` (or `2238` if 2237 is in use)
 4. Check "Accept UDP Requests"
+
+### Alternative: FT8web Browser Client (v2.5.8)
+
+Instead of WSJT-X or JTDX, QSO Predictor can take its decodes, status, and
+logged-QSO data from [FT8web](https://ft8web.ok1cdj.com/) — a browser-based
+FT8/FT4 client by Ondra, OK1CDJ. QSOP contributed the External Data Stream
+feature to FT8web upstream, so it works with the live site out of the box.
+
+**In QSO Predictor:**
+
+1. Open File → Settings → **Network** tab
+2. In the **FT8web Browser Client (Optional)** group, check
+   **"Listen for FT8web data stream"**
+3. Leave the WebSocket port at the default `2442` unless another app
+   already uses it
+
+The listener is off by default.
+
+**In FT8web:**
+
+1. Open Settings → **External Data Stream**
+2. Set it to **Enabled**
+3. Set the URL to `ws://localhost:2442` (match the port you set in QSOP)
+
+**Downstream apps keep working:** a browser cannot send UDP, so FT8web by
+itself can't feed GridTracker, JTAlert, or your logger. QSOP bridges that
+gap — everything received from FT8web is re-broadcast as standard WSJT-X
+UDP packets on the ports you've configured under **UDP Forwarding** (same
+Network tab), so your existing downstream apps continue to work unchanged.
+
+**Use one source at a time:** run either WSJT-X/JTDX *or* FT8web as the
+active data source. While an FT8web client is connected, QSOP suppresses
+its usual "No data from WSJT-X/JTDX" warning — UDP silence is expected. If
+both sources are sending data at once, QSOP shows a "Two data sources
+active" warning in the status bar (see Troubleshooting).
 
 ---
 
@@ -1015,7 +1050,9 @@ QSOP keeps a small amount of local data to support Local Intelligence and future
 
 **Outcome recording specifics (v2.5.1):** Each time you select a target, transmit, and then clear or complete the QSO, one event is written capturing QSOP's ephemeral state at that moment — the recommendation you saw, the frequency you chose, path status, competition count, IONIS prediction, solar conditions, and the three-tier outcome (NO_RESPONSE, RESPONDED, QSO_LOGGED). **No callsigns or grids are stored.** Target distance and continent are stored but anonymized.
 
-**Why this exists:** to enable Phase 2 self-evaluation and coaching features (planned v2.6) — "did following QSOP's recommendation actually help?" is a question you can only answer with data.
+**Schema v2 (v2.5.8):** each record now also captures a tactical snapshot taken at target-select time (competition, pileup rank, SNR margins, behavior-model state, success probability, strategy) plus a compact per-TX-cycle trace — groundwork for the personalized recommendations planned for a future release. Older v1 records remain readable, and files containing a mix of v1 and v2 records are fine.
+
+**Why this exists:** to enable Phase 2 self-evaluation and coaching features (planned for a future release) — "did following QSOP's recommendation actually help?" is a question you can only answer with data.
 
 **To disable:** Edit → Settings → Features → uncheck "Outcome recording". The existing file is not deleted; future events are simply not written.
 
@@ -1063,6 +1100,22 @@ In JTDX: Settings → Reporting → Secondary UDP Server → port 2238
 JTDX → 239.0.0.2:2237 → All apps receive
 ```
 Configure all apps to use multicast address.
+
+### FT8web Data Source Warnings (v2.5.8)
+
+Two status-bar behaviors change when the FT8web listener is enabled (see
+Section 2, "Alternative: FT8web Browser Client"):
+
+**"⚠ Two data sources active (WSJT-X/JTDX + FT8web)"** — QSOP is receiving
+WSJT-X/JTDX UDP data *and* FT8web browser data at the same time. Running
+both interleaves conflicting dial-frequency and status information, which
+confuses the analysis — close one. The intended usage is one active data
+source at a time.
+
+**"No data from WSJT-X/JTDX" warning suppressed** — while an FT8web
+browser client is connected, QSOP does not show its usual UDP-silence
+warning, because no UDP data is expected when the browser is your data
+source. Normal UDP monitoring resumes when the FT8web client disconnects.
 
 ### VPN Breaking Multicast (Multi-Computer Setups)
 

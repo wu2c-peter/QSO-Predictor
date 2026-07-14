@@ -5,22 +5,24 @@ permalink: /privacy/
 description: >-
   QSO Predictor's privacy posture: no data collection, no telemetry, no
   tracking. The app runs entirely locally and reads only data sources you
-  already use (your WSJT-X / JTDX logs) and public services (PSK Reporter,
-  NOAA space weather).
+  already use (your WSJT-X / JTDX / FT8web data) and public services
+  (PSK Reporter, NOAA space weather).
 ---
 
 
 # Privacy Policy
 
-**Last updated:** April 20, 2026
+**Last updated:** July 14, 2026
 
 ## Summary
 
-QSO Predictor does not collect, store, or transmit any personal information. The application runs entirely on your local device and reads data only from sources you already use (your own WSJT-X/JTDX log files) and public amateur radio data services (PSK Reporter, NOAA).
+QSO Predictor does not collect, store, or transmit any personal information. The application runs entirely on your local device and reads data only from sources you already use (your own WSJT-X/JTDX log files, or an FT8web browser client running on your own machine) and public amateur radio data services (PSK Reporter, NOAA).
 
 ## Data we access
 
 **Local log files.** QSO Predictor reads `ALL.TXT` files produced by WSJT-X and JTDX to analyze historical station behavior and provide tactical recommendations. These files remain on your device; QSO Predictor does not upload their contents anywhere.
+
+**FT8web browser client (optional).** If you enable the FT8web listener in Settings, QSO Predictor accepts decode, status, and logged-QSO data from an [FT8web](https://ft8web.ok1cdj.com/) browser tab over a WebSocket connection on your own machine (localhost). This feature is off by default. The connection is local and one-way — QSO Predictor does not send any of your data to FT8web or its servers.
 
 **PSK Reporter MQTT stream.** QSO Predictor subscribes to the public PSK Reporter live spot stream to display real-time amateur radio reception data. This is a read-only connection — QSO Predictor does not upload anything to PSK Reporter.
 
@@ -32,7 +34,7 @@ QSO Predictor stores the following files on your device only:
 
 - **Configuration settings** (`qso_predictor.ini`) — your callsign, grid, UI preferences, connection settings
 - **Behavior history** (`behavior_history.json`) — patterns learned from your own log files about stations you have observed on the air
-- **Outcome data** (`outcome_history.jsonl`) — records of your own QSO attempts, used for local self-evaluation features
+- **Outcome data** (`outcome_history.jsonl`) — records of your own QSO attempts, including a snapshot of on-air conditions at the time (pileup competition, signal margins, predicted success), used for local self-evaluation features and future personalized recommendations
 
 None of this data is transmitted anywhere. You can inspect or delete any of these files at any time. They are stored in:
 
