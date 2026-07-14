@@ -166,3 +166,39 @@ def test_heartbeat_ignored(udp_handler):
     handler, received = udp_handler
     handler._parse_packet(pkt.heartbeat())
     assert received == {'decode': [], 'status': [], 'qso_logged': []}
+
+
+# ---------------------------------------------------------------------------
+# Dual-source detection: has_recent_data() feeds the HealthMonitor's
+# "Two data sources active" warning when FT8web is connected alongside
+# WSJT-X/JTDX. Heartbeats must NOT count — an idle-but-open WSJT-X is fine.
+# ---------------------------------------------------------------------------
+
+def test_has_recent_data_false_initially(udp_handler):
+    handler, _ = udp_handler
+    assert not handler.has_recent_data()
+
+
+def test_heartbeat_does_not_count_as_recent_data(udp_handler):
+    handler, _ = udp_handler
+    handler._parse_packet(pkt.heartbeat())
+    assert not handler.has_recent_data()
+
+
+@pytest.mark.parametrize("packet", [
+    pkt.status(dx_call='JA1XYZ'),
+    pkt.decode("CQ JA1XYZ PM95"),
+    pkt.qso_logged(),
+], ids=['status', 'decode', 'qso_logged'])
+def test_data_bearing_packets_count_as_recent_data(udp_handler, packet):
+    handler, _ = udp_handler
+    handler._parse_packet(packet)
+    assert handler.has_recent_data()
+
+
+def test_has_recent_data_expires_outside_window(udp_handler):
+    handler, _ = udp_handler
+    handler._parse_packet(pkt.status(dx_call='JA1XYZ'))
+    handler._last_data_time -= 120   # backdate beyond the 60 s default
+    assert not handler.has_recent_data()
+    assert handler.has_recent_data(window_seconds=300)

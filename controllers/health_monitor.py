@@ -68,6 +68,12 @@ class HealthMonitor(QObject):
             udp_ok, udp_msg = udp.check_data_health()
             if not udp_ok and udp_msg:
                 warnings.append(udp_msg)
+        elif udp and ft8web_active and udp.has_recent_data():
+            # Both sources feeding at once: status updates flap between the
+            # two radios' dial freq / target, confusing the analyzer.
+            warnings.append(
+                "⚠ Two data sources active (WSJT-X/JTDX + FT8web) — "
+                "close one to avoid conflicting data")
 
         # Check MQTT health
         mqtt = getattr(mw, 'mqtt', None)

@@ -109,6 +109,9 @@ class UDPHandler(QObject):
         
         # Track last received time for diagnostics
         self._last_packet_time = None
+        # Last data-bearing packet (status/decode/qso_logged, not heartbeat)
+        # — used for dual-source detection when FT8web is also active
+        self._last_data_time = None
         
         # v2.1.2: Rate-limit ICMP connection reset logging
         self._icmp_reset_count = 0
@@ -303,6 +306,11 @@ class UDPHandler(QObject):
         try:
             # Message Type
             msg_type = struct.unpack('>I', data[8:12])[0]
+
+            if msg_type in (1, 2, 5):
+                # Data-bearing types only — heartbeats (type 0) don't count
+                # as an "active source" for dual-source detection.
+                self._last_data_time = time.time()
 
             if msg_type == 1:  # Status
                 self._process_status(data)
@@ -543,6 +551,15 @@ class UDPHandler(QObject):
             'forward_errors': list(self._forward_errors_logged),
         }
     
+    def has_recent_data(self, window_seconds: float = 60.0) -> bool:
+        """Whether a data-bearing packet (status/decode/QSO-logged) arrived
+        within the window. Heartbeats don't count: an idle-but-open WSJT-X
+        is harmless next to FT8web; one actively feeding decodes is not.
+        """
+        if self._last_data_time is None:
+            return False
+        return (time.time() - self._last_data_time) < window_seconds
+
     def check_data_health(self) -> tuple:
         """v2.1.1: Check if UDP data is flowing. Returns (is_healthy, message).
         
