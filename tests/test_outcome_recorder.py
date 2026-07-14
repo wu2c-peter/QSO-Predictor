@@ -282,6 +282,52 @@ def test_session_end_written_on_app_close(outcome_recorder_home):
     assert events[2]['outcomes'] == 1
 
 
+def test_rapid_reselects_after_idle_gap_write_no_stale_session_end(outcome_recorder_home):
+    """Regression: field data (2026-04-21T23:15) showed that clicking through
+    targets shortly after an idle gap wrote one session_end PER CLICK, each
+    stamped with the OLD session's last-activity time and a negative
+    elapsed_s. Root cause: _last_activity_time was only updated by
+    record_outcome, so every select after the first still saw the stale gap
+    and re-ended the freshly started session."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    make_attempt(rec, cycles=2)
+    rec.record_outcome('QSO_LOGGED', dict(SNAPSHOT))
+
+    # Idle for 2 hours: shift everything that happened into the past
+    idle = timedelta(hours=2)
+    rec._last_activity_time -= idle
+    rec._session_start_time -= idle
+
+    # Operator returns and clicks through three targets, transmitting
+    # briefly on each (TX is what activates the deferred session)
+    make_attempt(rec, call='K1ABC', grid='FN42')
+    make_attempt(rec, call='DL1ABC', grid='JO62')
+    make_attempt(rec, call='F4XYZ', grid='JN18')
+
+    events = read_events(outcome_recorder_home)
+    ends = [e for e in events if e['type'] == 'session_end']
+    assert all(e['elapsed_s'] >= 0 for e in ends), ends
+    # Only the idle session ends; re-selects continue the new session
+    assert len(ends) == 1, [e['type'] for e in events]
+
+
+def test_session_end_never_predates_session_start(outcome_recorder_home):
+    """Even with pathological internal state (stale activity timestamp from
+    before the current session), the persisted session_end must not carry a
+    ts earlier than its session_start or a negative elapsed_s."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    make_attempt(rec, cycles=2)
+    rec._last_activity_time = rec._session_start_time - timedelta(hours=4)
+    rec._end_session()
+
+    end = read_events(outcome_recorder_home)[-1]
+    assert end['type'] == 'session_end'
+    assert end['elapsed_s'] >= 0
+    starts = [e for e in read_events(outcome_recorder_home)
+              if e['type'] == 'session_start']
+    assert end['ts'] >= starts[-1]['ts']
+
+
 def test_junk_grid_yields_no_distance():
     """_grid_to_latlon range-checks characters; _haversine_km maps the
     rejection to its -1 sentinel (persisted as distance_km: null)."""

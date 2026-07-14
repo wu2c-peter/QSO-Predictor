@@ -260,6 +260,10 @@ class OutcomeRecorder:
             if gap > self.SESSION_GAP_SECONDS:
                 # Been idle too long — close old session
                 self._end_session()
+        # Selecting a target is activity: without this, every further
+        # select before the next recorded outcome re-sees the pre-idle
+        # gap and spuriously ends the just-started session.
+        self._last_activity_time = now
         
         # Buffer session params — actual session_start is deferred to first
         # TX cycle. If user just browses targets without transmitting, no
@@ -612,9 +616,13 @@ class OutcomeRecorder:
             gap = (now - self._last_activity_time).total_seconds()
             if gap > self.SESSION_GAP_SECONDS:
                 effective_end = self._last_activity_time
-        
+
         elapsed = 0
         if self._session_start_time:
+            # A session can never end before it started — stale activity
+            # timestamps must not produce negative elapsed_s in the file.
+            if effective_end < self._session_start_time:
+                effective_end = self._session_start_time
             elapsed = int((effective_end - self._session_start_time).total_seconds())
         
         self._write_event({
