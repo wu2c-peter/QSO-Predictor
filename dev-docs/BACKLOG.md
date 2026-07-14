@@ -114,3 +114,15 @@ Smooth transition lag (40% per tick) and hysteresis (+15 point threshold to move
 ### Band map color scheme redesign
 
 Mute local decode colors to neutral/grey, strengthen Tier 2/3 hue distinction, push Tier 4 further into background, free one visual dimension from redundant SNR encoding on local bars. Design work needed before implementation.
+
+### Source-priority arbitration when both WSJT-X/JTDX and FT8web feed at once
+
+v2.5.8 handles the dual-source case with a sticky status-bar warning ("⚠ Two
+data sources active (WSJT-X/JTDX + FT8web) — close one to avoid conflicting
+data"), raised by `controllers/health_monitor.py` when UDP has recent data
+while an FT8web browser client is connected. Auto-arbitration — e.g. prefer
+the most recently active source, or ignore UDP status updates while a browser
+client is connected — was considered and deliberately deferred: the warning is
+simpler, and intended usage is one active source at a time. Revisit only if
+the warning proves to fire often in the wild (user reports, or the warning
+text showing up in submitted logs). If built, the natural insertion point is where `main_v2.py` wires both `udp` and `ft8web` signals to the shared `handle_decode` / `handle_status_update` slots (`MainWindow.setup_connections`, main_v2.py ~lines 940–948).

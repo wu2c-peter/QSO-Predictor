@@ -44,6 +44,35 @@ On Ubuntu/GNOME, Qt6 tries to export menus to the desktop's global menu bar. Thi
 
 **Fix:** `self.menuBar().setNativeMenuBar(False)` on Linux, called before menu creation. This is guarded with `sys.platform.startswith('linux')` to preserve native menu bar behavior on macOS.
 
+### 4. FT8web External Data Stream — Schema v1 Is an External Contract
+
+`ft8web_handler.py` (v2.5.8) accepts the JSON envelope defined by FT8web's
+ExternalStreamService — schema v1: `type` = `decode` / `status` /
+`qso_logged`, camelCase fields like `dialFreqHz`, `dxCall`, `txFreqHz`.
+QSOP contributed that feature upstream (FT8web PR #10, merged July 2026)
+and it is deployed live at ft8web.ok1cdj.com — we don't control when the
+site updates, so the envelope is an external compatibility contract, not an
+internal format we can refactor.
+
+**Critical rules:**
+- Don't rename or re-type expected envelope fields on the QSOP side alone,
+  and don't make new fields required. Parse defensively (`msg.get(...)` with
+  fallbacks, as `_dispatch` / `_on_*` do today) so older and newer FT8web
+  builds keep working. Schema changes must land upstream first and stay
+  backward-compatible.
+- The WebSocket server is **pure-stdlib RFC 6455 by design** (hand-rolled
+  handshake + frame parsing in `ft8web_handler.py`). Don't "simplify" it by
+  adding a `websockets` / `aiohttp` dependency — keeping the packaged builds
+  dependency-lean was the point.
+- The stream is one-way and localhost-only: the browser always initiates,
+  and QSOP never sends application data back (protocol-level pong/close
+  frames only).
+- Emitted decode/status dicts must stay shape-identical to `UDPHandler`'s
+  (single-char mode code, HHMM time) — both sources feed the same MainWindow
+  slots. Everything received is also re-broadcast as WSJT-X-format UDP to
+  the configured forward ports, so downstream apps (GridTracker, JTAlert,
+  loggers) work unchanged.
+
 ---
 
 ## Performance Lessons
@@ -340,6 +369,6 @@ IONIS predictions need data that arrives asynchronously (grid from decodes, SFI/
 
 ---
 
-*Last updated: May 2026*
+*Last updated: July 2026*
 
 **73 de WU2C**
