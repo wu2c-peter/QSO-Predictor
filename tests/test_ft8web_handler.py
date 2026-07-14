@@ -11,16 +11,14 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
-"""Validation harness for the FT8web External Data Stream listener.
-
-Run after rebasing feat/ft8web-stream-listener (or after any change that
-touches ft8web_handler.py, udp_handler.py, utils/wsjtx_protocol.py, or the
-MainWindow signal wiring):
-
-    ./venv/bin/python3 tests/test_ft8web_handler.py
+"""Tests for the FT8web External Data Stream listener.
 
 Self-contained: includes a minimal RFC 6455 client (masked frames, like a
-browser) so no third-party packages are needed. Covers:
+browser) so no third-party packages are needed. The module-scoped
+`stream_scenario` fixture drives one full client lifecycle against a live
+FT8WebHandler — connect, all three message types, ping, disconnect,
+reconnect, junk frame, disconnect, stop — and the tests assert on the
+collected signals and re-broadcast datagrams. Covers:
 
   1. Signal payloads match UDPHandler's dict shapes exactly.
   2. FT4 mode code mapping, callsign/grid extraction via the shared parser.
@@ -32,19 +30,22 @@ browser) so no third-party packages are needed. Covers:
 """
 
 import base64
-import hashlib
 import json
-import os
 import secrets
 import socket
 import struct
-import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import pytest
 
-WS_PORT = 2443   # avoid clashing with a live app on 2442
-FWD_PORT = 2244
+from tests.conftest import StubConfig
+
+
+def _free_port():
+    """Ask the OS for a currently-free TCP port (avoids a live app on 2442)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 class MiniWSClient:
@@ -86,10 +87,12 @@ class MiniWSClient:
     def ping_and_wait_pong(self):
         self._send_frame(0x9, b"hb")
         header = self.sock.recv(2)
-        assert len(header) == 2 and header[0] & 0x0F == 0xA, "expected pong"
+        if len(header) != 2 or header[0] & 0x0F != 0xA:
+            return False
         length = header[1] & 0x7F
         if length:
             self.sock.recv(length)
+        return True
 
     def close(self):
         try:
@@ -99,44 +102,41 @@ class MiniWSClient:
             pass
 
 
-class StubConfig:
-    def get(self, section, key, fallback=None):
-        vals = {
-            ('FT8WEB', 'enabled'): 'true',
-            ('FT8WEB', 'ws_port'): str(WS_PORT),
-            ('NETWORK', 'udp_port'): '2237',
-            ('NETWORK', 'udp_ip'): '127.0.0.1',
-        }
-        return vals.get((section, key), fallback)
+@pytest.fixture(scope="module")
+def stream_scenario():
+    """Run the full client lifecycle once; yield everything the tests assert on.
 
-    def get_forward_ports(self):
-        return [FWD_PORT]
-
-
-def main():
+    Signals are connected DirectConnection because there is no Qt event loop
+    in the test process. The sleeps let the handler's serve thread keep up.
+    """
     from PyQt6.QtCore import Qt
     from ft8web_handler import FT8WebHandler
     from udp_handler import UDPHandler
 
-    DIRECT = Qt.ConnectionType.DirectConnection  # no Qt event loop here
+    direct = Qt.ConnectionType.DirectConnection
 
     fwd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    fwd_sock.bind(("127.0.0.1", FWD_PORT))
+    fwd_sock.bind(("127.0.0.1", 0))
     fwd_sock.settimeout(0.2)
+    fwd_port = fwd_sock.getsockname()[1]
+    ws_port = _free_port()
 
-    handler = FT8WebHandler(StubConfig())
+    handler = FT8WebHandler(StubConfig(
+        overrides={('FT8WEB', 'enabled'): 'true',
+                   ('FT8WEB', 'ws_port'): str(ws_port)},
+        forward_ports=[fwd_port]))
     received = {"decode": [], "status": [], "qso_logged": [], "state": []}
-    handler.new_decode.connect(lambda d: received["decode"].append(d), DIRECT)
-    handler.status_update.connect(lambda d: received["status"].append(d), DIRECT)
-    handler.qso_logged.connect(lambda d: received["qso_logged"].append(d), DIRECT)
-    handler.client_state_changed.connect(lambda c: received["state"].append(c), DIRECT)
+    handler.new_decode.connect(lambda d: received["decode"].append(d), direct)
+    handler.status_update.connect(lambda d: received["status"].append(d), direct)
+    handler.qso_logged.connect(lambda d: received["qso_logged"].append(d), direct)
+    handler.client_state_changed.connect(lambda c: received["state"].append(c), direct)
     handler.start()
     time.sleep(0.5)
 
     envelope = {"src": "FT8web", "ver": 1, "utc": "2026-07-03T18:30:00Z"}
 
     # --- Session 1: all three message types + ping/pong ---
-    ws = MiniWSClient("localhost", WS_PORT)
+    ws = MiniWSClient("localhost", ws_port)
     ws.send_text(json.dumps({
         **envelope, "type": "status",
         "dialFreqHz": 14074000, "mode": "FT8", "myCall": "WU2C",
@@ -156,13 +156,13 @@ def main():
         "call": "JA1XYZ", "grid": "PM95", "rstSent": "-12", "rstRcvd": "-07",
         "dialFreqHz": 14074000, "mode": "FT8", "band": "20m",
     }))
-    ws.ping_and_wait_pong()
+    pong_ok = ws.ping_and_wait_pong()
     time.sleep(0.5)
     ws.close()
     time.sleep(0.5)
 
     # --- Session 2: reconnect works; junk frame is dropped harmlessly ---
-    ws = MiniWSClient("localhost", WS_PORT)
+    ws = MiniWSClient("localhost", ws_port)
     ws.send_text(json.dumps({
         **envelope, "type": "decode", "dialFreqHz": 7047500, "mode": "FT4",
         "decodes": [{"time": "1831", "snr": 5, "freq": 800, "message": "CQ DL1ABC JO62"}],
@@ -176,23 +176,7 @@ def main():
     ws.close()
     time.sleep(0.3)
 
-    # --- Assertions: signal payloads (must stay identical to UDPHandler's) ---
-    assert received["state"][:3] == [True, False, True], received["state"]
-    st = received["status"][0]
-    assert st == {'dial_freq': 14074000, 'dx_call': 'JA1XYZ', 'dx_grid': '',
-                  'tx_df': 1512, 'tx_enabled': True, 'transmitting': False,
-                  'de_call': 'WU2C', 'de_grid': 'FN30', 'special_mode': 0}, st
-    assert len(received["decode"]) == 4, received["decode"]
-    d0 = received["decode"][0]
-    assert d0 == {'time': '1830', 'snr': -12, 'dt': 0.0, 'freq': 1687,
-                  'mode': '~', 'message': 'CQ JA1XYZ PM95',
-                  'call': 'JA1XYZ', 'grid': 'PM95'}, d0
-    assert received["decode"][1]['call'] == 'K1ABC'
-    assert received["decode"][2]['mode'] == '+'       # FT4 code
-    assert received["decode"][3]['call'] == 'F4XYZ'   # survived the junk frame
-    assert received["qso_logged"] == [{'dx_call': 'JA1XYZ', 'dx_grid': 'PM95'}]
-
-    # --- Assertions: forward-port re-broadcast parses via UDPHandler ---
+    # --- Drain the forward port, round-trip through UDPHandler's parser ---
     packets = []
     while True:
         try:
@@ -202,25 +186,70 @@ def main():
             break
 
     udp = UDPHandler(StubConfig())
-    rt = {"decode": [], "status": [], "qso_logged": []}
-    udp.new_decode.connect(lambda d: rt["decode"].append(d), DIRECT)
-    udp.status_update.connect(lambda d: rt["status"].append(d), DIRECT)
-    udp.qso_logged.connect(lambda d: rt["qso_logged"].append(d), DIRECT)
+    roundtrip = {"decode": [], "status": [], "qso_logged": []}
+    udp.new_decode.connect(lambda d: roundtrip["decode"].append(d), direct)
+    udp.status_update.connect(lambda d: roundtrip["status"].append(d), direct)
+    udp.qso_logged.connect(lambda d: roundtrip["qso_logged"].append(d), direct)
     for pkt in packets:
         udp._parse_packet(pkt)
+    udp.sock.close()
 
-    assert len(rt["status"]) == 1 and rt["status"][0]["dial_freq"] == 14074000
+    handler.stop()
+    stopped = not handler.running
+    fwd_sock.close()
+
+    yield {"received": received, "pong_ok": pong_ok, "packets": packets,
+           "roundtrip": roundtrip, "stopped": stopped}
+
+
+def test_client_state_transitions(stream_scenario):
+    # connect, disconnect, reconnect across the two sessions
+    assert stream_scenario["received"]["state"][:3] == [True, False, True]
+
+
+def test_ping_gets_pong(stream_scenario):
+    assert stream_scenario["pong_ok"]
+
+
+def test_status_payload_matches_udp_shape(stream_scenario):
+    st = stream_scenario["received"]["status"][0]
+    assert st == {'dial_freq': 14074000, 'dx_call': 'JA1XYZ', 'dx_grid': '',
+                  'tx_df': 1512, 'tx_enabled': True, 'transmitting': False,
+                  'de_call': 'WU2C', 'de_grid': 'FN30', 'special_mode': 0}
+
+
+def test_decode_payload_matches_udp_shape(stream_scenario):
+    decodes = stream_scenario["received"]["decode"]
+    assert decodes[0] == {'time': '1830', 'snr': -12, 'dt': 0.0, 'freq': 1687,
+                          'mode': '~', 'message': 'CQ JA1XYZ PM95',
+                          'call': 'JA1XYZ', 'grid': 'PM95'}
+    assert decodes[1]['call'] == 'K1ABC'
+
+
+def test_ft4_mode_code(stream_scenario):
+    assert stream_scenario["received"]["decode"][2]['mode'] == '+'
+
+
+def test_junk_frame_does_not_kill_stream(stream_scenario):
+    decodes = stream_scenario["received"]["decode"]
+    assert len(decodes) == 4
+    assert decodes[3]['call'] == 'F4XYZ'   # arrived after the non-JSON frame
+
+
+def test_qso_logged_payload(stream_scenario):
+    assert stream_scenario["received"]["qso_logged"] == [
+        {'dx_call': 'JA1XYZ', 'dx_grid': 'PM95'}]
+
+
+def test_rebroadcast_roundtrips_through_udp_parser(stream_scenario):
+    rt = stream_scenario["roundtrip"]
+    assert len(rt["status"]) == 1
+    assert rt["status"][0]["dial_freq"] == 14074000
     assert len(rt["decode"]) == 4
     assert {d["message"] for d in rt["decode"]} == {
         "CQ JA1XYZ PM95", "WU2C K1ABC -07", "CQ DL1ABC JO62", "CQ F4XYZ JN18"}
     assert rt["qso_logged"] == [{'dx_call': 'JA1XYZ', 'dx_grid': 'PM95'}]
 
-    handler.stop()
-    assert not handler.running
-    fwd_sock.close()
-    print(f"OK: {len(received['decode'])} decodes, 1 status, 1 qso_logged, "
-          f"{len(packets)} re-broadcast datagrams — all assertions passed")
 
-
-if __name__ == "__main__":
-    main()
+def test_stop_terminates_listener(stream_scenario):
+    assert stream_scenario["stopped"]
