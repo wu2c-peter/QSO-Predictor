@@ -44,21 +44,16 @@ hiddenimports = [
     'certifi',
     'idna',
     
-    # ML dependencies (for trained models)
-    'sklearn',
-    'sklearn.ensemble',
-    'sklearn.ensemble._forest',
-    'sklearn.ensemble._gb',
-    'sklearn.tree',
-    'sklearn.tree._tree',
-    'sklearn.utils._cython_blas',
-    'sklearn.neighbors._typedefs',
-    'sklearn.utils._typedefs',
-    'sklearn.utils._heap',
-    'sklearn.utils._sorting',
-    'sklearn.utils._vector_sentinel',
-    'joblib',
-    
+    # NOTE (2026-07): sklearn/joblib hiddenimports were removed
+    # deliberately. They were never installed in the CI build env, so no
+    # shipped exe ever contained them (they only produced 12 'hidden
+    # import not found' ERRORs per build). Trained-model loading is a
+    # source-install feature: frozen builds can't run training anyway,
+    # and local_intel falls back cleanly to the heuristic predictor.
+    # If that decision changes, add scikit-learn+joblib to the workflow
+    # install step FIRST (see tests/test_conventions.py).
+
+
     # Local intel modules
     'local_intel',
     'local_intel.models',

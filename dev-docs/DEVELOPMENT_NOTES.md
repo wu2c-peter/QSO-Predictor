@@ -369,6 +369,48 @@ IONIS predictions need data that arrives asynchronously (grid from decodes, SFI/
 
 ---
 
+## Frozen-Build Dependency Policy (July 2026 audit)
+
+**The incident:** every shipped exe from v2.4.0 through v2.5.8 ran
+WITHOUT IONIS propagation. `qso_predictor.spec` listed `safetensors` in
+hiddenimports and even bundled the 824 KB model checkpoint as data, but
+`build-release.yml` only ever ran `pip install PyQt6 paho-mqtt numpy
+requests` — and **a hiddenimport that isn't installed at build time is a
+non-fatal PyInstaller warning, not an error**. The exe shipped green with
+the feature silently absent (About dialog: "Propagation: Not available";
+log: `safetensors package not installed`). The macOS job was worse: it
+bypassed the spec entirely (bare `pyinstaller` CLI), so DMGs lacked even
+the `ionis/data` checkpoint. The Store MSIX likely *did* have IONIS,
+because it's built on the dev machine where requirements.txt is
+installed — GitHub-zip users specifically got the broken build.
+
+**The rule:** every external package named in a spec's hiddenimports
+must be pip-installed in that build's environment. Enforced mechanically
+by `tests/test_conventions.py::
+test_release_workflow_installs_every_spec_hiddenimport` (parses the spec
+and the workflow; fails CI on drift). Release-time backstops live in
+RELEASE_CHECKLIST.md (grep the build log for `Hidden import ... not
+found`; smoke-grep the artifact's app log for `IONIS engine loaded`).
+
+**What's deliberately IN frozen builds:** PyQt6, paho-mqtt, numpy,
+requests, safetensors (IONIS), psutil (analyzer memory diagnostics),
+pycaw/comtypes (Audio Doctor, Windows).
+
+**What's deliberately OUT:** scipy, pandas, scikit-learn, joblib.
+Trained-model loading is a source-install feature — frozen builds can't
+run training anyway, `local_intel` falls back cleanly to the heuristic
+predictor (log: `joblib not installed - ML model loading disabled`), and
+no user-facing doc promises sklearn models in packaged builds. The
+sklearn/joblib hiddenimports were pruned from `qso_predictor.spec` in
+July 2026; they remain in `qso_predictor_msix.spec` only because the
+Store build machine has them installed and there's no reason to churn
+the Store package. To ship trained-model support later: add
+scikit-learn+joblib to the workflow install step first, then restore the
+spec entries (the conventions test will hold you to that order).
+
+---
+
+
 *Last updated: July 2026*
 
 **73 de WU2C**

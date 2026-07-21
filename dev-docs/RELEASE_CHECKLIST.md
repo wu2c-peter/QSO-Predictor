@@ -60,8 +60,18 @@ release-time doc and metadata touches, including the easy-to-miss ones.
 - [ ] `git tag -a v<version> -m "..."` and `git push origin v<version>`.
 - [ ] The `build-release.yml` workflow fires automatically on the tag push.
       Watch it with `gh run watch <run-id>` or via the Actions tab.
+- [ ] **Check the build log for `Hidden import ... not found`** (both jobs):
+      `gh run view <run-id> --log | grep -i "hidden import"` should return
+      nothing. A hit means the workflow install step is missing a package
+      the spec expects — PyInstaller drops it with a non-fatal warning and
+      the feature silently vanishes from the exe (this shipped
+      v2.4.0–v2.5.8 without IONIS; see DEVELOPMENT_NOTES § Frozen-build
+      dependency policy).
 - [ ] Once workflow finishes: verify the GitHub Release page has both
       artifacts attached (Windows `.zip` + macOS `.dmg`).
+- [ ] Smoke-run one downloaded artifact and grep its app log for
+      `IONIS engine loaded` (proves the frozen build carries
+      safetensors + the model data on that platform).
 - [ ] (Optional, until the workflow improvement in `BACKLOG.md` lands)
       Edit the GitHub Release body to include the user-facing highlights
       from `RELEASE_NOTES_v<version>.md`. The workflow currently writes a
@@ -75,7 +85,10 @@ users get updates batched into substantive feature releases.
 
 For releases that *do* warrant a Store push:
 
-- [ ] Build the MSIX locally with `qso_predictor_msix.spec`.
+- [ ] Build the MSIX locally with `qso_predictor_msix.spec`. The build
+      machine's Python needs the app's deps installed (at minimum
+      `pip install -r requirements.txt`) — PyInstaller silently drops
+      any hiddenimport that isn't importable at build time.
 - [ ] Submit via Partner Center. See `dev-docs/PARTNER_CENTER_SUBMISSION_GUIDE.md`.
 - [ ] Wait for certification.
 

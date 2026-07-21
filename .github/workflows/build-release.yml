@@ -32,11 +32,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller
           pip install PyQt6 paho-mqtt numpy requests
-      
+          # Frozen-feature deps — every package the spec's hiddenimports
+          # name must be installed HERE or PyInstaller drops it with a
+          # non-fatal warning (this silently shipped v2.4.0-v2.5.8 exes
+          # without IONIS). Enforced by tests/test_conventions.py.
+          pip install safetensors psutil
+
       - name: Build executable
         run: |
           pyinstaller qso_predictor.spec
-      
+
       - name: Create release zip
         shell: pwsh
         run: |
@@ -81,7 +86,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller
           pip install PyQt6 paho-mqtt numpy requests
-      
+          # IONIS needs safetensors installed AND the model data bundled
+          # (see --add-data below); psutil restores analyzer memory
+          # diagnostics. v2.4.0-v2.5.8 DMGs shipped without both.
+          pip install safetensors psutil
+
       - name: Import certificate
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
@@ -111,8 +120,10 @@ jobs:
             --icon icon.icns \
             --osx-bundle-identifier com.wu2c.qsopredictor \
             --add-data "VERSION:." \
+            --add-data "ionis/data:ionis/data" \
             --hidden-import=requests \
-            main_v2.py || pyinstaller --windowed --name "QSO Predictor" --add-data "VERSION:." --hidden-import=requests main_v2.py
+            --hidden-import=safetensors.numpy \
+            main_v2.py || pyinstaller --windowed --name "QSO Predictor" --add-data "VERSION:." --add-data "ionis/data:ionis/data" --hidden-import=requests --hidden-import=safetensors.numpy main_v2.py
       
       - name: Sign the app
         env:
