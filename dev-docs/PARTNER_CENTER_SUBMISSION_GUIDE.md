@@ -240,6 +240,26 @@ This is a desktop utility, not a learning tool. If you are new to amateur radio,
 
 **Leave blank for first submission.** Microsoft's own field hint confirms this.
 
+**v2.6.0 submission (2026-07-21):**
+
+> NEW: Audio Doctor (Tools menu, Windows) — find out why your TX audio
+> went silent, in seconds. Windows can silence WSJT-X invisibly: a
+> per-app mixer mute that survives reboots, communications ducking
+> triggered by a browser using the microphone, or a stale device entry
+> after a USB port change. Audio Doctor runs a read-only 11-point audit
+> of the audio path between WSJT-X/JTDX and your rig, plus a live TX
+> check: press Tune, and it watches the Windows peak meters and reports
+> exactly which layer is silent. Findings link straight to the exact
+> Windows settings panel where each fix lives. QSO Predictor also now
+> warns automatically in the status bar if WSJT-X reports transmitting
+> while no audio is reaching the rig. Works with FT8web browser
+> transmissions too. Audio Doctor changes nothing on your system — it
+> is diagnosis only. Plus smaller fixes and a larger automated test
+> suite.
+
+(The GitHub-release IONIS disclosure is deliberately absent here —
+Store builds were never affected.)
+
 ### Product features (up to 20 bullets, 200 chars each)
 
 Eight bullets:
@@ -252,6 +272,19 @@ Eight bullets:
 6. `Seamless integration with WSJT-X and JTDX via UDP; no separate radio control required`
 7. `Advisory only — you keep full control of your radio; QSO Predictor never transmits for you`
 8. `No telemetry, no tracking, no personal data transmitted; open source under GPLv3`
+
+**Added at v2.5.8 submission:** the WSJT-X bullet (#6) was extended to
+mention FT8web, plus a new FT8web UDP-bridging bullet — exact live
+wording is in Partner Center (this file wasn't updated at the time;
+reconcile when convenient).
+
+**Added at v2.6.0 submission:**
+
+9. `Audio Doctor (Windows): one-click diagnosis of silent TX audio — hidden mixer mutes, ducking, device traps — with a live meter check and links to the exact Windows setting to fix`
+
+Description field also gained an "Audio Doctor." paragraph under KEY
+CAPABILITIES at v2.6.0 (see chat/RELEASE_NOTES_v2.6.0.md for the text
+as entered).
 
 ### Screenshots (at least one required)
 
