@@ -124,6 +124,21 @@ Qt stylesheets **completely override** model `BackgroundRole` data. If you set b
 
 Linux desktop themes often don't style Qt tooltips properly, resulting in invisible text (dark on dark). The app sets explicit `QToolTip` stylesheet at the `QApplication` level in `main_v2.py`.
 
+### Win11 Volume Mixer Display Can Be Stale (Trust the COM Read)
+
+Confirmed live during v2.6.0 smoke testing: the Settings → Sound →
+Volume mixer page showed WSJT-X's slider greyed out at "1" **while the
+app was actively tuning through the codec** and Audio Doctor's live
+`ISimpleAudioVolume.GetMasterVolume()` read a healthy level (verdict
+AUDIO_FLOWING, RF confirmed on the rig's SWR meter). The Settings page
+doesn't reliably re-enable rows for sessions that activate while it is
+open, and its displayed value can come from stale/differently-scoped
+persisted state. Rule: the mixer PAGE is an unreliable witness — the
+per-session COM interfaces are ground truth. Closing and reopening the
+mixer page usually refreshes it. This is user-facing (hint baked into
+the Audio Doctor dialog + docs) and the core reason the live TX-path
+check exists.
+
 ### QScrollArea Viewport Ignores the Dialog Stylesheet (Windows)
 
 A `QScrollArea`'s viewport and content widget paint the **OS palette**

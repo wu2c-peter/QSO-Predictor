@@ -217,10 +217,14 @@ _VERDICT_FIX = {
     TxVerdict.MUTED_IN_MIXER:
         "While WSJT-X is transmitting, open the Windows Volume Mixer "
         "with the codec selected and unmute WSJT-X — or use Settings → "
-        "System → Sound → 'Reset sound devices and volumes for all apps'.",
+        "System → Sound → 'Reset sound devices and volumes for all "
+        "apps'. If the mixer row looks greyed out or wrong, close and "
+        "reopen the mixer page — its display is often stale.",
     TxVerdict.MIXER_VOLUME_LOW:
         "While WSJT-X is transmitting, open the Windows Volume Mixer "
-        "with the codec selected and raise the WSJT-X slider to 100%.",
+        "with the codec selected and raise the WSJT-X slider to 100%. "
+        "If the row looks greyed out or wrong, close and reopen the "
+        "mixer page — its display is often stale.",
     TxVerdict.APP_NOT_EMITTING:
         "Raise the Pwr slider (bottom right in WSJT-X) and press Tune.",
     TxVerdict.NOT_REACHING_ENDPOINT:
