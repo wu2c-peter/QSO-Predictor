@@ -191,7 +191,13 @@ class AudioHealthController(QObject):
             QMessageBox.information(mw, "Audio Doctor", reason)
             return
 
-        dialog = AudioDoctorDialog(parent=mw, rig_hint=self.rig_hint())
+        # ft8web is looked up at call time (Settings saves recreate the
+        # handler object), so the dialog always sees the live state.
+        dialog = AudioDoctorDialog(
+            parent=mw, rig_hint=self.rig_hint(),
+            ft8web_connected=lambda: bool(
+                getattr(mw, 'ft8web', None)
+                and mw.ft8web.is_client_connected()))
         result = dialog.exec()
 
         # Persist an edited device hint for next time (and for the

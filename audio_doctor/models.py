@@ -154,6 +154,29 @@ class TxVerdict(Enum):
         return _VERDICT_PANEL.get(self)
 
 
+@dataclass
+class VerdictText:
+    """Display strings for a TX verdict, resolved for the app under
+    test."""
+    headline: str
+    explanation: str
+    fix: str
+
+
+def verdict_display(verdict: "TxVerdict", browser: bool = False) -> VerdictText:
+    """Verdict display strings flavored for the app under test:
+    WSJT-X/JTDX by default, or the browser when FT8web is the active
+    source. The distinction matters for the fixes — a browser has no
+    Tune button, no Pwr slider, and no Settings → Audio ritual."""
+    if browser:
+        return VerdictText(_VERDICT_HEADLINE_BROWSER[verdict],
+                           _VERDICT_EXPLANATION_BROWSER[verdict],
+                           _VERDICT_FIX_BROWSER[verdict])
+    return VerdictText(_VERDICT_HEADLINE[verdict],
+                       _VERDICT_EXPLANATION[verdict],
+                       _VERDICT_FIX[verdict])
+
+
 _PROBLEM_VERDICTS = frozenset({
     TxVerdict.NO_SESSION,
     TxVerdict.MUTED_IN_MIXER,
@@ -234,6 +257,77 @@ _VERDICT_FIX = {
         "check Windows per-app output routing (Volume mixer).",
     TxVerdict.INCONCLUSIVE:
         "Press Tune in WSJT-X, then run the check again.",
+}
+
+
+# Browser-flavored variants, used when FT8web is the active source and
+# the app under test is the browser. Keep these free of WSJT-X-isms
+# (Tune, Pwr slider, Settings → Audio) — enforced by test.
+_VERDICT_HEADLINE_BROWSER = {
+    TxVerdict.AUDIO_FLOWING: "TX audio is reaching the codec",
+    TxVerdict.NO_SESSION: "No browser audio session on the codec",
+    TxVerdict.MUTED_IN_MIXER: "The browser is muted in the Windows mixer",
+    TxVerdict.MIXER_VOLUME_LOW: "The browser's mixer volume is near zero",
+    TxVerdict.APP_NOT_EMITTING: "The browser is not producing audio",
+    TxVerdict.NOT_REACHING_ENDPOINT: "Audio is not reaching the codec",
+    TxVerdict.INCONCLUSIVE: "Not enough data to judge the TX path",
+}
+
+_VERDICT_EXPLANATION_BROWSER = {
+    TxVerdict.AUDIO_FLOWING:
+        "A browser audio session exists on the codec and samples are "
+        "registering on the Windows peak meters. If the rig still shows "
+        "no modulation, look at the rig side (USB MOD level, DATA mode).",
+    TxVerdict.NO_SESSION:
+        "Nothing is playing audio to the rig codec. Either FT8web isn't "
+        "transmitting yet, or the browser's audio output is routed to a "
+        "different device.",
+    TxVerdict.MUTED_IN_MIXER:
+        "Windows keeps a persistent per-app mute for the browser on "
+        "this device — it survives reboots and silences everything the "
+        "browser plays to the codec.",
+    TxVerdict.MIXER_VOLUME_LOW:
+        "The per-app volume for the browser on this device is at or "
+        "near zero in the Windows mixer. Communications ducking or a "
+        "stray mixer click can leave it there; it persists across "
+        "reboots.",
+    TxVerdict.APP_NOT_EMITTING:
+        "The browser has a session on the codec but is producing "
+        "silence.",
+    TxVerdict.NOT_REACHING_ENDPOINT:
+        "The browser is producing audio but nothing registers on the "
+        "codec endpoint meter — audio may be routed to a different "
+        "device.",
+    TxVerdict.INCONCLUSIVE:
+        "The probe did not collect enough samples. Make sure FT8web is "
+        "transmitting while the check runs.",
+}
+
+_VERDICT_FIX_BROWSER = {
+    TxVerdict.AUDIO_FLOWING: "",
+    TxVerdict.NO_SESSION:
+        "Start a transmission in FT8web and re-run the check. If it "
+        "still fails, check the browser's output routing in the Volume "
+        "mixer — and use Chrome or Edge; privacy browsers block "
+        "reliable device selection.",
+    TxVerdict.MUTED_IN_MIXER:
+        "While FT8web is transmitting, open the Volume Mixer and "
+        "unmute the browser. The order matters: a mixer page opened "
+        "before TX starts shows a stale, greyed-out row you can't "
+        "change — close and reopen it while still transmitting.",
+    TxVerdict.MIXER_VOLUME_LOW:
+        "While FT8web is transmitting, open the Volume Mixer and raise "
+        "the browser's slider to 100%. If the row looks greyed out or "
+        "stale, close and reopen the mixer page while still "
+        "transmitting.",
+    TxVerdict.APP_NOT_EMITTING:
+        "Check FT8web's TX level and that a transmission is actually "
+        "in progress, then re-run the check.",
+    TxVerdict.NOT_REACHING_ENDPOINT:
+        "Check the browser's per-app output routing in the Volume "
+        "mixer, and FT8web's audio output device selection.",
+    TxVerdict.INCONCLUSIVE:
+        "Start a transmission in FT8web, then run the check again.",
 }
 
 

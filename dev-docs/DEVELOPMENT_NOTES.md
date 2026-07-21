@@ -461,6 +461,15 @@ endpoints, wrong endpoint format.
 - **Threading contract**: every probe call runs on a daemon worker thread
   inside `with probe_windows.com_initialized():` (comtypes needs
   per-thread CoInitialize). Never call the probe from the Qt main thread.
+- **The dialog's TX check is browser-aware**: when FT8web is
+  connected, it runs `TxPathProbe(app_names=None)` — bind whatever
+  session plays on the RIG device (any browser, no name list), with
+  ACTIVE sessions preferred so a stale muted wsjtx session can't
+  hijack the diagnosis — and renders verdicts via
+  `models.verdict_display(v, browser=True)` (no Tune/Pwr wording).
+  The passive monitor does NOT get browser mode on purpose:
+  browsers play unrelated audio, so passive inference would be
+  false-positive-prone.
 - **Passive monitor stands down when FT8web is connected** — the browser,
   not wsjtx.exe, plays TX audio there; a missing WSJT-X session is normal.
 - The silent-TX warning joins `HealthMonitor._check_data_health()` via

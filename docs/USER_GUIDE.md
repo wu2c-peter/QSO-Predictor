@@ -1143,6 +1143,8 @@ The configuration audit finds stored problems; the live check catches your TX au
 | **"Audio is not reaching the codec"** | WSJT-X is producing audio, but it's going to a different device. Check WSJT-X Settings → Audio Output and the per-app output routing in the Volume mixer. |
 | **"Not enough data to judge the TX path"** | The probe didn't see enough samples. Press Tune and run the check again. |
 
+**Using FT8web?** When the browser client is connected, the check automatically watches the *browser's* audio session on the codec instead of WSJT-X's — start a transmission in FT8web, then run the check. The verdicts and fixes adapt (no Tune button in a browser).
+
 > **Trust this verdict over the Windows mixer page.** The check reads the *live* audio session. Windows 11's Settings → Sound → Volume mixer page can show an app's slider greyed-out or at a wrong value even while that app is playing at healthy volume. See "Windows quirks worth knowing" below.
 
 ### The Automatic Silent-TX Warning

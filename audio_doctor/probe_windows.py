@@ -447,9 +447,17 @@ class TxPathProbe:
     RESCAN_EVERY = 5
 
     def __init__(self, rig_hint: str,
-                 app_names: Sequence[str] = ("wsjtx.exe", "jtdx.exe")):
+                 app_names: Optional[Sequence[str]] = ("wsjtx.exe",
+                                                       "jtdx.exe")):
+        """app_names=None enables "any app" mode: bind whatever session
+        is playing on the RIG device (used when FT8web is the source —
+        during a browser TX, whatever plays to the codec IS the thing
+        under test, and this works for any browser without a name
+        list). Named mode may bind on any device, rig-first, to catch
+        wrong-routing."""
         self._rig_hint = rig_hint
-        self._app_names = {n.lower() for n in app_names}
+        self._app_names = ({n.lower() for n in app_names}
+                           if app_names is not None else None)
         self._session_volume = None      # ISimpleAudioVolume
         self._session_meter = None       # IAudioMeterInformation (session)
         self._endpoint_meter = None      # IAudioMeterInformation (endpoint mix)
@@ -481,24 +489,51 @@ class TxPathProbe:
                 logger.debug("Audio Doctor: endpoint meter bind failed: %s", exc)
 
     def _bind_session(self):
+        """Bind the session under test. Prefers an ACTIVE session over a
+        lingering inactive/expired one (e.g. a stale muted WSJT-X
+        session must not hijack a browser-mode diagnosis)."""
+        fallback = None
         for dev in self._rig_devices():
+            name = parsing.strip_enum_prefix(str(dev.FriendlyName or ""))
+            is_rig = self._rig_hint.casefold() in name.casefold()
+            if self._app_names is None and not is_rig:
+                continue    # any-app mode only inspects the rig device
             for ctl in _iter_render_sessions(dev):
                 try:
-                    name = _process_name(ctl.GetProcessId())
+                    pname = _process_name(ctl.GetProcessId())
                 except Exception:
                     continue
-                if name not in self._app_names:
+                if pname is None:
+                    continue
+                if (self._app_names is not None
+                        and pname not in self._app_names):
                     continue
                 try:
-                    self._session_volume = ctl.QueryInterface(ISimpleAudioVolume)
+                    active = ctl.GetState() == 1
                 except Exception:
-                    self._session_volume = None
-                try:
-                    self._session_meter = ctl.QueryInterface(
-                        IAudioMeterInformation)
-                except Exception:
-                    self._session_meter = None
-                return
+                    active = False
+                if active:
+                    logger.debug("Audio Doctor: probe bound to active "
+                                 "session %s on %s", pname, name)
+                    self._bind_to(ctl)
+                    return
+                if fallback is None:
+                    fallback = (ctl, pname, name)
+        if fallback is not None:
+            ctl, pname, name = fallback
+            logger.debug("Audio Doctor: probe bound to inactive session "
+                         "%s on %s", pname, name)
+            self._bind_to(ctl)
+
+    def _bind_to(self, ctl):
+        try:
+            self._session_volume = ctl.QueryInterface(ISimpleAudioVolume)
+        except Exception:
+            self._session_volume = None
+        try:
+            self._session_meter = ctl.QueryInterface(IAudioMeterInformation)
+        except Exception:
+            self._session_meter = None
 
     def sample(self) -> TxProbeSample:
         self._sample_count += 1

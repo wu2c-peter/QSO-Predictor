@@ -28,7 +28,8 @@ from PyQt6.QtWidgets import (
 
 from audio_doctor import probe_windows
 from audio_doctor.checks import evaluate_tx_probe, run_checks, summarize_checks
-from audio_doctor.models import SettingsPanel, Severity, TxVerdict
+from audio_doctor.models import (SettingsPanel, Severity, TxVerdict,
+                                 verdict_display)
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,16 @@ class AudioDoctorDialog(QDialog):
     _probe_progress = pyqtSignal(int)
     _probe_ready = pyqtSignal(object)
 
-    def __init__(self, parent=None, rig_hint="USB Audio CODEC"):
+    def __init__(self, parent=None, rig_hint="USB Audio CODEC",
+                 ft8web_connected=None):
+        """ft8web_connected: optional zero-arg callable; truthy return
+        switches the TX check to browser mode (FT8web is the source, so
+        the browser — not wsjtx.exe — plays TX audio). Evaluated at
+        probe start so mid-dialog connects/disconnects are honored."""
         super().__init__(parent)
         self._busy = False
+        self._ft8web_connected = ft8web_connected
+        self._probe_browser = False
         self.setWindowTitle("Audio Doctor")
         self.setModal(True)
         self.setMinimumSize(680, 560)
@@ -149,7 +157,9 @@ class AudioDoctorDialog(QDialog):
             "Press <b>Tune</b> in WSJT-X (or wait for a TX cycle), then "
             "click the button. The check watches the Windows peak meters "
             f"for {PROBE_DURATION_S:.0f} seconds and reports which layer "
-            "of the TX path is silent, if any.<br>"
+            "of the TX path is silent, if any. When FT8web is connected, "
+            "the check watches the browser's audio instead — start a "
+            "transmission in FT8web first.<br>"
             "<span style='color:#9E9E9E'>Tip: this check reads the LIVE "
             "audio session — Windows' own Volume mixer page shows stale, "
             "greyed-out values unless WSJT-X is already transmitting "
@@ -282,17 +292,29 @@ class AudioDoctorDialog(QDialog):
             return
         self._set_busy(True)
         self.verdict_label.setText("")
-        self.probe_status.setText("Sampling…")
+        try:
+            self._probe_browser = bool(self._ft8web_connected
+                                       and self._ft8web_connected())
+        except Exception:
+            self._probe_browser = False
+        self.probe_status.setText(
+            "Sampling (FT8web browser mode)…" if self._probe_browser
+            else "Sampling…")
         hint = self.current_rig_hint() or "USB Audio CODEC"
-        threading.Thread(target=self._probe_worker, args=(hint,),
+        threading.Thread(target=self._probe_worker,
+                         args=(hint, self._probe_browser),
                          name="AudioDoctorProbe", daemon=True).start()
 
-    def _probe_worker(self, rig_hint):
+    def _probe_worker(self, rig_hint, browser_mode):
         verdict = None
         try:
             samples = []
             with probe_windows.com_initialized():
-                probe = probe_windows.TxPathProbe(rig_hint)
+                # Browser mode: bind whatever session plays on the rig
+                # device — during a browser TX that IS the app under test.
+                probe = probe_windows.TxPathProbe(
+                    rig_hint, app_names=None if browser_mode else
+                    ("wsjtx.exe", "jtdx.exe"))
                 try:
                     for i in range(PROBE_TOTAL_SAMPLES):
                         samples.append(probe.sample())
@@ -330,10 +352,12 @@ class AudioDoctorDialog(QDialog):
             color = Severity.FAIL.color
         else:
             color = Severity.UNKNOWN.color
-        fix = (f"<br><i>Fix: {html.escape(verdict.fix)}</i>"
-               if verdict.fix else "")
+        text = verdict_display(verdict, browser=self._probe_browser)
+        fix = (f"<br><i>Fix: {html.escape(text.fix)}</i>"
+               if text.fix else "")
         fix += self._panel_link(verdict.panel)
         self.verdict_label.setText(
-            f"<b style='color:{color}'>{html.escape(verdict.headline)}</b>"
-            f"<br>{html.escape(verdict.explanation)}{fix}")
-        logger.info("Audio Doctor TX check: %s", verdict.value)
+            f"<b style='color:{color}'>{html.escape(text.headline)}</b>"
+            f"<br>{html.escape(text.explanation)}{fix}")
+        logger.info("Audio Doctor TX check: %s%s", verdict.value,
+                    " (browser mode)" if self._probe_browser else "")

@@ -578,6 +578,42 @@ def test_verdict_panels_point_at_the_mixer_only_for_mixer_problems():
     assert TxVerdict.APP_NOT_EMITTING.panel is None
 
 
+def test_verdict_display_default_matches_legacy_properties():
+    """The WSJT-X flavor must stay byte-identical to the enum's own
+    properties — the passive monitor's ⚠ warning uses verdict.headline
+    directly."""
+    from audio_doctor.models import verdict_display
+
+    for verdict in TxVerdict:
+        text = verdict_display(verdict)
+        assert text.headline == verdict.headline
+        assert text.explanation == verdict.explanation
+        assert text.fix == verdict.fix
+
+
+def test_browser_verdict_text_never_mentions_wsjtx():
+    """Browser mode (FT8web source) must not tell users to press Tune
+    or fiddle with WSJT-X — the browser has neither."""
+    from audio_doctor.models import verdict_display
+
+    for verdict in TxVerdict:
+        text = verdict_display(verdict, browser=True)
+        combined = " ".join([text.headline, text.explanation, text.fix])
+        assert "WSJT-X" not in combined, verdict
+        assert "Tune" not in combined, verdict
+        assert "Pwr" not in combined, verdict
+        assert text.headline and text.explanation
+        if verdict.is_problem:
+            assert text.fix, verdict
+
+
+def test_browser_no_session_verdict_points_at_ft8web():
+    from audio_doctor.models import verdict_display
+
+    text = verdict_display(TxVerdict.NO_SESSION, browser=True)
+    assert "FT8web" in text.explanation or "FT8web" in text.fix
+
+
 def test_every_panel_has_label_and_launcher_command():
     """probe_windows must know how to open every panel the pure core can
     attach to a finding — a panel without a launcher renders a dead link.
