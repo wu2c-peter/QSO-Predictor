@@ -261,9 +261,12 @@ def _check_persisted_app_volume(snap: AudioSnapshot,
         return CheckResult(check_id, title, Severity.UNKNOWN,
                            "Could not read the per-app volume store.")
     wanted = {n.casefold() for n in app_names}
-    rig_ids = {ep.id for ep in rig_render}
-    hits = [p for p in snap.persisted
-            if p.exe_name in wanted and p.endpoint_id in rig_ids]
+    # Endpoint IDs must compare case-insensitively: the registry store's
+    # entry names don't guarantee the same GUID casing as COM GetId().
+    rig_ids = {ep.id.casefold() for ep in rig_render}
+    app_entries = [p for p in snap.persisted if p.exe_name in wanted]
+    hits = [p for p in app_entries if p.endpoint_id.casefold() in rig_ids]
+    elsewhere = len(app_entries) - len(hits)
     problems = [p for p in hits
                 if p.muted or (p.volume is not None and p.volume <= LOW_VOLUME)]
     if problems:
@@ -291,10 +294,16 @@ def _check_persisted_app_volume(snap: AudioSnapshot,
             for p in hits)
         return CheckResult(check_id, title, Severity.OK,
                            f"Healthy persisted mixer state ({levels}).")
+    extra = (f" ({elsewhere} persisted entr"
+             f"{'y' if elsewhere == 1 else 'ies'} for these apps exist "
+             f"on other devices.)" if elsewhere else "")
     return CheckResult(
         check_id, title, Severity.OK,
         "No persisted entry for WSJT-X/JTDX on the codec (normal if the "
-        "app hasn't played audio to it yet).")
+        "app hasn't played audio to it yet). Note: Windows can write "
+        "this store lazily — a mute set during the app's current run "
+        "may not appear here until later, but the live TX check below "
+        f"always sees it.{extra}")
 
 
 def _check_live_sessions(snap: AudioSnapshot,

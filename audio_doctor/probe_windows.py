@@ -218,9 +218,15 @@ def _read_propvariant_value(key, value_name, expected_type):
     except FileNotFoundError:
         return None
     if not isinstance(blob, bytes):
+        logger.debug("Audio Doctor: PropertyStore value %r is not binary "
+                     "(%r)", value_name, type(blob).__name__)
         return None
     decoded = parsing.decode_propvariant(blob)
     if decoded is None:
+        # A blob we couldn't decode is a diagnosis gap — leave the hex
+        # in the debug log so the format can be added.
+        logger.debug("Audio Doctor: undecodable PropertyStore value %r: %s",
+                     value_name, blob.hex())
         return None
     try:
         return expected_type(decoded)
@@ -396,7 +402,32 @@ def gather_snapshot() -> AudioSnapshot:
     snapshot.ducking_preference = read_ducking_preference()
     snapshot.fast_startup = read_fast_startup()
     snapshot.sound_scheme = read_sound_scheme()
+    _log_snapshot_summary(snapshot)
     return snapshot
+
+
+def _log_snapshot_summary(snapshot: AudioSnapshot,
+                          interesting=("wsjtx", "jtdx")):
+    """One DEBUG block per audit so a user report with debug logging
+    enabled shows exactly what the probe saw (smart-logging: audits are
+    manual/rare, so this stays quiet in normal operation)."""
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    persisted = snapshot.persisted or []
+    logger.debug(
+        "Audio Doctor snapshot: %d endpoints, %d sessions, %d persisted "
+        "entries, ducking=%s, fast_startup=%s",
+        len(snapshot.endpoints), len(snapshot.sessions), len(persisted),
+        snapshot.ducking_preference, snapshot.fast_startup)
+    for s in snapshot.sessions:
+        if any(k in s.process_name for k in interesting):
+            logger.debug("  session: %s pid=%s on %r vol=%s muted=%s "
+                         "active=%s", s.process_name, s.pid,
+                         s.endpoint_name, s.volume, s.muted, s.active)
+    for p in persisted:
+        if any(k in p.exe_name for k in interesting):
+            logger.debug("  persisted: %s vol=%s muted=%s endpoint=%s",
+                         p.exe_name, p.volume, p.muted, p.endpoint_id)
 
 
 # =============================================================================

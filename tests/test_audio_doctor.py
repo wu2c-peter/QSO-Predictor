@@ -368,6 +368,19 @@ def test_persisted_near_zero_volume_is_a_failure():
     assert r.severity == Severity.FAIL
 
 
+def test_persisted_mute_detected_despite_endpoint_id_case_mismatch():
+    """Smoke-test regression (2026-07-21): a real muted-WSJT-X store
+    entry was missed on first scan. The registry entry names don't
+    guarantee the same GUID casing as COM GetId() — matching must be
+    case-insensitive."""
+    snap = healthy_snapshot(persisted=[
+        PersistedAppAudio(endpoint_id=CODEC_RENDER.id.upper(),
+                          exe_path="\\Device\\HarddiskVolume3\\wsjtx.exe",
+                          volume=1.0, muted=True)])
+    r = result_by_id(run_checks(snap), "app-mixer-persisted")
+    assert r.severity == Severity.FAIL
+
+
 def test_persisted_entries_on_other_devices_are_ignored():
     snap = healthy_snapshot(persisted=[
         PersistedAppAudio(endpoint_id=SPEAKERS.id,
