@@ -1311,7 +1311,7 @@ del "%USERPROFILE%\.qso-predictor\outcome_history.jsonl"
 rmdir /s /q "%USERPROFILE%\.qso-predictor"
 ```
 
-**Disk space concern?** If you're running a version of QSOP from before v2.5.3 and see a `pending_observations.jsonl` file that's unusually large (potentially hundreds of GB due to a fixed bug), just upgrade to v2.5.3 — it removes the file automatically on first launch. See Release Notes for v2.5.3 for details.
+**Disk space concern?** If you're running a version of QSOP from before v2.5.3 and see a `pending_observations.jsonl` file that's unusually large (potentially hundreds of GB due to a fixed bug), just upgrade to v2.5.3 or later — the file is removed automatically on first launch. See Release Notes for v2.5.3 for details.
 
 ### SuperFox — Enable TX Flashes But Won't Transmit
 
