@@ -160,6 +160,15 @@ logged-QSO data from [FT8web](https://ft8web.ok1cdj.com/) — a browser-based
 FT8/FT4 client by Ondra, OK1CDJ. QSOP contributed the External Data Stream
 feature to FT8web upstream, so it works with the live site out of the box.
 
+> **Use Chrome or Edge for FT8web.** FT8web talks to your hardware
+> through browser device APIs: Web Serial for CAT control of the rig,
+> and media-device selection for the codec's audio. Privacy-hardened
+> browsers (DuckDuckGo, Brave with shields up) and Firefox/Safari block
+> or lack these APIs — symptoms are a CAT port picker that fails with
+> "access denied" and, subtler, FT8web silently capturing the wrong
+> microphone after a reload: the waterfall moves but nothing ever
+> decodes.
+
 **In QSO Predictor:**
 
 1. Open File → Settings → **Network** tab
