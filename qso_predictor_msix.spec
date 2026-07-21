@@ -103,6 +103,24 @@ hiddenimports = [
     'ionis.physics_override',
     'safetensors',
     'safetensors.numpy',
+
+    # Audio Doctor (v2.6.0) — MSIX builds always run on Windows, so no
+    # platform conditional needed. Build machine must have pycaw
+    # installed (pip install "pycaw>=20251023").
+    'audio_doctor',
+    'audio_doctor.models',
+    'audio_doctor.parsing',
+    'audio_doctor.checks',
+    'audio_doctor.probe_windows',
+    'pycaw',
+    'pycaw.utils',
+    'pycaw.constants',
+    'pycaw.api.audioclient',
+    'pycaw.api.audiopolicy',
+    'pycaw.api.endpointvolume',
+    'pycaw.api.mmdeviceapi',
+    'comtypes',
+    'comtypes.stream',   # comtypes>=1.4.5 needs this frozen explicitly
 ]
 
 a = Analysis(

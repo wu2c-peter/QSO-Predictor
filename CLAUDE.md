@@ -44,6 +44,7 @@ launching the app and watching the log at
 | `analyzer/` | `QSOAnalyzer` in `core.py`; pure helpers in `geometry.py`. |
 | `local_intel/` | Offline ML stack — models, predictor, session tracker, log parser. The `models.py` module is pure-stdlib and defines `PathStatus`. |
 | `ionis/` | IONIS propagation engine (numpy inference + features). |
+| `audio_doctor/` | Windows TX-audio diagnostics (v2.6.0). `models/parsing/checks` are pure-stdlib (tested cross-platform); ALL COM/registry access stays in `probe_windows.py`. See `DEVELOPMENT_NOTES.md` § Audio Doctor. |
 | `utils/` | Pure-stdlib helpers with no Qt / main-app deps (`version.py`). |
 | `training/` | Out-of-process model training. |
 | `dev-docs/DEVELOPMENT_NOTES.md` | "Don't break this" rules, performance lessons, platform gotchas, architectural conventions. **Read this before significant changes.** |

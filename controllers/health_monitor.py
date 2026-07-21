@@ -82,6 +82,15 @@ class HealthMonitor(QObject):
             if not mqtt_ok and mqtt_msg:
                 warnings.append(mqtt_msg)
 
+        # v2.6.0: Audio Doctor silent-TX verdict (Windows only; the
+        # controller reports healthy everywhere else). Same tuple
+        # contract as the UDP/MQTT sources.
+        audio = getattr(mw, 'audio_health', None)
+        if audio:
+            audio_ok, audio_msg = audio.check_tx_health()
+            if not audio_ok and audio_msg:
+                warnings.append(audio_msg)
+
         # MainWindow.update_status_msg is sticky for warnings — a single
         # call holds until clear_health_warning() runs, so we only need to
         # act on transitions: warning_text changed text, or warning lifted.

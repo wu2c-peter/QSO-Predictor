@@ -249,6 +249,7 @@ and should be preserved by future changes.
 | `analyzer/` | `QSOAnalyzer` (in `core.py`) + pure helpers (`geometry.py`) |
 | `local_intel/` | Offline ML stack — models, predictor, session tracker, log parser |
 | `ionis/` | IONIS propagation engine — numpy inference + features |
+| `audio_doctor/` | Windows TX-audio diagnostics — pure core + COM probe (v2.6.0) |
 | `utils/` | Pure-stdlib helpers with no Qt / main-app deps (e.g. `version.py`) |
 | `training/` | Out-of-process model training |
 
@@ -410,6 +411,72 @@ spec entries (the conventions test will hold you to that order).
 
 ---
 
+## v2.6.0: Audio Doctor (Windows TX-Audio Diagnostics)
+
+Born from a real incident (July 2026): after a browser ft8web session,
+WSJT-X TX audio to the USB codec went silent — RX fine, survived a cold
+boot, immune to re-selecting the device in WSJT-X. Root-cause space
+(researched + verified): Windows' *persisted per-app mixer volume/mute*
+(registry, per-endpoint), communications ducking, default-role
+reassignment when endpoints re-enumerate, stale duplicate codec
+endpoints, wrong endpoint format.
+
+### Architecture rules
+
+- **Pure core vs probe split**: `audio_doctor/models|parsing|checks.py`
+  are pure stdlib and unit-tested on any OS (`tests/test_audio_doctor.py`,
+  enforced by `test_conventions.py`). ALL COM (pycaw/comtypes) and winreg
+  access lives in `audio_doctor/probe_windows.py`. Keep it that way — the
+  probe can only be exercised on a Windows box, so every line of logic
+  moved into it is a line that loses test coverage.
+- **Threading contract**: every probe call runs on a daemon worker thread
+  inside `with probe_windows.com_initialized():` (comtypes needs
+  per-thread CoInitialize). Never call the probe from the Qt main thread.
+- **Passive monitor stands down when FT8web is connected** — the browser,
+  not wsjtx.exe, plays TX audio there; a missing WSJT-X session is normal.
+- The silent-TX warning joins `HealthMonitor._check_data_health()` via
+  `AudioHealthController.check_tx_health()` (same `(ok, "⚠ …")` tuple
+  contract as UDP/MQTT). Don't call `update_status_msg` directly from
+  audio code — it would fight HealthMonitor's transition-edge logic.
+
+### Windows facts encoded in the code (with sharp edges)
+
+- Per-app volume store: value format is
+  `<endpoint-id>|<NT exe path>%b<session guid>`, volume/mute in nested
+  `{219ED5A0-…}` key, serialized PROPVARIANT (vt DWORD @0, payload @8).
+  **Win11 24H2 moved the store** from the legacy Internet Explorer
+  LowRegistry path to `HKCU\Software\Microsoft\Multimedia\Audio\…` —
+  `parsing.APP_PROPERTY_STORE_PATHS` scans both.
+- `UserDuckingPreference` value mapping (0=mute all … 3=do nothing)
+  matches the mmsys.cpl option order per majority sources, but one MS
+  Q&A thread disagrees — **verify 0/1/2 empirically** if it ever matters;
+  only `3` ("Do nothing") is treated as healthy.
+- Endpoint IDs encode flow: `{0.0.0.…}` = render, `{0.0.1.…}` = capture.
+- comtypes ≥ 1.4.5 broke PyInstaller freezes until hooks-contrib added a
+  hook; `comtypes.stream` is listed explicitly in the spec's Windows
+  hiddenimports. If a frozen build dies with
+  `ModuleNotFoundError: comtypes.stream`, look there first.
+
+### Config keys (INI section `AUDIO`)
+
+- `rig_device_hint` — substring matched against device names (default
+  `USB Audio CODEC`); editable in the dialog, persisted on close.
+- `silent_tx_monitor` — `false` disables the passive TX probe.
+
+### Windows smoke-test checklist (first run on the Windows box)
+
+1. Tools → Audio Doctor: audit populates; codec found; no probe notes.
+2. Sanity-check ducking: flip the Communications-tab setting and re-scan —
+   confirm the reported label follows (validates the 0–3 mapping).
+3. Press Tune in WSJT-X → "Check TX path" → expect AUDIO_FLOWING.
+4. Mute WSJT-X in the Volume Mixer → Tune → expect MUTED_IN_MIXER, and
+   (after the next TX cycle ≥60 s later) the ⚠ status-bar warning.
+5. Un-mute → next TX cycle clears the warning via HealthMonitor.
+6. Connect ft8web and confirm the passive monitor stays quiet during
+   browser TX.
+7. Frozen build: verify the dialog opens (comtypes hidden imports OK).
+
+---
 
 *Last updated: July 2026*
 

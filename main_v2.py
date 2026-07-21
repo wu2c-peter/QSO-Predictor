@@ -178,6 +178,7 @@ from widgets import (
 # --- CONTROLLERS ---
 # Focused subsystems extracted from MainWindow. See controllers/__init__.py.
 from controllers import (
+    AudioHealthController,
     FoxHoundController,
     HealthMonitor,
     HuntCoordinator,
@@ -317,7 +318,12 @@ class MainWindow(QMainWindow):
 
         # --- HEALTH MONITOR ---
         self.health_monitor = HealthMonitor(self)
-        
+
+        # --- v2.6.0: AUDIO DOCTOR (Windows TX-audio-path diagnostics) ---
+        # Inert on non-Windows / without pycaw: on_status_update no-ops and
+        # check_tx_health always reports healthy.
+        self.audio_health = AudioHealthController(self)
+
         # --- UDP STATUS TRACKING ---
         self._decode_count = 0
         self._decode_start_time = None
@@ -746,6 +752,17 @@ class MainWindow(QMainWindow):
             disabled_action = QAction("Insights (not available)", self)
             disabled_action.setEnabled(False)
             tools_menu.addAction(disabled_action)
+
+        # v2.6.0: Audio Doctor — Windows-only, same hide-not-disable
+        # convention as the MSIX 'Check for Updates' gating.
+        if sys.platform == 'win32':
+            tools_menu.addSeparator()
+            audio_doctor_action = QAction("Audio Doctor...", self)
+            audio_doctor_action.setToolTip(
+                "Diagnose the Windows audio path to your rig")
+            audio_doctor_action.triggered.connect(
+                self.audio_health.show_dialog)
+            tools_menu.addAction(audio_doctor_action)
         
         # Help Menu
         help_menu = menu.addMenu("Help")
@@ -1286,7 +1303,13 @@ class MainWindow(QMainWindow):
             self.outcome_recorder.on_status_update(
                 status.get('transmitting', False),
                 cycle_context_fn=lambda: self._build_cycle_context(status))
-        
+
+        # --- v2.6.0: AUDIO DOCTOR: silent-TX probe on TX rising edges ---
+        # Same edge-detection contract as the outcome recorder — must see
+        # every status message. Cheap boolean compare; the probe itself
+        # runs on a daemon worker thread (Windows only).
+        self.audio_health.on_status_update(status.get('transmitting', False))
+
         # Throttle remaining UI updates: JTDX sends status many times per second
         if hasattr(self, '_last_status_time') and (now - self._last_status_time) < 0.5:
             return

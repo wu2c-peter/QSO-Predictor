@@ -19,6 +19,11 @@ joblib>=1.3.0              # Model serialization
 # IONIS Propagation Engine (v2.4.0)
 safetensors>=0.4.0         # Model checkpoint loading (numpy backend)
 
+# Audio Doctor (v2.6.0) — Windows Core Audio diagnostics (pulls comtypes).
+# Needs >=20251023: GetAllDevices(data_flow, device_state) params and
+# AudioDevice.AudioSessionManager first shipped in that release.
+pycaw>=20251023 ; sys_platform == 'win32'
+
 # Development dependencies (optional)
 # pytest>=7.0.0            # Testing
 # black>=23.0.0            # Code formatting

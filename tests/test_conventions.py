@@ -117,3 +117,26 @@ def test_release_workflow_installs_every_spec_hiddenimport():
         f"workflow never installs — PyInstaller will silently drop them "
         f"from the exe (the v2.4.0 IONIS bug): {missing}"
     )
+
+
+def test_audio_doctor_core_stays_free_of_qt_and_windows_imports():
+    """audio_doctor's models/parsing/checks are pure stdlib by design —
+    that's what makes the diagnostic logic unit-testable off-Windows.
+    Only probe_windows may touch pycaw/comtypes/winreg, and even it must
+    stay free of Qt / main-app imports (it runs on worker threads)."""
+    qt_and_app = re.compile(r'^\s*(from|import)\s+(PyQt6|analyzer|controllers|'
+                            r'local_intel|ionis|widgets)\b')
+    windows_only = re.compile(r'^\s*(from|import)\s+(pycaw|comtypes|winreg|'
+                              r'psutil)\b')
+    offenders = []
+    for path in (REPO_ROOT / 'audio_doctor').glob('*.py'):
+        for lineno, line in enumerate(
+                path.read_text(encoding='utf-8', errors='replace').splitlines(), 1):
+            if qt_and_app.match(line):
+                offenders.append(f"audio_doctor/{path.name}:{lineno} (Qt/app)")
+            elif path.name != 'probe_windows.py' and windows_only.match(line):
+                offenders.append(f"audio_doctor/{path.name}:{lineno} (win-only)")
+    assert not offenders, (
+        f"audio_doctor core must stay pure stdlib (COM/registry access "
+        f"belongs in probe_windows.py): {offenders}"
+    )

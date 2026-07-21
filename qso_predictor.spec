@@ -76,7 +76,28 @@ hiddenimports = [
     'ionis.physics_override',
     'safetensors',
     'safetensors.numpy',
+
+    # Audio Doctor (v2.6.0) — pure core is imported everywhere; the
+    # Windows-only COM deps are appended below.
+    'audio_doctor',
+    'audio_doctor.models',
+    'audio_doctor.parsing',
+    'audio_doctor.checks',
 ]
+
+if sys.platform == 'win32':
+    hiddenimports += [
+        'audio_doctor.probe_windows',
+        'pycaw',
+        'pycaw.utils',
+        'pycaw.constants',
+        'pycaw.api.audioclient',
+        'pycaw.api.audiopolicy',
+        'pycaw.api.endpointvolume',
+        'pycaw.api.mmdeviceapi',
+        'comtypes',
+        'comtypes.stream',   # comtypes>=1.4.5 needs this frozen explicitly
+    ]
 
 a = Analysis(
     ['main_v2.py'],              # v2 entry point
