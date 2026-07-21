@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 
 from audio_doctor import probe_windows
 from audio_doctor.checks import evaluate_tx_probe, run_checks, summarize_checks
-from audio_doctor.models import Severity, TxVerdict
+from audio_doctor.models import SettingsPanel, Severity, TxVerdict
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +124,11 @@ class AudioDoctorDialog(QDialog):
         self.audit_label.setWordWrap(True)
         self.audit_label.setTextFormat(Qt.TextFormat.RichText)
         self.audit_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse)
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse)
         self.audit_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.audit_label.setOpenExternalLinks(False)
+        self.audit_label.linkActivated.connect(self._open_panel_link)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.viewport().setObjectName("auditViewport")
@@ -161,7 +164,10 @@ class AudioDoctorDialog(QDialog):
         self.verdict_label.setWordWrap(True)
         self.verdict_label.setTextFormat(Qt.TextFormat.RichText)
         self.verdict_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse)
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.verdict_label.setOpenExternalLinks(False)
+        self.verdict_label.linkActivated.connect(self._open_panel_link)
         probe_layout.addWidget(self.verdict_label)
         layout.addWidget(probe_group, stretch=1)
 
@@ -176,6 +182,22 @@ class AudioDoctorDialog(QDialog):
     def current_rig_hint(self) -> str:
         """Read by the controller after exec() to persist edits."""
         return self.hint_edit.text().strip()
+
+    @staticmethod
+    def _panel_link(panel) -> str:
+        """Anchor HTML for an 'Open ...' settings link, or ''."""
+        if panel is None:
+            return ""
+        return (f" <a href='panel:{panel.value}' "
+                f"style='color:#40C4FF'>{html.escape(panel.label)}</a>")
+
+    def _open_panel_link(self, href: str):
+        if href.startswith("panel:"):
+            try:
+                panel = SettingsPanel(href[len("panel:"):])
+            except ValueError:
+                return
+            probe_windows.open_settings_panel(panel)
 
     def _set_busy(self, busy):
         self._busy = busy
@@ -221,7 +243,10 @@ class AudioDoctorDialog(QDialog):
         ordered = sorted(results, key=lambda r: r.severity, reverse=True)
         rows = []
         for r in ordered:
+            # Render the settings link even when there's no fix text —
+            # a panel without a fix (or vice versa) must not vanish.
             fix = (f"<br><i>Fix: {html.escape(r.fix)}</i>" if r.fix else "")
+            fix += self._panel_link(r.panel)
             rows.append(
                 f"<tr>"
                 f"<td style='color:{r.severity.color}; font-weight:bold; "
@@ -301,6 +326,7 @@ class AudioDoctorDialog(QDialog):
             color = Severity.UNKNOWN.color
         fix = (f"<br><i>Fix: {html.escape(verdict.fix)}</i>"
                if verdict.fix else "")
+        fix += self._panel_link(verdict.panel)
         self.verdict_label.setText(
             f"<b style='color:{color}'>{html.escape(verdict.headline)}</b>"
             f"<br>{html.escape(verdict.explanation)}{fix}")

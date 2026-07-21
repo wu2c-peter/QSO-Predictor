@@ -30,7 +30,7 @@ from typing import List, Optional, Sequence
 from audio_doctor import parsing
 from audio_doctor.models import (
     AppSessionInfo, AudioSnapshot, DataFlow, DeviceState, EndpointInfo,
-    PersistedAppAudio, TxProbeSample,
+    PersistedAppAudio, SettingsPanel, TxProbeSample,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,47 @@ def com_initialized():
         yield
     finally:
         comtypes.CoUninitialize()
+
+
+# =============================================================================
+# Settings-panel launcher (dialog "Open ..." links)
+# =============================================================================
+
+# Classic Sound applet tabs open via control.exe with a tab index:
+# mmsys.cpl,,0=Playback  ,,1=Recording  ,,2=Sounds  ,,3=Communications.
+# The volume mixer / per-app routing page is a modern ms-settings URI.
+_PANEL_COMMANDS = {
+    SettingsPanel.PLAYBACK_DEVICES: ["control.exe", "mmsys.cpl,,0"],
+    SettingsPanel.RECORDING_DEVICES: ["control.exe", "mmsys.cpl,,1"],
+    SettingsPanel.SOUND_SCHEME: ["control.exe", "mmsys.cpl,,2"],
+    SettingsPanel.COMMUNICATIONS: ["control.exe", "mmsys.cpl,,3"],
+    SettingsPanel.VOLUME_MIXER: "ms-settings:apps-volume",
+    SettingsPanel.POWER_OPTIONS: [
+        "control.exe", "/name", "Microsoft.PowerOptions",
+        "/page", "pageGlobalSettings"],
+}
+
+
+def open_settings_panel(panel: SettingsPanel) -> bool:
+    """Launch the Windows settings surface for a finding's fix. Fire and
+    forget; returns False (and logs) if the launch failed."""
+    command = _PANEL_COMMANDS.get(panel)
+    if command is None or sys.platform != "win32":
+        return False
+    try:
+        if isinstance(command, str):
+            # ms-settings: URIs launch through the shell handler.
+            import os
+            os.startfile(command)
+        else:
+            import subprocess
+            subprocess.Popen(command)
+        logger.info("Audio Doctor: opened settings panel %s", panel.value)
+        return True
+    except OSError as exc:
+        logger.warning("Audio Doctor: could not open %s: %s",
+                       panel.value, exc)
+        return False
 
 
 # =============================================================================

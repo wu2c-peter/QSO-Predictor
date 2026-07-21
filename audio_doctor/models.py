@@ -45,6 +45,32 @@ _STATE_LABEL = {
 }
 
 
+class SettingsPanel(Enum):
+    """A Windows settings surface a finding's fix lives in. Pure data —
+    the dialog renders these as "Open ..." links and probe_windows owns
+    the actual launch commands."""
+    PLAYBACK_DEVICES = "playback_devices"      # mmsys.cpl Playback tab
+    RECORDING_DEVICES = "recording_devices"    # mmsys.cpl Recording tab
+    SOUND_SCHEME = "sound_scheme"              # mmsys.cpl Sounds tab
+    COMMUNICATIONS = "communications"          # mmsys.cpl Communications tab
+    VOLUME_MIXER = "volume_mixer"              # per-app volume / routing
+    POWER_OPTIONS = "power_options"            # Fast Startup checkbox
+
+    @property
+    def label(self) -> str:
+        return _PANEL_LABEL[self]
+
+
+_PANEL_LABEL = {
+    SettingsPanel.PLAYBACK_DEVICES: "Open playback devices",
+    SettingsPanel.RECORDING_DEVICES: "Open recording devices",
+    SettingsPanel.SOUND_SCHEME: "Open sound scheme settings",
+    SettingsPanel.COMMUNICATIONS: "Open the Communications tab",
+    SettingsPanel.VOLUME_MIXER: "Open the volume mixer",
+    SettingsPanel.POWER_OPTIONS: "Open power options",
+}
+
+
 class Severity(IntEnum):
     """Outcome of one audit check. IntEnum so results sort worst-first
     with plain `sorted(..., reverse=True)` on the enum value."""
@@ -121,6 +147,12 @@ class TxVerdict(Enum):
     def fix(self) -> str:
         return _VERDICT_FIX[self]
 
+    @property
+    def panel(self) -> "Optional[SettingsPanel]":
+        """Windows settings surface where this verdict's fix lives, if
+        the fix is a Windows setting (vs. something inside WSJT-X)."""
+        return _VERDICT_PANEL.get(self)
+
 
 _PROBLEM_VERDICTS = frozenset({
     TxVerdict.NO_SESSION,
@@ -167,6 +199,14 @@ _VERDICT_EXPLANATION = {
     TxVerdict.INCONCLUSIVE:
         "The probe did not collect enough samples. Make sure WSJT-X is "
         "transmitting (press Tune) while the check runs.",
+}
+
+# Verdicts whose fix is inside WSJT-X (NO_SESSION, APP_NOT_EMITTING)
+# deliberately carry no panel — a Windows settings link would mislead.
+_VERDICT_PANEL = {
+    TxVerdict.MUTED_IN_MIXER: SettingsPanel.VOLUME_MIXER,
+    TxVerdict.MIXER_VOLUME_LOW: SettingsPanel.VOLUME_MIXER,
+    TxVerdict.NOT_REACHING_ENDPOINT: SettingsPanel.VOLUME_MIXER,
 }
 
 _VERDICT_FIX = {
@@ -274,6 +314,7 @@ class CheckResult:
     severity: Severity
     detail: str
     fix: str = ""
+    panel: Optional[SettingsPanel] = None   # where the fix lives, if a Windows setting
 
 
 @dataclass

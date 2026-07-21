@@ -514,3 +514,64 @@ def test_every_problem_verdict_carries_display_text():
         assert verdict.explanation
         if verdict.is_problem:
             assert verdict.fix
+
+
+# ---------------------------------------------------------------------------
+# Settings-panel links ("Open ..." deep links in the dialog)
+# ---------------------------------------------------------------------------
+
+def test_actionable_findings_carry_the_right_settings_panel():
+    from audio_doctor.models import SettingsPanel
+
+    snap = healthy_snapshot(
+        ducking_preference=1,
+        fast_startup=True,
+        persisted=[PersistedAppAudio(
+            endpoint_id=CODEC_RENDER.id,
+            exe_path="\\Device\\HarddiskVolume3\\wsjtx.exe",
+            volume=1.0, muted=True)])
+    results = run_checks(snap)
+    assert result_by_id(results, "ducking").panel == SettingsPanel.COMMUNICATIONS
+    assert (result_by_id(results, "app-mixer-persisted").panel
+            == SettingsPanel.VOLUME_MIXER)
+    assert (result_by_id(results, "fast-startup").panel
+            == SettingsPanel.POWER_OPTIONS)
+
+
+def test_format_checks_link_to_matching_device_tab():
+    from audio_doctor.models import SettingsPanel
+
+    bad_render = EndpointInfo(id=CODEC_RENDER.id, name=CODEC_RENDER.name,
+                              flow=DataFlow.RENDER, state=DeviceState.ACTIVE,
+                              fmt=AudioFormat(2, 44100, 16))
+    bad_capture = EndpointInfo(id=CODEC_CAPTURE.id, name=CODEC_CAPTURE.name,
+                               flow=DataFlow.CAPTURE, state=DeviceState.ACTIVE,
+                               fmt=AudioFormat(1, 44100, 16))
+    results = run_checks(healthy_snapshot(
+        endpoints=[bad_render, bad_capture, SPEAKERS]))
+    assert (result_by_id(results, "tx-format").panel
+            == SettingsPanel.PLAYBACK_DEVICES)
+    assert (result_by_id(results, "rx-format").panel
+            == SettingsPanel.RECORDING_DEVICES)
+
+
+def test_verdict_panels_point_at_the_mixer_only_for_mixer_problems():
+    from audio_doctor.models import SettingsPanel
+
+    assert TxVerdict.MUTED_IN_MIXER.panel == SettingsPanel.VOLUME_MIXER
+    assert TxVerdict.MIXER_VOLUME_LOW.panel == SettingsPanel.VOLUME_MIXER
+    # Fixes that live inside WSJT-X must NOT link to Windows settings
+    assert TxVerdict.NO_SESSION.panel is None
+    assert TxVerdict.APP_NOT_EMITTING.panel is None
+
+
+def test_every_panel_has_label_and_launcher_command():
+    """probe_windows must know how to open every panel the pure core can
+    attach to a finding — a panel without a launcher renders a dead link.
+    (probe_windows is import-safe off-Windows; the commands are data.)"""
+    from audio_doctor.models import SettingsPanel
+    from audio_doctor import probe_windows
+
+    for panel in SettingsPanel:
+        assert panel.label.startswith("Open")
+        assert panel in probe_windows._PANEL_COMMANDS

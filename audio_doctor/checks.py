@@ -19,7 +19,7 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 
 from audio_doctor.models import (
     AppSessionInfo, AudioSnapshot, CheckResult, DataFlow, DeviceState,
-    EndpointInfo, Severity, TxProbeSample, TxVerdict,
+    EndpointInfo, SettingsPanel, Severity, TxProbeSample, TxVerdict,
 )
 from audio_doctor.parsing import (
     DUCKING_DO_NOTHING, ducking_label, has_enum_prefix, strip_enum_prefix,
@@ -83,8 +83,10 @@ def run_checks(snap: AudioSnapshot,
         _check_default_device(snap, rig_render),
         _check_default_communication(snap, rig_render, rig_capture),
         _check_ducking(snap),
-        _check_format(rig_render, "tx-format", "TX (playback) format"),
-        _check_format(rig_capture, "rx-format", "RX (recording) format"),
+        _check_format(rig_render, "tx-format", "TX (playback) format",
+                      SettingsPanel.PLAYBACK_DEVICES),
+        _check_format(rig_capture, "rx-format", "RX (recording) format",
+                      SettingsPanel.RECORDING_DEVICES),
         _check_persisted_app_volume(snap, rig_render, app_names),
         _check_live_sessions(snap, rig_render, app_names),
         _check_sound_scheme(snap, rig_render),
@@ -106,7 +108,8 @@ def _check_rig_present(rig_render: List[EndpointInfo],
             f"No playback device matching '{rig_hint}' found in any state.",
             "Check the USB cable and that the rig is on. If your "
             "interface has a different name, set it in the device box "
-            "above.")
+            "above.",
+            panel=SettingsPanel.PLAYBACK_DEVICES)
     active = _active(rig_render)
     if not active:
         states = ", ".join(f"{ep.name} ({ep.state.label})" for ep in rig_render)
@@ -114,7 +117,8 @@ def _check_rig_present(rig_render: List[EndpointInfo],
             check_id, title, Severity.FAIL,
             f"Codec playback endpoint(s) exist but none is active: {states}.",
             "Re-plug the USB cable (same port as usual). If disabled, "
-            "enable it in the Sound control panel (show disabled devices).")
+            "enable it in the Sound control panel (show disabled devices).",
+            panel=SettingsPanel.PLAYBACK_DEVICES)
     return CheckResult(
         check_id, title, Severity.OK,
         f"Active: {', '.join(ep.name for ep in active)}.")
@@ -169,7 +173,8 @@ def _check_default_device(snap: AudioSnapshot,
             "is the Windows default playback device — system sounds and "
             "app audio will be transmitted over the air.",
             "Set your PC speakers as the default device (Settings → "
-            "System → Sound), never the codec.")
+            "System → Sound), never the codec.",
+            panel=SettingsPanel.PLAYBACK_DEVICES)
     name = default_ep.name if default_ep else snap.default_render_id
     return CheckResult(check_id, title, Severity.OK,
                        f"Default is '{name}' (not the codec).")
@@ -198,7 +203,8 @@ def _check_default_communication(snap: AudioSnapshot,
             "communications ducking of WSJT-X TX audio.",
             "Point both communication-device roles at your PC "
             "speakers/mic (Sound control panel → right-click device → "
-            "Set as Default Communication Device).")
+            "Set as Default Communication Device).",
+            panel=SettingsPanel.PLAYBACK_DEVICES)
     return CheckResult(check_id, title, Severity.OK,
                        "Codec holds neither communication-device role.")
 
@@ -219,11 +225,12 @@ def _check_ducking(snap: AudioSnapshot) -> CheckResult:
         "communications stream, Windows lowers other apps' mixer "
         "sliders — this can leave WSJT-X's TX audio attenuated or "
         "muted, and the lowered slider persists across reboots.",
-        "Sound control panel → Communications tab → 'Do nothing'.")
+        "Sound control panel → Communications tab → 'Do nothing'.",
+        panel=SettingsPanel.COMMUNICATIONS)
 
 
 def _check_format(rig_eps: List[EndpointInfo], check_id: str,
-                  title: str) -> CheckResult:
+                  title: str, panel: SettingsPanel) -> CheckResult:
     active = _active(rig_eps)
     if not active:
         return CheckResult(check_id, title, Severity.UNKNOWN,
@@ -240,7 +247,8 @@ def _check_format(rig_eps: List[EndpointInfo], check_id: str,
             f"{desc}. WSJT-X expects 48000 Hz — other rates force lossy "
             "resampling that degrades decoding and TX audio.",
             "Sound control panel → codec Properties → Advanced → "
-            "'16 bit, 48000 Hz (DVD Quality)'.")
+            "'16 bit, 48000 Hz (DVD Quality)'.",
+            panel=panel)
     return CheckResult(check_id, title, Severity.OK, f"{desc}.")
 
 
@@ -271,7 +279,8 @@ def _check_persisted_app_volume(snap: AudioSnapshot,
             "classic 'RX works, TX dead' failure.",
             "While the app is transmitting, unmute / raise its slider in "
             "the Volume Mixer — or Settings → System → Sound → 'Reset "
-            "sound devices and volumes for all apps'.")
+            "sound devices and volumes for all apps'.",
+            panel=SettingsPanel.VOLUME_MIXER)
     if hits:
         levels = "; ".join(
             f"{p.exe_name}: "
@@ -305,7 +314,8 @@ def _check_live_sessions(snap: AudioSnapshot,
                 check_id, title, Severity.WARNING,
                 f"Audio is playing, but not to the codec: {elsewhere}.",
                 "Check WSJT-X Settings → Audio Output, and Windows "
-                "per-app output routing in the Volume mixer.")
+                "per-app output routing in the Volume mixer.",
+                panel=SettingsPanel.VOLUME_MIXER)
         return CheckResult(
             check_id, title, Severity.INFO,
             "No live audio session on the codec. Start WSJT-X (and "
@@ -322,7 +332,8 @@ def _check_live_sessions(snap: AudioSnapshot,
             f"Session on the codec is silenced in the mixer — "
             f"{'; '.join(parts)}.",
             "Unmute / raise the app slider in the Volume Mixer with the "
-            "codec selected.")
+            "codec selected.",
+            panel=SettingsPanel.VOLUME_MIXER)
     desc = "; ".join(
         f"{s.process_name} on {s.endpoint_name}"
         + (f" (volume {s.volume:.0%})" if s.volume is not None else "")
@@ -347,7 +358,8 @@ def _check_sound_scheme(snap: AudioSnapshot,
             "System sounds are enabled AND the codec is the default "
             "playback device — Windows dings will be transmitted.",
             "Either set PC speakers as default, or set the sound scheme "
-            "to 'No Sounds'.")
+            "to 'No Sounds'.",
+            panel=SettingsPanel.SOUND_SCHEME)
     return CheckResult(
         check_id, title, Severity.INFO,
         "System sounds are enabled. Harmless while the codec is not the "
@@ -365,7 +377,11 @@ def _check_fast_startup(snap: AudioSnapshot) -> CheckResult:
             "Fast Startup is ON: 'Shut down' resumes a saved kernel "
             "image and does NOT reinitialize audio drivers. When "
             "troubleshooting audio, use Restart — a shutdown/power-on "
-            "cycle proves nothing.")
+            "cycle proves nothing.",
+            "Optional: Power Options → 'Change settings that are "
+            "currently unavailable' → untick 'Turn on fast startup'. "
+            "(The checkbox is absent if hibernation is disabled.)",
+            panel=SettingsPanel.POWER_OPTIONS)
     return CheckResult(check_id, title, Severity.OK,
                        "Fast Startup is off — a shutdown is a real reboot.")
 
