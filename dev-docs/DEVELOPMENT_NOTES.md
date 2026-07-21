@@ -124,6 +124,18 @@ Qt stylesheets **completely override** model `BackgroundRole` data. If you set b
 
 Linux desktop themes often don't style Qt tooltips properly, resulting in invisible text (dark on dark). The app sets explicit `QToolTip` stylesheet at the `QApplication` level in `main_v2.py`.
 
+### QScrollArea Viewport Ignores the Dialog Stylesheet (Windows)
+
+A `QScrollArea`'s viewport and content widget paint the **OS palette**
+background (white on light-mode Windows), not the dialog stylesheet's
+dark background — so `#EEE` label text inside a scroll area renders
+white-on-white on Windows while looking fine in a naive reading of the
+stylesheet. Found in Audio Doctor smoke testing (v2.6.0). Fix: give the
+viewport and content widget object names and style them explicitly
+(`scroll.viewport().setObjectName(...)` + `QWidget#name { background-
+color: ...; }`), and put explicit `color:` on rich-text content rather
+than relying on QLabel stylesheet inheritance.
+
 ### JTDX Does Not Report Special Operation Mode via UDP
 
 Confirmed through testing (March 2026): JTDX sends the extended UDP status fields (DE call, DE grid parse correctly) but `special_mode` is always 0 regardless of Hound mode setting. Tested across three configurations including with/without Split rig control.

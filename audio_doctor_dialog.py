@@ -86,6 +86,13 @@ class AudioDoctorDialog(QDialog):
             QPushButton:hover { background-color: #3d3d3d; }
             QPushButton:disabled { color: #777; }
             QScrollArea { border: none; }
+            /* Windows: the scroll viewport + content widget paint the OS
+               palette (white in light mode) unless styled explicitly —
+               without these two rules the audit renders white-on-white.
+               (Found in v2.6.0 Windows smoke testing.) */
+            QWidget#auditViewport, QWidget#auditContainer {
+                background-color: #1a1a1a;
+            }
         """)
 
         layout = QVBoxLayout(self)
@@ -121,7 +128,9 @@ class AudioDoctorDialog(QDialog):
         self.audit_label.setAlignment(Qt.AlignmentFlag.AlignTop)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.viewport().setObjectName("auditViewport")
         inner = QWidget()
+        inner.setObjectName("auditContainer")
         inner_layout = QVBoxLayout(inner)
         inner_layout.setContentsMargins(0, 0, 0, 0)
         inner_layout.addWidget(self.audit_label)
@@ -219,7 +228,10 @@ class AudioDoctorDialog(QDialog):
                 f"padding:4px 10px 4px 0; white-space:nowrap; "
                 f"vertical-align:top'>{r.severity.symbol} "
                 f"{r.severity.label}</td>"
-                f"<td style='padding:4px 0'><b>{html.escape(r.title)}</b>"
+                # Explicit color: rich-text spans don't reliably inherit the
+                # QLabel stylesheet color on all platforms.
+                f"<td style='padding:4px 0; color:#EEE'>"
+                f"<b>{html.escape(r.title)}</b>"
                 f"<br>{html.escape(r.detail)}{fix}</td></tr>")
         html_text = "<table cellspacing='0'>" + "".join(rows) + "</table>"
         if errors:
