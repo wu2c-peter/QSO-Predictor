@@ -160,6 +160,16 @@ class AudioHealthController(QObject):
         verdict = self._problem_verdict
         if verdict is None:
             return (True, "")
+        # FT8web became the active source → the browser plays TX audio,
+        # not wsjtx.exe, so a held wsjtx verdict is no longer meaningful.
+        # Drop it (don't just hide it): after switching back to WSJT-X
+        # the next TX rising edge re-probes with fresh evidence.
+        ft8web = getattr(self.main_window, 'ft8web', None)
+        if ft8web and ft8web.is_client_connected():
+            logger.info("Audio Doctor: dropping silent-TX warning — "
+                        "FT8web is the active source")
+            self._problem_verdict = None
+            return (True, "")
         if time.time() - self._problem_time > self.WARNING_TTL_S:
             self._problem_verdict = None
             return (True, "")
