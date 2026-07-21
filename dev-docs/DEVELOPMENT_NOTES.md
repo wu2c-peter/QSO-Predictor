@@ -486,7 +486,10 @@ endpoints, wrong endpoint format.
 5. Un-mute → next TX cycle clears the warning via HealthMonitor.
 6. Connect ft8web and confirm the passive monitor stays quiet during
    browser TX.
-7. Frozen build: verify the dialog opens (comtypes hidden imports OK).
+7. Click each "Open ..." link in the audit — every panel target must
+   land on the right surface (Communications tab, Playback/Recording
+   tabs, Volume mixer, Power Options).
+8. Frozen build: verify the dialog opens (comtypes hidden imports OK).
 
 ---
 
