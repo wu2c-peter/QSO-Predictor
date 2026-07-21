@@ -134,10 +134,12 @@ AUDIO_FLOWING, RF confirmed on the rig's SWR meter). The Settings page
 doesn't reliably re-enable rows for sessions that activate while it is
 open, and its displayed value can come from stale/differently-scoped
 persisted state. Rule: the mixer PAGE is an unreliable witness — the
-per-session COM interfaces are ground truth. Closing and reopening the
-mixer page usually refreshes it. This is user-facing (hint baked into
-the Audio Doctor dialog + docs) and the core reason the live TX-path
-check exists.
+per-session COM interfaces are ground truth. **The user-facing recipe
+is order-dependent: press Tune in WSJT-X FIRST, then open the mixer**
+— only then does the row show the live value and become adjustable; a
+mixer opened before TX starts must be closed and reopened while still
+transmitting. This wording is baked into the dialog verdicts/fixes and
+all docs, and it is the core reason the live TX-path check exists.
 
 ### QScrollArea Viewport Ignores the Dialog Stylesheet (Windows)
 

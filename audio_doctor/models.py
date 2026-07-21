@@ -215,16 +215,18 @@ _VERDICT_FIX = {
         "In WSJT-X: Settings → Audio → switch Output to another device, "
         "click OK, restart WSJT-X, then switch back and click OK.",
     TxVerdict.MUTED_IN_MIXER:
-        "While WSJT-X is transmitting, open the Windows Volume Mixer "
-        "with the codec selected and unmute WSJT-X — or use Settings → "
-        "System → Sound → 'Reset sound devices and volumes for all "
-        "apps'. If the mixer row looks greyed out or wrong, close and "
-        "reopen the mixer page — its display is often stale.",
+        "Press Tune in WSJT-X FIRST, then open the Volume Mixer and "
+        "unmute WSJT-X. The order matters: a mixer page opened before "
+        "TX starts shows a stale, greyed-out row you can't change — "
+        "close and reopen it while still transmitting. Alternatively "
+        "use Settings → System → Sound → 'Reset sound devices and "
+        "volumes for all apps'.",
     TxVerdict.MIXER_VOLUME_LOW:
-        "While WSJT-X is transmitting, open the Windows Volume Mixer "
-        "with the codec selected and raise the WSJT-X slider to 100%. "
-        "If the row looks greyed out or wrong, close and reopen the "
-        "mixer page — its display is often stale.",
+        "Press Tune in WSJT-X FIRST, then open the Volume Mixer and "
+        "raise the WSJT-X slider to 100%. The order matters: a mixer "
+        "page opened before TX starts shows a stale, greyed-out row "
+        "you can't change — close and reopen it while still "
+        "transmitting.",
     TxVerdict.APP_NOT_EMITTING:
         "Raise the Pwr slider (bottom right in WSJT-X) and press Tune.",
     TxVerdict.NOT_REACHING_ENDPOINT:

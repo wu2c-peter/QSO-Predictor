@@ -151,9 +151,11 @@ class AudioDoctorDialog(QDialog):
             f"for {PROBE_DURATION_S:.0f} seconds and reports which layer "
             "of the TX path is silent, if any.<br>"
             "<span style='color:#9E9E9E'>Tip: this check reads the LIVE "
-            "audio session — Windows' own Volume mixer page can show "
-            "stale or greyed-out values, so trust this verdict over "
-            "what the mixer displays.</span>")
+            "audio session — Windows' own Volume mixer page shows stale, "
+            "greyed-out values unless WSJT-X is already transmitting "
+            "when you open it. To see or change the real WSJT-X slider: "
+            "press Tune FIRST, then open the mixer. Trust this verdict "
+            "over what the mixer displays.</span>")
         probe_intro.setWordWrap(True)
         probe_intro.setTextFormat(Qt.TextFormat.RichText)
         probe_layout.addWidget(probe_intro)

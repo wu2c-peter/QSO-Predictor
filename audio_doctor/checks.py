@@ -277,9 +277,11 @@ def _check_persisted_app_volume(snap: AudioSnapshot,
             f"for: {'; '.join(parts)}. This survives reboots, is "
             "invisible inside WSJT-X, and silences TX audio only — the "
             "classic 'RX works, TX dead' failure.",
-            "While the app is transmitting, unmute / raise its slider in "
-            "the Volume Mixer — or Settings → System → Sound → 'Reset "
-            "sound devices and volumes for all apps'.",
+            "Press Tune in WSJT-X FIRST, then open the Volume Mixer and "
+            "unmute / raise its slider (a mixer opened before TX starts "
+            "shows a stale, greyed row you can't change) — or Settings → "
+            "System → Sound → 'Reset sound devices and volumes for all "
+            "apps'.",
             panel=SettingsPanel.VOLUME_MIXER)
     if hits:
         levels = "; ".join(
@@ -331,8 +333,9 @@ def _check_live_sessions(snap: AudioSnapshot,
             check_id, title, Severity.FAIL,
             f"Session on the codec is silenced in the mixer — "
             f"{'; '.join(parts)}.",
-            "Unmute / raise the app slider in the Volume Mixer with the "
-            "codec selected.",
+            "Press Tune in WSJT-X FIRST, then open the Volume Mixer and "
+            "unmute / raise the app slider (a mixer opened before TX "
+            "starts shows a stale, greyed row you can't change).",
             panel=SettingsPanel.VOLUME_MIXER)
     desc = "; ".join(
         f"{s.process_name} on {s.endpoint_name}"
