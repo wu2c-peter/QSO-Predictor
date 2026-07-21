@@ -34,8 +34,9 @@ description: >-
 9. [Fox/Hound & SuperFox Mode](#9-foxhound--superfox-mode)
 10. [Workflows & Tips](#10-workflows--tips)
 11. [Settings](#11-settings)
-12. [Troubleshooting](#12-troubleshooting)
-13. [FAQ](#13-faq)
+12. [Audio Doctor (Windows)](#12-audio-doctor-windows)
+13. [Troubleshooting](#13-troubleshooting)
+14. [FAQ](#14-faq)
 
 ---
 
@@ -1062,7 +1063,112 @@ QSOP keeps a small amount of local data to support Local Intelligence and future
 
 ---
 
-## 12. Troubleshooting
+## 12. Audio Doctor (Windows)
+
+**Tools → Audio Doctor...** (v2.6.0) diagnoses the Windows audio path between WSJT-X/JTDX and your rig. It exists because of one of digital modes' most maddening failures: **RX works fine, but your TX audio is silently dead** — and nothing inside WSJT-X shows anything wrong.
+
+Windows keeps per-app volume and mute state *per device* in the registry. It survives reboots, it's invisible inside WSJT-X, and several everyday events can silence it: a browser using your microphone (communications ducking), a stray click in the Volume Mixer, or the codec re-enumerating after a USB port change. Audio Doctor checks all of these in seconds.
+
+**Audio Doctor is read-only.** It changes nothing on your system — every finding tells you where to fix it, and most include a clickable link that opens the exact Windows settings page.
+
+> **Windows only.** The menu item does not appear on macOS or Linux — the failure modes it diagnoses live in the Windows audio stack. Packaged Windows installs include everything needed; if you run from source, `pip install -r requirements.txt` installs the required `pycaw` package (Windows only).
+
+### Opening It
+
+**Tools → Audio Doctor...** The dialog has two panels: a **Configuration audit** that runs automatically when the dialog opens (and again whenever you click **Re-scan**), and a **Live TX path check** you run on demand.
+
+### Reading the Configuration Audit
+
+Eleven read-only checks, listed worst-first. Each carries a severity chip:
+
+| Chip | Meaning |
+|------|---------|
+| ✓ **OK** | Checked and healthy |
+| ℹ **Info** | Worth knowing, not a fault |
+| ? **Unknown** | Couldn't read that setting — verify it manually |
+| ⚠ **Warning** | Likely to cause trouble — fix when convenient |
+| ✗ **Problem** | Actively breaking (or endangering) your TX audio — fix it |
+
+What the checks catch, in plain English:
+
+| Check | What it catches |
+|-------|-----------------|
+| **Rig codec playback device** | Is the rig's audio codec present and active at all? Catches unplugged cables and disabled devices. |
+| **Duplicate / stale codec entries** | The common USB codec chip has no serial number, so plugging it into a different USB port makes Windows treat it as a brand-new device ("2- USB Audio CODEC") — and WSJT-X may still be bound to the old, dead entry. |
+| **Windows default playback device** | The codec should **not** be the system default — otherwise every Windows ding and notification goes out over the air. |
+| **Windows default communication device** | The codec shouldn't hold this role either: a browser or VoIP call could transmit over the air, and it arms communications ducking against WSJT-X. |
+| **Communications ducking** | Should be "Do nothing". By default, Windows lowers other apps' volume by 80% whenever any app opens a "communications" stream — a browser using your mic counts — and the lowered slider can stick. |
+| **TX (playback) format** | The codec's playback format. WSJT-X expects 48000 Hz; other rates force lossy resampling. Set "16 bit, 48000 Hz (DVD Quality)" in the codec's Advanced properties. |
+| **RX (recording) format** | Same check for the recording side. |
+| **Persisted Windows mixer state for WSJT-X/JTDX** | The classic "RX works, TX dead": a per-app mute or near-zero volume stored in the registry. It survives reboots, silences TX only, and shows nowhere inside WSJT-X. |
+| **Live WSJT-X/JTDX audio session** | Where the app is *actually* playing audio right now, and whether that session is muted or turned down. |
+| **System sounds** | Warns when system sounds are enabled **and** the codec is the default device — the combination that puts dings on the air. |
+| **Windows Fast Startup** | "Shut down" on Windows does **not** reinitialize audio drivers — it resumes a saved kernel image. Only "Restart" is a true reboot. |
+
+### The "Open ..." Links
+
+Most non-OK findings include a clickable link — "Open the volume mixer", "Open the Communications tab", "Open playback devices", "Open recording devices", "Open sound scheme settings", "Open power options" — that jumps straight to the exact settings page. No hunting through Control Panel.
+
+### The Rig Device Name Box
+
+The **"Rig audio device name contains:"** box at the top tells Audio Doctor which Windows device is your rig. The default, `USB Audio CODEC`, matches SignaLink, Digirig, and most rig-integrated codecs (IC-7300 and similar). It's a simple substring match against Windows device names — if your interface is named differently, type any distinctive part of its name and click **Re-scan**.
+
+Edits persist when you close the dialog with **Close** (pressing **Escape** discards them). The setting is also used by the automatic silent-TX monitor below.
+
+### The Live TX Path Check
+
+The configuration audit finds stored problems; the live check catches your TX audio in the act:
+
+1. **Press Tune in WSJT-X** (or wait for a normal TX cycle) — the check needs a transmission in progress
+2. Click **"Check TX path"**
+3. Audio Doctor watches the Windows peak meters (the app's audio session *and* the codec endpoint) for 4 seconds
+4. The verdict tells you which layer of the TX path is silent, if any:
+
+| Verdict | What it means |
+|---------|---------------|
+| **"TX audio is reaching the codec"** | Healthy. If the rig still shows no modulation, look at the rig side (USB MOD level, DATA mode). |
+| **"No WSJT-X audio session on the codec"** | WSJT-X's stored output-device binding is stale (usually after the codec re-enumerated). Fix inside WSJT-X: Settings → Audio → switch Output to another device, click OK, restart WSJT-X, then switch back and click OK. |
+| **"WSJT-X is muted in the Windows mixer"** | The persistent per-app mute. Press Tune **first**, then open the Volume Mixer and unmute WSJT-X — a mixer opened before TX starts shows a stale, greyed row you can't change. |
+| **"WSJT-X mixer volume is near zero"** | Same store, volume variant — ducking or a stray click left the slider at the bottom. Press Tune **first**, then open the Volume Mixer and raise it to 100%. |
+| **"WSJT-X is not producing audio"** | The session exists but is silent. Check the Pwr slider (bottom right in WSJT-X) and that a transmission is actually in progress. |
+| **"Audio is not reaching the codec"** | WSJT-X is producing audio, but it's going to a different device. Check WSJT-X Settings → Audio Output and the per-app output routing in the Volume mixer. |
+| **"Not enough data to judge the TX path"** | The probe didn't see enough samples. Press Tune and run the check again. |
+
+> **Trust this verdict over the Windows mixer page.** The check reads the *live* audio session. Windows 11's Settings → Sound → Volume mixer page can show an app's slider greyed-out or at a wrong value even while that app is playing at healthy volume. See "Windows quirks worth knowing" below.
+
+### The Automatic Silent-TX Warning
+
+You don't have to remember to open Audio Doctor. Whenever WSJT-X reports it has started transmitting, QSOP quietly probes the TX path in the background for about 4 seconds (at most once per minute). If WSJT-X claims to be transmitting but no audio session or samples reach the codec, a sticky warning appears in the status bar:
+
+```
+⚠ TX audio: No WSJT-X audio session on the codec — see Tools → Audio Doctor
+```
+
+The warning clears automatically on the next healthy transmission (or after 10 minutes). It stands down while an FT8web browser client is connected — in that setup the browser plays your TX audio, not wsjtx.exe, so a missing WSJT-X session is expected.
+
+**To disable the monitor**, add this to `qso_predictor.ini` (in `%APPDATA%\QSO Predictor\`):
+
+```ini
+[AUDIO]
+silent_tx_monitor = false
+```
+
+(The rig device name box saves to the same section, as `rig_device_hint`.)
+
+### Windows Quirks Worth Knowing
+
+Even if you never hit a problem, these explain most "my TX audio vanished" mysteries:
+
+- **The Volume mixer page lies.** Windows 11's Settings → Sound → Volume mixer can show an app greyed-out or at the wrong value *while the app is actively playing at healthy volume*. Audio Doctor reads the live audio session — trust its verdict. To see the *real* value, press Tune **first**, then open the mixer.
+- **Mixer rows are only adjustable while the app is playing.** To unmute or raise WSJT-X's slider, press Tune **first**, then open the mixer — a mixer page opened before TX starts stays greyed even after TX begins (close and reopen it while still transmitting).
+- **Per-app volume is per device and permanent.** It's stored in the registry, survives reboots, silences TX only (RX is a separate path), and shows nowhere inside WSJT-X.
+- **Communications ducking is armed by browsers.** Any app opening a "communications" stream — including a browser web-audio session using your mic — makes Windows drop other apps' sliders by 80%, and the drop can stick after the call ends. Set ducking to "Do nothing".
+- **The codec should hold *neither* Windows default role.** Not default device (system sounds over the air), not default communication device (calls over the air, plus ducking armed against your TX audio).
+- **"Shut down" is not a reboot.** With Fast Startup on (the Windows default), shutting down resumes a saved kernel image and does not reinitialize audio drivers. When troubleshooting audio, use **Restart** — a "power cycle" via Shut down proves nothing.
+
+---
+
+## 13. Troubleshooting
 
 ### No Decodes Appearing
 
@@ -1083,6 +1189,12 @@ QSOP keeps a small amount of local data to support Local Intelligence and future
 
 4. **Is WSJT-X actually decoding?**
    - Check its own display first
+
+### RX Works But TX Is Dead (Windows)
+
+Decodes appear normally and the rig keys up on transmit, but no audio goes out — and everything inside WSJT-X looks correct.
+
+This is almost always Windows-side per-app audio state: a persisted mixer mute, communications ducking after a browser call, or a stale device binding after a USB port change. Run **Tools → Audio Doctor** (see [Section 12](#12-audio-doctor-windows)) — press Tune in WSJT-X and click "Check TX path", and it will tell you which layer of the TX path is silent in about 4 seconds.
 
 ### Running with Multiple Apps
 
@@ -1205,7 +1317,7 @@ In SuperHound mode, WSJT-X suppresses decode window clicks and does not send tar
 
 ---
 
-## 13. FAQ
+## 14. FAQ
 
 **Q: Does QSO Predictor transmit for me?**  
 A: No. It's advisory only. You control your radio through WSJT-X/JTDX.

@@ -22,6 +22,9 @@ calls on paths that aren't open.
   target's region before you call
 - **Local intelligence** — learns behavior patterns of stations you observe
   and predicts their calling style
+- **Audio Doctor (Windows)** — diagnoses the Windows audio path between
+  WSJT-X/JTDX and your rig, from hidden per-app mutes and communications
+  ducking to a live check that TX audio is actually reaching the radio
 
 Works alongside WSJT-X or JTDX via UDP integration, or with the
 [FT8web](https://ft8web.ok1cdj.com/) browser-based client via its External

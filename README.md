@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.5.8-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.6.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9MWCW2FTB866)
@@ -46,28 +46,29 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.5.8
+## 🆕 What's New in v2.6.0
 
-### FT8web support — run QSO Predictor with a browser-based FT8 client
+### Audio Doctor — find out why your TX audio went silent (Windows)
 
-QSO Predictor can now take its decode, status, and logged-QSO data from [FT8web](https://ft8web.ok1cdj.com/), Ondra OK1CDJ's browser-based FT8/FT4 client, as an alternative to WSJT-X/JTDX. QSOP contributed the External Data Stream feature to FT8web upstream to make this possible. Setup is two switches:
+The classic digital-mode failure: RX works fine, WSJT-X says it's transmitting, and nothing goes out over the air. The cause usually lives in Windows, not in WSJT-X — a per-app mute stored in the registry that survives reboots and shows nowhere inside WSJT-X, communications ducking armed by a browser using the mic, a stale "2- USB Audio CODEC" entry after the codec moved USB ports, or system sounds going out over the air because the codec became the Windows default device. **Tools → Audio Doctor...** finds these in seconds:
 
-- **In QSOP:** Settings → Network → "FT8web Browser Client (Optional)" → check **Listen for FT8web data stream** (WebSocket port 2442 by default)
-- **In FT8web:** Settings → External Data Stream → **Enabled**, URL `ws://localhost:2442`
+- **Configuration audit** — 11 read-only checks of the Windows audio path between WSJT-X/JTDX and the rig, sorted worst-first: default-device roles, communications ducking, TX/RX sample formats, duplicate codec entries, the persisted per-app mixer state, Fast Startup, and more
+- **Live TX path check** — press Tune in WSJT-X, click **Check TX path**; Audio Doctor watches the Windows peak meters for 4 seconds and reports which layer of the path is silent
+- **Automatic silent-TX warning** — whenever WSJT-X reports it's transmitting, QSOP quietly verifies audio is actually reaching the rig codec and posts a sticky status-bar warning if it isn't
 
-Everything received from FT8web is re-broadcast as standard WSJT-X UDP packets to QSOP's configured forward ports — the browser can't send UDP itself, so QSOP does it on its behalf, and downstream apps (GridTracker, JTAlert, loggers) keep working unchanged. While an FT8web client is connected, the "No data from WSJT-X/JTDX" warning is suppressed. Use one source at a time: if both WSJT-X/JTDX and FT8web are feeding QSOP simultaneously, a "Two data sources active" status-bar warning asks you to close one.
+Audio Doctor changes nothing on your system — every finding says where to fix it — most with a clickable "Open ..." link that jumps to the exact Windows settings page. Windows only; the menu item doesn't appear on macOS/Linux.
 
-### Richer outcome logging — more groundwork for personalized recommendations
+### IONIS propagation restored in the downloadable builds
 
-The local outcome log (`~/.qso-predictor/outcome_history.jsonl` — machine-local, never uploaded) now records a full tactical snapshot at the moment you select a target (competition, pileup rank, SNR margins, behavior model state, success probability, strategy) plus a compact per-TX-cycle trace of the attempt. This is the data a planned future release will learn from to tune recommendations to how *you* operate. Files written by older versions remain readable; mixed old/new files are fine.
-
-### Also in this release
-
-Behavior prediction no longer pools single-letter+digit DXCC prefixes (E5, …) with the wrong prefix group, and weak priors are labeled as such. Corrupt `session_end` records (negative elapsed time) in the outcome log are fixed. The automated test suite grew to ~350 tests, including coverage of the new FT8web listener. See [RELEASE_NOTES_v2.5.8.md](dev-docs/RELEASE_NOTES_v2.5.8.md) for details.
+A packaging bug meant the GitHub-release downloads from v2.4.0 through v2.5.8 shipped without the IONIS propagation engine, so Path Prediction was silently unavailable in those builds (macOS DMGs also lacked the model data). Microsoft Store installs were not affected. v2.6.0 builds include IONIS again, and CI now fails any build that drops it. If you run a downloaded release, upgrade to get propagation predictions back. See [RELEASE_NOTES_v2.6.0.md](dev-docs/RELEASE_NOTES_v2.6.0.md) for details on everything in this release.
 
 ---
 
 ## Previous Releases
+
+### v2.5.8
+
+**FT8web support — run QSO Predictor with a browser-based FT8 client.** Decode, status, and logged-QSO data can now come from [FT8web](https://ft8web.ok1cdj.com/), Ondra OK1CDJ's browser-based FT8/FT4 client, as an alternative to WSJT-X/JTDX (Settings → Network → **Listen for FT8web data stream**); everything received is re-broadcast as standard WSJT-X UDP so GridTracker, JTAlert, and loggers keep working unchanged. **Richer outcome logging** — the local outcome log now records a full tactical snapshot at target selection plus a per-TX-cycle trace of the attempt, groundwork for personalized recommendations. Behavior prediction no longer pools single-letter+digit DXCC prefixes with the wrong prefix group, corrupt `session_end` records are fixed, and the test suite grew to ~350 tests. See [RELEASE_NOTES_v2.5.8.md](dev-docs/RELEASE_NOTES_v2.5.8.md) for details.
 
 ### v2.5.7
 
@@ -360,6 +361,15 @@ Use QSOP with [FT8web](https://ft8web.ok1cdj.com/), a browser-based FT8/FT4 clie
 * WebSocket listener for FT8web's External Data Stream (Settings → Network, off by default)
 * Decodes, status, and logged QSOs flow into QSOP exactly as from WSJT-X
 * Re-broadcasts everything as standard WSJT-X UDP, so GridTracker, JTAlert, and loggers keep working unchanged
+
+### Audio Doctor (Windows)
+
+Read-only diagnosis of the Windows audio path between WSJT-X/JTDX and your rig (**Tools → Audio Doctor...**):
+
+* 11-point configuration audit — default-device roles, communications ducking, sample formats, duplicate codec entries, and the hidden per-app mutes that silence TX while showing nowhere inside WSJT-X
+* Live TX path check — press Tune in WSJT-X, and Audio Doctor watches the Windows peak meters to report which layer is silent
+* Automatic status-bar warning when WSJT-X reports transmitting but no audio reaches the rig codec
+* Changes nothing — findings link to the exact Windows settings page where the fix lives
 
 ## Documentation
 

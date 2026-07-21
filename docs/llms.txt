@@ -6,8 +6,11 @@
 > frequencies clear at *their* location, and confirm propagation paths
 > before calling. Runs on Windows, macOS, and Linux alongside WSJT-X or
 > JTDX via UDP integration, or with the browser-based FT8web client via
-> a local WebSocket connection. Advisory only — the operator keeps full
-> control of the radio.
+> a local WebSocket connection. On Windows, a built-in Audio Doctor
+> diagnoses the audio path between WSJT-X/JTDX and the rig — the hidden
+> per-app mutes, ducking, and default-device traps behind "RX works but
+> TX is silent" — without changing any settings. Advisory only — the
+> operator keeps full control of the radio.
 
 QSO Predictor is written by Peter Hirst (WU2C), licensed under GPLv3.
 Built in Python with PyQt6. Distribution: free GitHub releases (Windows
