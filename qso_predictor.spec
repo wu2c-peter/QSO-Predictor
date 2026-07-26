@@ -85,9 +85,13 @@ hiddenimports = [
     'audio_doctor.checks',
 
     # Diagnostics framework core (dev-docs/DIAGNOSTICS_SPEC.md) —
-    # audio_doctor.models re-exports its types.
+    # audio_doctor.models re-exports its types; setup_wizard imports the
+    # detection layer.
     'diagnostics',
     'diagnostics.models',
+    'diagnostics.probe_apps',
+    'diagnostics.probe_ports',
+    'diagnostics.setup_analysis',
 ]
 
 if sys.platform == 'win32':

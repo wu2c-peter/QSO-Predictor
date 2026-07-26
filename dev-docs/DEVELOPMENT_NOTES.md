@@ -279,7 +279,7 @@ and should be preserved by future changes.
 | `local_intel/` | Offline ML stack — models, predictor, session tracker, log parser |
 | `ionis/` | IONIS propagation engine — numpy inference + features |
 | `audio_doctor/` | Windows TX-audio diagnostics — pure core + COM probe (v2.6.0) |
-| `diagnostics/` | Doctors-framework core: `Severity`, `CheckResult`, `SettingsPanel` (re-exported by `audio_doctor.models`). No Qt / app-module imports — enforced by `test_conventions.py`. Design: `DIAGNOSTICS_SPEC.md` |
+| `diagnostics/` | Doctors-framework core: findings types (`Severity`, `CheckResult`, `SettingsPanel`; re-exported by `audio_doctor.models`) + detection layer (`probe_apps`/`probe_ports`/`setup_analysis`; `setup_wizard.py` is now Qt-only and imports it). No Qt / app-module imports — enforced by `test_conventions.py`. Design: `DIAGNOSTICS_SPEC.md` |
 | `utils/` | Pure-stdlib helpers with no Qt / main-app deps (e.g. `version.py`) |
 | `training/` | Out-of-process model training |
 

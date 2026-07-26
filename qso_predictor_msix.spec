@@ -114,9 +114,13 @@ hiddenimports = [
     'audio_doctor.probe_windows',
 
     # Diagnostics framework core (dev-docs/DIAGNOSTICS_SPEC.md) —
-    # audio_doctor.models re-exports its types.
+    # audio_doctor.models re-exports its types; setup_wizard imports the
+    # detection layer.
     'diagnostics',
     'diagnostics.models',
+    'diagnostics.probe_apps',
+    'diagnostics.probe_ports',
+    'diagnostics.setup_analysis',
     'pycaw',
     'pycaw.utils',
     'pycaw.constants',

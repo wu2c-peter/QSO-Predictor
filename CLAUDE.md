@@ -45,7 +45,7 @@ launching the app and watching the log at
 | `local_intel/` | Offline ML stack — models, predictor, session tracker, log parser. The `models.py` module is pure-stdlib and defines `PathStatus`. |
 | `ionis/` | IONIS propagation engine (numpy inference + features). |
 | `audio_doctor/` | Windows TX-audio diagnostics (v2.6.0). `models/parsing/checks` are pure-stdlib (tested cross-platform); ALL COM/registry access stays in `probe_windows.py`. See `DEVELOPMENT_NOTES.md` § Audio Doctor. |
-| `diagnostics/` | Doctors-framework core (`Severity`, `CheckResult`, `SettingsPanel`; re-exported by `audio_doctor.models`). No Qt / main-app imports — enforced by tests. Design: `dev-docs/DIAGNOSTICS_SPEC.md`. |
+| `diagnostics/` | Doctors-framework core: findings types (`Severity`, `CheckResult`, `SettingsPanel`; re-exported by `audio_doctor.models`) + detection layer (`probe_apps`/`probe_ports`/`setup_analysis`, driven by `setup_wizard.py`). No Qt / main-app imports — enforced by tests. Design: `dev-docs/DIAGNOSTICS_SPEC.md`. |
 | `utils/` | Pure-stdlib helpers with no Qt / main-app deps (`version.py`). |
 | `training/` | Out-of-process model training. |
 | `dev-docs/DEVELOPMENT_NOTES.md` | "Don't break this" rules, performance lessons, platform gotchas, architectural conventions. **Read this before significant changes.** |

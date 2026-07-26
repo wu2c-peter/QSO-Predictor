@@ -1,7 +1,9 @@
 # Diagnostics framework ("Doctors") — design spec
 
-Status: DRAFT — Migration step 1 implemented 2026-07-26 (`diagnostics/`
-package, re-exports, conventions tests); steps 2–5 not started.
+Status: DRAFT — Migration steps 1–2 implemented 2026-07-26 (step 1:
+`diagnostics/` package, re-exports, conventions tests; step 2: detection
+layer lifted from `setup_wizard.py` with first unit coverage); steps 3–5
+not started.
 Companion reading: `DEVELOPMENT_NOTES.md` § Audio Doctor.
 
 ## What and why
@@ -64,8 +66,8 @@ class StationSnapshot:
     audio: Optional["AudioSnapshot"] = None        # exists today; string
                                                    #   annotation — see the
                                                    #   import-direction rule
-    apps: Optional[List[DetectedApp]] = None       # exists in setup_wizard
-    udp_ports: Optional[List[PortInfo]] = None     # exists in setup_wizard
+    apps: Optional[List[DetectedApp]] = None       # diagnostics.models (step 2)
+    udp_ports: Optional[List[PortInfo]] = None     # diagnostics.models (step 2)
     serial: Optional[SerialSnapshot] = None        # future (Serial/CAT Doctor)
     clock: Optional[ClockSnapshot] = None          # future (Clock Doctor)
     system: Optional[SystemSnapshot] = None        # future (System Doctor)
@@ -268,6 +270,9 @@ diagnostics/                  # NEW — pure, no Qt, no main-app imports
     probe_ports.py            # PortScanner (lifted from setup_wizard.py)
                               # (probe_* prefix — matches the conventions
                               #   test's platform-library exemption)
+    setup_analysis.py         # SetupAnalyzer (lifted from setup_wizard.py;
+                              #   NOT snapshot-pure — calls find_free_port.
+                              #   Network Doctor supersedes it eventually.)
     doctors/
         clock.py              # first new doctor (+ its probe, if trivial)
         …                     # one file per small doctor
@@ -280,7 +285,8 @@ until a new doctor lands):
    `SettingsPanel` there; `audio_doctor/models.py` re-exports them so no
    call site churns. Add the no-Qt architectural test for `diagnostics/`.
 2. Lift `ConfigFileReader` / `PortScanner` / `RunningAppDetector` /
-   dataclasses out of `setup_wizard.py` into `diagnostics/`;
+   `SetupAnalyzer` / dataclasses out of `setup_wizard.py` into
+   `diagnostics/`;
    `setup_wizard.py` keeps only the Qt dialog + worker and imports the
    rest. (Bonus: those classes become unit-testable under the existing
    pure-module test conventions.)

@@ -129,8 +129,11 @@ def test_diagnostics_stays_free_of_qt_and_app_imports():
     app modules are banned automatically. audio_doctor especially:
     audio_doctor.models imports diagnostics.models at module load, so a
     diagnostics -> audio_doctor import is an instant circular-import
-    crash. Platform-only libraries are confined to probe_* modules
-    (same convention as audio_doctor)."""
+    crash. Platform access — the platform-only libraries AND the stdlib
+    escape hatches the probes actually use (subprocess for
+    netstat/lsof/ss/tasklist/ps, socket for bind probes) — is confined
+    to probe_* modules (same convention as audio_doctor); non-probe
+    modules must work from data alone."""
     allowed_local = {'diagnostics', 'utils', 'tests'}
     banned = {'PyQt6'}
     for p in REPO_ROOT.glob('*.py'):
@@ -142,7 +145,7 @@ def test_diagnostics_stays_free_of_qt_and_app_imports():
         r'^\s*(from|import)\s+(' + '|'.join(map(re.escape, sorted(banned)))
         + r')\b')
     platform_only = re.compile(r'^\s*(from|import)\s+(pycaw|comtypes|winreg|'
-                               r'psutil)\b')
+                               r'psutil|subprocess|socket)\b')
     offenders = []
     for path in (REPO_ROOT / 'diagnostics').rglob('*.py'):
         if any(part in EXCLUDED_DIRS for part in path.parts):

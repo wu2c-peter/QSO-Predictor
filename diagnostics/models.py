@@ -1,10 +1,17 @@
 """
-Shared diagnostics data models — the findings contract every doctor uses.
+Shared diagnostics data models.
 
-Promoted unchanged from `audio_doctor.models` (where they shipped in
-v2.6.0); `audio_doctor.models` re-exports them, so existing import sites
-and pickles of these types keep working. See dev-docs/DIAGNOSTICS_SPEC.md
-§ Contract 2.
+Two families live here:
+
+- The findings contract every doctor uses (`Severity`, `CheckResult`,
+  `SettingsPanel`) — promoted unchanged from `audio_doctor.models` (where
+  they shipped in v2.6.0); `audio_doctor.models` re-exports them, so
+  existing import sites and pickles keep working. See
+  dev-docs/DIAGNOSTICS_SPEC.md § Contract 2.
+- The detection dataclasses (`DetectedApp`, `PortInfo`,
+  `SetupRecommendation`) — lifted unchanged from `setup_wizard.py`
+  (v2.2.0) in migration step 2; populated by `probe_apps` / `probe_ports`
+  and consumed by `setup_analysis` and the setup wizard dialog.
 
 Pure stdlib — no Qt, no platform APIs (enforced by tests/test_conventions.py).
 
@@ -12,9 +19,10 @@ QSO Predictor
 Copyright (C) 2026 Peter Hirst (WU2C)
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Optional
+from pathlib import Path
+from typing import List, Optional
 
 
 class SettingsPanel(Enum):
@@ -107,3 +115,47 @@ class CheckResult:
     detail: str
     fix: str = ""
     panel: Optional[SettingsPanel] = None   # where the fix lives, if a setting
+
+
+# =============================================================================
+# Detection dataclasses (filled by probe_apps / probe_ports, consumed by
+# setup_analysis and the setup wizard dialog)
+# =============================================================================
+
+@dataclass
+class DetectedApp:
+    """A ham radio application detected on this system."""
+    name: str                       # e.g. "WSJT-X", "JTDX", "JTAlert"
+    config_path: Optional[Path]     # Path to config file (if found)
+    instance_name: str = ""         # For multi-instance (e.g. "OmniRig Rig 1")
+    callsign: str = ""
+    grid: str = ""
+    udp_ip: str = ""
+    udp_port: int = 0
+    accept_udp: bool = False
+    is_running: bool = False
+    log_directory: Optional[Path] = None
+
+
+@dataclass
+class PortInfo:
+    """Information about a UDP port in use."""
+    port: int
+    ip: str = ""
+    process_name: str = ""
+    pid: int = 0
+
+
+@dataclass
+class SetupRecommendation:
+    """A recommended configuration for QSO Predictor."""
+    callsign: str = ""
+    grid: str = ""
+    udp_ip: str = "127.0.0.1"
+    udp_port: int = 2237
+    forward_ports: str = ""
+    use_multicast: bool = False
+    confidence: str = "low"         # low / medium / high
+    source: str = ""                # Where the recommendation came from
+    warnings: List[str] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
