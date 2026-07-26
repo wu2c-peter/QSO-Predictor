@@ -97,6 +97,11 @@ def parse_property_store_entry(raw: str) -> Optional[Tuple[str, str, str]]:
     exe_path, session_guid = rest.split("%b", 1)
     if not endpoint_id or not exe_path:
         return None
+    if exe_path == "#":
+        # Device-level entry: Windows stores '#' as the path placeholder
+        # for non-app-specific rows. Not per-app state — first live Full
+        # Checkup report (2026-07-26) showed these as cryptic '#' rows.
+        return None
     return endpoint_id, exe_path, session_guid
 
 

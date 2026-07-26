@@ -495,6 +495,10 @@ endpoints, wrong endpoint format.
   Q&A thread disagrees — **verify 0/1/2 empirically** if it ever matters;
   only `3` ("Do nothing") is treated as healthy.
 - Endpoint IDs encode flow: `{0.0.0.…}` = render, `{0.0.1.…}` = capture.
+- Per-app store rows whose exe segment is literally `#` are DEVICE-level
+  entries (no specific app) — not per-app state. `parsing` filters them
+  (first live Full Checkup report, 2026-07-26, showed them as cryptic
+  `#` rows).
 - comtypes ≥ 1.4.5 broke PyInstaller freezes until hooks-contrib added a
   hook; `comtypes.stream` is listed explicitly in the spec's Windows
   hiddenimports. If a frozen build dies with

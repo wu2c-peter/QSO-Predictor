@@ -70,11 +70,17 @@ def _app_sessions(snap: AudioSnapshot,
 
 def run_checks(snap: AudioSnapshot,
                rig_hint: str = DEFAULT_RIG_HINT,
-               app_names: Sequence[str] = DEFAULT_APP_NAMES) -> List[CheckResult]:
+               app_names: Sequence[str] = DEFAULT_APP_NAMES,
+               browser_tx: bool = False) -> List[CheckResult]:
     """Run every audit check against the snapshot. Always returns the
     full checklist (one CheckResult per check, OK included) so the
     dialog reads as a methodical walkthrough, not just a list of
-    complaints."""
+    complaints.
+
+    browser_tx: True when FT8web is the active source — the browser is
+    then the legitimate TX app, so browser streams on the codec are
+    expected rather than foreign (mirrors the TX probe's browser mode).
+    """
     rig_render = _rig_endpoints(snap, rig_hint, DataFlow.RENDER)
     rig_capture = _rig_endpoints(snap, rig_hint, DataFlow.CAPTURE)
     results = [
@@ -89,6 +95,7 @@ def run_checks(snap: AudioSnapshot,
                       SettingsPanel.RECORDING_DEVICES),
         _check_persisted_app_volume(snap, rig_render, app_names),
         _check_live_sessions(snap, rig_render, app_names),
+        _check_foreign_sessions(snap, rig_render, app_names, browser_tx),
         _check_sound_scheme(snap, rig_render),
         _check_fast_startup(snap),
     ]
@@ -351,6 +358,62 @@ def _check_live_sessions(snap: AudioSnapshot,
         + (f" (volume {s.volume:.0%})" if s.volume is not None else "")
         for s in on_rig)
     return CheckResult(check_id, title, Severity.OK, f"{desc}.")
+
+
+# Browsers double as the TX app when FT8web is the active source; the
+# static audit can't see that on its own, so callers pass browser_tx.
+BROWSER_PROCESSES = frozenset({
+    'msedge.exe', 'chrome.exe', 'firefox.exe', 'brave.exe', 'opera.exe',
+    'vivaldi.exe', 'msedgewebview2.exe', 'duckduckgo.webview.exe',
+})
+
+
+def _check_foreign_sessions(snap: AudioSnapshot,
+                            rig_render: List[EndpointInfo],
+                            app_names: Sequence[str],
+                            browser_tx: bool = False) -> CheckResult:
+    """Anything that isn't the TX app with an OPEN stream on the rig
+    codec can put its audio on the air. Motivating real-world case
+    (first Full Checkup report, 2026-07-26): a remote-desktop app with
+    an active stream on the codec — remote-session sounds routed
+    straight into the TX path.
+
+    Active sessions only: the WASAPI enumerator retains expired sessions
+    from streams that closed long ago (see _check_live_sessions), so
+    idle rows are unreliable evidence and stay unreported. An active
+    session means the stream is OPEN, not necessarily emitting sound —
+    the wording reflects that (this check never reads peak meters).
+
+    Post-framework check, so the id carries the doctor namespace (see
+    models.CheckResult)."""
+    check_id, title = "audio/foreign-session", "Other apps on the rig codec"
+    rig_ids = {ep.id for ep in rig_render}
+    wanted = {n.casefold() for n in app_names}
+    if browser_tx:
+        wanted |= BROWSER_PROCESSES
+    active = [s for s in snap.sessions
+              if s.active and s.endpoint_id in rig_ids
+              and s.process_name.casefold() not in wanted]
+    if active:
+        names = sorted({s.process_name for s in active})
+        listing = ", ".join(names)
+        if len(names) == 1:
+            subject = (f"Another application has an open audio stream on "
+                       f"the rig codec: {listing}. Anything it plays can "
+                       f"be transmitted.")
+        else:
+            subject = (f"Other applications have open audio streams on "
+                       f"the rig codec: {listing}. Anything they play can "
+                       f"be transmitted.")
+        return CheckResult(
+            check_id, title, Severity.WARNING, subject,
+            "If this is not deliberately your TX source, close the app "
+            "or move its output to a different device in the Volume "
+            "mixer.",
+            panel=SettingsPanel.VOLUME_MIXER)
+    return CheckResult(
+        check_id, title, Severity.OK,
+        "No other app has an open audio stream on the rig codec.")
 
 
 def _check_sound_scheme(snap: AudioSnapshot,

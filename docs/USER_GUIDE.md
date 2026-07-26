@@ -1088,7 +1088,7 @@ Windows keeps per-app volume and mute state *per device* in the registry. It sur
 
 ### Reading the Configuration Audit
 
-Eleven read-only checks, listed worst-first. Each carries a severity chip:
+Twelve read-only checks, listed worst-first. Each carries a severity chip:
 
 | Chip | Meaning |
 |------|---------|
@@ -1111,6 +1111,7 @@ What the checks catch, in plain English:
 | **RX (recording) format** | Same check for the recording side. |
 | **Persisted Windows mixer state for WSJT-X/JTDX** | The classic "RX works, TX dead": a per-app mute or near-zero volume stored in the registry. It survives reboots, silences TX only, and shows nowhere inside WSJT-X. |
 | **Live WSJT-X/JTDX audio session** | Where the app is *actually* playing audio right now, and whether that session is muted or turned down. |
+| **Other apps on the rig codec** | Warns when another application (remote-desktop software, a browser, a media player) has an open audio stream on the rig codec — anything it plays can be transmitted. If FT8web is your active source, the browser is recognized as your TX app and not flagged. |
 | **System sounds** | Warns when system sounds are enabled **and** the codec is the default device — the combination that puts dings on the air. |
 | **Windows Fast Startup** | "Shut down" on Windows does **not** reinitialize audio drivers — it resumes a saved kernel image. Only "Restart" is a true reboot. |
 

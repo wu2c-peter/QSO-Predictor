@@ -230,15 +230,20 @@ class AudioDoctorDialog(QDialog):
         self._set_busy(True)
         self.audit_label.setText("Scanning Windows audio state…")
         hint = self.current_rig_hint() or "USB Audio CODEC"
-        threading.Thread(target=self._audit_worker, args=(hint,),
+        # Same browser-mode signal the TX probe uses: with FT8web as the
+        # source, browser streams on the codec are expected, not foreign.
+        browser_tx = bool(self._ft8web_connected
+                          and self._ft8web_connected())
+        threading.Thread(target=self._audit_worker, args=(hint, browser_tx),
                          name="AudioDoctorAudit", daemon=True).start()
 
-    def _audit_worker(self, rig_hint):
+    def _audit_worker(self, rig_hint, browser_tx=False):
         payload = None
         try:
             with probe_windows.com_initialized():
                 snapshot = probe_windows.gather_snapshot()
-            results = run_checks(snapshot, rig_hint=rig_hint)
+            results = run_checks(snapshot, rig_hint=rig_hint,
+                                 browser_tx=browser_tx)
             payload = (results, list(snapshot.errors))
         except Exception:
             logger.exception("Audio Doctor: audit failed")

@@ -59,9 +59,13 @@ class AudioDoctor:
     domains = frozenset({'audio'})
 
     def __init__(self, rig_hint: Optional[RigHint] = None,
-                 app_names: Optional[Sequence[str]] = None):
+                 app_names: Optional[Sequence[str]] = None,
+                 browser_tx=False):
         self._rig_hint = rig_hint
         self._app_names = app_names
+        # bool or zero-arg callable, resolved per run like rig_hint:
+        # FT8web-as-source makes browser codec streams expected.
+        self._browser_tx = browser_tx
 
     def _resolve_rig_hint(self) -> Optional[str]:
         hint = self._rig_hint() if callable(self._rig_hint) else self._rig_hint
@@ -86,15 +90,20 @@ class AudioDoctor:
             kwargs['rig_hint'] = hint
         if self._app_names:
             kwargs['app_names'] = self._app_names
+        kwargs['browser_tx'] = bool(
+            self._browser_tx() if callable(self._browser_tx)
+            else self._browser_tx)
         return run_checks(snap.audio, **kwargs)
 
 
 def register(rig_hint: Optional[RigHint] = None,
-             app_names: Optional[Sequence[str]] = None) -> AudioDoctor:
+             app_names: Optional[Sequence[str]] = None,
+             browser_tx=False) -> AudioDoctor:
     """Register the Audio Doctor and its domain gatherer. Call once at
-    app startup (or from the standalone tester's assembly). Pass a
-    zero-arg callable reading live config as rig_hint — not a frozen
-    string — so checkups always use the hint the user currently has."""
+    app startup (or from the standalone tester's assembly). Pass
+    zero-arg callables reading live state for rig_hint / browser_tx —
+    not frozen values — so checkups always use current settings."""
     registry.register_gatherer('audio', gather_audio)
     return registry.register(AudioDoctor(rig_hint=rig_hint,
-                                         app_names=app_names))
+                                         app_names=app_names,
+                                         browser_tx=browser_tx))

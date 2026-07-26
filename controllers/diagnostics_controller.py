@@ -38,6 +38,7 @@ class DiagnosticsController(QObject):
         self.main_window = main_window
         self._busy = False
         self._rig_hint_snapshot = ''
+        self._browser_tx_snapshot = False
         self._checkup_ready.connect(self._show_results)
         self._register_doctors()
 
@@ -50,7 +51,8 @@ class DiagnosticsController(QObject):
         ids = {d.id for d in doctor_registry.registered_doctors()}
         if 'audio' not in ids:
             from audio_doctor.doctor import register as register_audio
-            register_audio(rig_hint=lambda: self._rig_hint_snapshot)
+            register_audio(rig_hint=lambda: self._rig_hint_snapshot,
+                           browser_tx=lambda: self._browser_tx_snapshot)
         if 'clock' not in ids:
             doctor_registry.register(ClockDoctor())
 
@@ -79,6 +81,9 @@ class DiagnosticsController(QObject):
             audio_health = getattr(self.main_window, 'audio_health', None)
             self._rig_hint_snapshot = (audio_health.rig_hint()
                                        if audio_health else '')
+            ft8web = getattr(self.main_window, 'ft8web', None)
+            self._browser_tx_snapshot = bool(
+                ft8web and ft8web.is_client_connected())
             if doctor_ids is None:
                 doctors = None
             else:

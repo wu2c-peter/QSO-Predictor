@@ -29,7 +29,8 @@ from audio_doctor.checks import (
 )
 from audio_doctor.models import (
     AppSessionInfo, AudioFormat, AudioSnapshot, DataFlow, DeviceState,
-    EndpointInfo, PersistedAppAudio, Severity, TxProbeSample, TxVerdict,
+    EndpointInfo, PersistedAppAudio, SettingsPanel, Severity,
+    TxProbeSample, TxVerdict,
 )
 from audio_doctor.parsing import (
     APP_PROPERTY_STORE_PATHS, decode_propvariant, ducking_label,
@@ -259,7 +260,7 @@ def test_is_rig_endpoint_matches_renamed_duplicate():
 
 def test_healthy_snapshot_has_no_warnings_or_failures():
     results = run_checks(healthy_snapshot())
-    assert len(results) == 11
+    assert len(results) == 12
     worst = max(r.severity for r in results)
     assert worst <= Severity.INFO, [
         (r.check_id, r.severity, r.detail) for r in results
@@ -624,3 +625,75 @@ def test_every_panel_has_label_and_launcher_command():
     for panel in SettingsPanel:
         assert panel.label.startswith("Open")
         assert panel in probe_windows._PANEL_COMMANDS
+
+
+# ---------------------------------------------------------------------------
+# audio/foreign-session — other apps on the rig codec (v2.7.0)
+# ---------------------------------------------------------------------------
+
+def _foreign(process, active, endpoint=None):
+    ep = endpoint or CODEC_RENDER
+    return AppSessionInfo(endpoint_id=ep.id, endpoint_name=ep.name,
+                          process_name=process, pid=999, volume=1.0,
+                          muted=False, active=active)
+
+
+def test_foreign_active_session_on_codec_warns():
+    """The real-world case from the first Full Checkup report: a
+    remote-desktop app with an open stream into the rig codec. The fix
+    text must be conditional — never an unconditional 'close the app'
+    that would break a deliberate TX source."""
+    snap = healthy_snapshot(sessions=[_foreign("rustdesk.exe", active=True)])
+    r = result_by_id(run_checks(snap), "audio/foreign-session")
+    assert r.severity == Severity.WARNING
+    assert "rustdesk.exe" in r.detail
+    assert "open audio stream" in r.detail   # never claims sound is flowing
+    assert r.fix.startswith("If this is not deliberately your TX source")
+    assert r.panel == SettingsPanel.VOLUME_MIXER
+
+
+def test_foreign_wording_is_plural_aware():
+    snap = healthy_snapshot(sessions=[
+        _foreign("rustdesk.exe", active=True),
+        _foreign("spotify.exe", active=True)])
+    r = result_by_id(run_checks(snap), "audio/foreign-session")
+    assert "Other applications have" in r.detail
+    assert "Anything they play" in r.detail
+
+
+def test_foreign_idle_sessions_are_ignored_like_the_sibling_check():
+    """WASAPI retains expired sessions from long-closed streams (the
+    documented lesson in _check_live_sessions) — idle rows are
+    unreliable evidence and must not produce findings."""
+    snap = healthy_snapshot(sessions=[_foreign("msedge.exe", active=False)])
+    r = result_by_id(run_checks(snap), "audio/foreign-session")
+    assert r.severity == Severity.OK
+
+
+def test_browser_tx_mode_expects_browser_streams():
+    """FT8web mode: the browser IS the TX app — an active browser stream
+    on the codec is expected, not foreign. Without the flag it warns."""
+    snap = healthy_snapshot(sessions=[_foreign("msedge.exe", active=True)])
+    with_flag = result_by_id(run_checks(snap, browser_tx=True),
+                             "audio/foreign-session")
+    without = result_by_id(run_checks(snap), "audio/foreign-session")
+    assert with_flag.severity == Severity.OK
+    assert without.severity == Severity.WARNING
+
+
+def test_own_apps_and_other_devices_are_not_foreign():
+    snap = healthy_snapshot(sessions=[
+        _foreign("wsjtx.exe", active=True),                  # our app
+        _foreign("spotify.exe", active=True, endpoint=MONITOR),  # not codec
+    ])
+    r = result_by_id(run_checks(snap), "audio/foreign-session")
+    assert r.severity == Severity.OK
+
+
+def test_parse_property_store_entry_rejects_device_level_placeholder():
+    """Windows stores '#' as the exe segment of device-level (non-app)
+    rows; they aren't per-app state and rendered as cryptic '#' paths in
+    the first live Full Checkup report."""
+    raw = ("{2}.\\\\?\\usb#vid_08bb&pid_2901&mi_00#{6994ad04-93ef-11d0-"
+           "a3cc-00a0c9223196}\\global/00010002|#")
+    assert parse_property_store_entry(raw + "%b{guid}") is None
