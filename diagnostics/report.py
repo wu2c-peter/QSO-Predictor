@@ -74,6 +74,10 @@ def _fmt_value(value) -> str:
         return value.name
     if isinstance(value, bool):
         return "yes" if value else "no"
+    if isinstance(value, float):
+        # Compact: 0.6000000238418579 (a float32 volume round-tripped
+        # through a double) must not render at full precision.
+        return f"{value:.6g}"
     if dataclasses.is_dataclass(value):
         # Compact nested-dataclass rendering (e.g. AudioFormat ->
         # "channels=2, sample_rate_hz=48000, bits_per_sample=16")

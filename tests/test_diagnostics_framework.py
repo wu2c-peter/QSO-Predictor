@@ -335,3 +335,12 @@ def test_checkup_gathers_requested_context_domains(clean_registry):
     run = registry.run_checkup(doctors=[doc], extra_domains={'apps'})
     assert run.snapshot.apps is not None
     assert run.snapshot.apps[0].callsign == 'WU2C'
+
+
+def test_floats_render_compactly_in_report():
+    """Real Windows report showed 0.6000000238418579 (float32 volume via
+    double) and -1.8477439880371094e-05 raw in Details tables."""
+    from diagnostics.report import _fmt_value
+    assert _fmt_value(0.6000000238418579) == '0.6'
+    assert _fmt_value(1.0) == '1'
+    assert _fmt_value(-1.8477439880371094e-05) == '-1.84774e-05'

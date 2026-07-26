@@ -249,6 +249,11 @@ class Doctor(Protocol):
    reaches QSO Predictor"). Port conflicts; firewall hints (Windows,
    best-effort). Must pass the daisy-chain fixture: an unusual-but-
    consistent chain (e.g. 4242→2238) is OK, not a warning.
+   Lesson from the first real Windows report (2026-07-26): the port scan
+   must also probe every config-referenced port, not just
+   `HAM_PORT_RANGE` (2230–2260) — the live 4242 daisy-chain hop was
+   invisible to the fixed range, so the chain's middle link could not be
+   observed at all.
 4. **Serial/CAT Doctor** — `serial` (new probes; the largest new work).
    Checks: expected port (from configs) exists; driver present and not a
    known-bad version (counterfeit-Prolific trap); port exclusively held by
