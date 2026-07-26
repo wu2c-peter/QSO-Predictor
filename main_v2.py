@@ -790,6 +790,20 @@ class MainWindow(QMainWindow):
             self.diagnostics.run_clock_doctor)
         diag_menu.addAction(clock_doctor_action)
 
+        config_doctor_action = QAction("Config Doctor...", self)
+        config_doctor_action.setToolTip(
+            "Check app configs: duplicates, stale audio bindings, callsign")
+        config_doctor_action.triggered.connect(
+            self.diagnostics.run_config_doctor)
+        diag_menu.addAction(config_doctor_action)
+
+        network_doctor_action = QAction("Network Doctor...", self)
+        network_doctor_action.setToolTip(
+            "Verify the UDP decode chain: who sends where, who's listening")
+        network_doctor_action.triggered.connect(
+            self.diagnostics.run_network_doctor)
+        diag_menu.addAction(network_doctor_action)
+
         # Help Menu
         help_menu = menu.addMenu("Help")
         guide_action = QAction("User Guide", self)

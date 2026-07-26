@@ -97,6 +97,8 @@ hiddenimports = [
     'diagnostics.setup_analysis',
     'diagnostics.doctors',
     'diagnostics.doctors.clock',
+    'diagnostics.doctors.config',
+    'diagnostics.doctors.network',
     'audio_doctor.doctor',
 ]
 

@@ -211,3 +211,19 @@ def test_read_config_clamps_out_of_range_port(tmp_path):
     assert app is not None and app.udp_port == 2237
     app = _read(tmp_path, "[Configuration]\nUDPServerPort=-5\n")
     assert app is not None and app.udp_port == 2237
+
+
+def test_read_config_cleared_udp_address_means_disabled(tmp_path):
+    """Key PRESENT but empty = user disabled UDP; must stay '' (no
+    fabricated 127.0.0.1 chain). Key ABSENT = app default applies."""
+    app = _read(tmp_path, "[Configuration]\nUDPServerAddress=\n")
+    assert app is not None and app.udp_ip == ''
+    app = _read(tmp_path, "[Configuration]\nMyCall=WU2C\n")
+    assert app is not None and app.udp_ip == '127.0.0.1'
+
+
+def test_fallback_instance_parsed_from_filename():
+    from diagnostics.probe_apps import _instance_from_stem
+    assert _instance_from_stem('WSJT-X - IC-7300', 'WSJT-X') == 'IC-7300'
+    assert _instance_from_stem('WSJT-X', 'WSJT-X') == ''
+    assert _instance_from_stem('JTDX - 159', 'JTDX') == '159'

@@ -85,18 +85,22 @@ class PortScanner:
 
     @staticmethod
     def _scan_windows(extra: FrozenSet[int] = frozenset()) -> List[PortInfo]:
-        """Parse netstat -ano on Windows for UDP listeners."""
+        """Parse netstat -ano on Windows for UDP listeners (v4 and v6 —
+        a v6-only listener must not read as 'nothing is listening')."""
         result = []
-        try:
-            output = subprocess.check_output(
-                ['netstat', '-ano', '-p', 'UDP'],
-                text=True, timeout=5,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-            )
+        for proto in ('UDP', 'UDPv6'):
+            try:
+                output = subprocess.check_output(
+                    ['netstat', '-ano', '-p', proto],
+                    text=True, timeout=5,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                )
+            except (subprocess.SubprocessError, FileNotFoundError):
+                continue
             for line in output.splitlines():
                 # UDP    0.0.0.0:2237    *:*    12345
                 parts = line.split()
-                if len(parts) >= 4 and parts[0] == 'UDP':
+                if len(parts) >= 4 and parts[0] in ('UDP', 'UDPv6'):
                     addr = parts[1]
                     if ':' in addr:
                         ip, port_str = addr.rsplit(':', 1)
@@ -111,8 +115,6 @@ class PortScanner:
                                 ))
                         except ValueError:
                             pass
-        except (subprocess.SubprocessError, FileNotFoundError):
-            pass
         return result
 
     @staticmethod

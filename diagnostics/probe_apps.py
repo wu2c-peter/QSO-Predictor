@@ -27,6 +27,15 @@ from diagnostics.models import DetectedApp
 logger = logging.getLogger(__name__)
 
 
+def _instance_from_stem(stem: str, app_name: str) -> str:
+    """Rig-name instance from a multi-instance ini filename ("WSJT-X -
+    IC-7300.ini" -> "IC-7300"). Fallback-search hits must keep their
+    instance identity or two legitimate rig configs read as duplicate
+    copies of one config (Config Doctor false WARNING)."""
+    prefix = f"{app_name} - "
+    return stem[len(prefix):] if stem.startswith(prefix) else ""
+
+
 class ConfigFileReader:
     """
     Reads configuration from WSJT-X and JTDX installations.
@@ -53,6 +62,8 @@ class ConfigFileReader:
     KEYS_UDP_PORT = ['UDPServerPort', 'udpServerPort', 'UdpServerPort']
     KEYS_UDP_ADDR = ['UDPServerAddress', 'udpServerAddress', 'UDPServer']
     KEYS_ACCEPT_UDP = ['AcceptUDPRequests', 'acceptUDPRequests']
+    KEYS_SOUND_IN = ['SoundInName', 'soundInName']
+    KEYS_SOUND_OUT = ['SoundOutName', 'soundOutName']
 
     def __init__(self):
         self._search_paths = self._build_search_paths()
@@ -121,11 +132,17 @@ class ConfigFileReader:
                     'dir': base / 'JTDX',
                     'ini': 'JTDX.ini',
                 })
-            # Also check directly in Preferences (flat file)
+            # Also check directly in Preferences (flat files — the
+            # location Qt's ConfigLocation actually uses on macOS)
             paths.append({
                 'app': 'WSJT-X',
                 'dir': prefs,
                 'ini': 'WSJT-X.ini',
+            })
+            paths.append({
+                'app': 'JTDX',
+                'dir': prefs,
+                'ini': 'JTDX.ini',
             })
 
         else:
@@ -218,7 +235,10 @@ class ConfigFileReader:
 
                                 logger.info(f"Setup: Fallback search found {app_name} config at {ini_path}")
 
-                                app = self._read_config(ini_path, app_name)
+                                app = self._read_config(
+                                    ini_path, app_name,
+                                    _instance_from_stem(ini_path.stem,
+                                                        app_name))
                                 if app:
                                     app.log_directory = ini_path.parent
                                     found.append(app)
@@ -330,10 +350,24 @@ class ConfigFileReader:
             else:
                 app.udp_port = 2237
 
-            app.udp_ip = self._find_value(config, self.KEYS_UDP_ADDR) or '127.0.0.1'
+            # Absent key -> the app's own baked-in default (127.0.0.1)
+            # applies. Key PRESENT but empty -> the user cleared it to
+            # disable UDP; preserve that as '' so downstream doctors
+            # don't invent a chain the operator turned off.
+            raw_addr = self._find_raw(config, self.KEYS_UDP_ADDR)
+            if raw_addr is None:
+                app.udp_ip = '127.0.0.1'
+            else:
+                app.udp_ip = raw_addr.strip()
 
             accept_str = self._find_value(config, self.KEYS_ACCEPT_UDP)
             app.accept_udp = accept_str in ('true', '1', 'True', 'yes')
+
+            # Stored audio device bindings — the Config Doctor verifies
+            # these against live audio state (stale after USB
+            # re-enumeration renames a device).
+            app.sound_in = self._find_value(config, self.KEYS_SOUND_IN)
+            app.sound_out = self._find_value(config, self.KEYS_SOUND_OUT)
 
             logger.debug(f"Setup: {app_name}{' (' + instance + ')' if instance else ''}: "
                         f"call={app.callsign}, grid={app.grid}, "
@@ -360,6 +394,21 @@ class ConfigFileReader:
                 except (configparser.NoSectionError, configparser.NoOptionError):
                     pass
         return ""
+
+    def _find_raw(self, config: configparser.ConfigParser,
+                  key_variants: List[str]) -> Optional[str]:
+        """Like _find_value but distinguishes key-absent (None) from
+        key-present-but-empty ("") — the difference between "app default
+        applies" and "user cleared the setting"."""
+        for section in config.sections():
+            for key in key_variants:
+                try:
+                    val = config.get(section, key, fallback=None)
+                    if val is not None:
+                        return val
+                except (configparser.NoSectionError, configparser.NoOptionError):
+                    pass
+        return None
 
 
 class RunningAppDetector:

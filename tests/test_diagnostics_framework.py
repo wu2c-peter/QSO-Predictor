@@ -318,13 +318,17 @@ def test_audio_adapter_rig_hint_provider_is_read_per_run():
     assert 'SECOND CODEC' in rig_check_detail(second)   # fresh + stripped
 
 
-def test_gather_audio_raises_cleanly_when_probe_unavailable():
+def test_gather_audio_degrades_cleanly_when_probe_unavailable():
+    """Off-Windows: None ("not gathered", no error noise — other doctors
+    declare 'audio' cross-platform). On Windows without deps it raises;
+    that path needs a Windows box without pycaw and isn't testable
+    here."""
+    import sys
     from audio_doctor import probe_windows
-    if probe_windows.available():
-        pytest.skip('real audio probe available on this machine')
+    if probe_windows.available() or sys.platform == 'win32':
+        pytest.skip('behavior under test is the non-Windows path')
     from audio_doctor.doctor import gather_audio
-    with pytest.raises(RuntimeError, match='audio probe unavailable'):
-        gather_audio()
+    assert gather_audio() is None
 
 
 def test_checkup_gathers_requested_context_domains(clean_registry):

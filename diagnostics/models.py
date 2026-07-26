@@ -136,6 +136,8 @@ class DetectedApp:
     udp_ip: str = ""
     udp_port: int = 0
     accept_udp: bool = False
+    sound_in: str = ""              # configured capture device name ("" = key absent)
+    sound_out: str = ""             # configured playback device name ("" = key absent)
     is_running: bool = False
     log_directory: Optional[Path] = None
 

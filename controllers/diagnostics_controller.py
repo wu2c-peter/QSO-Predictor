@@ -22,6 +22,8 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from diagnostics import registry as doctor_registry
 from diagnostics.doctors.clock import ClockDoctor
+from diagnostics.doctors.config import ConfigDoctor
+from diagnostics.doctors.network import NetworkDoctor
 from utils.version import get_version
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,10 @@ class DiagnosticsController(QObject):
                            browser_tx=lambda: self._browser_tx_snapshot)
         if 'clock' not in ids:
             doctor_registry.register(ClockDoctor())
+        if 'config' not in ids:
+            doctor_registry.register(ConfigDoctor())
+        if 'network' not in ids:
+            doctor_registry.register(NetworkDoctor())
 
     # --- Entry points (menu actions; main thread) -----------------------
 
@@ -64,10 +70,18 @@ class DiagnosticsController(QObject):
     def run_clock_doctor(self):
         self._start(doctor_ids={'clock'}, title="Clock Doctor")
 
+    def run_config_doctor(self):
+        self._start(doctor_ids={'config'}, title="Config Doctor")
+
+    def run_network_doctor(self):
+        self._start(doctor_ids={'network'}, title="Network Doctor")
+
     # Context domains gathered on every checkup beyond what the doctors
-    # declare: the report's Station identity line and Details tables
-    # read these (no current doctor declares 'apps'/'udp_ports' — the
-    # Config and Network Doctors will).
+    # declare, so the report's Station identity line and Details tables
+    # are populated even on runs whose doctors don't need them (e.g. a
+    # Clock Doctor re-run). Full checkups get these from the Config and
+    # Network Doctors' declarations anyway; this is the per-doctor-run
+    # safety net.
     CONTEXT_DOMAINS = frozenset({'apps', 'udp_ports'})
 
     def _start(self, doctor_ids, title):

@@ -18,6 +18,7 @@ Copyright (C) 2026 Peter Hirst (WU2C)
 """
 
 import logging
+import sys
 from typing import Callable, List, Optional, Sequence, Union
 
 from diagnostics import registry
@@ -35,17 +36,21 @@ RigHint = Union[str, Callable[[], Optional[str]]]
 
 
 def gather_audio():
-    """Domain gatherer for 'audio' — worker thread only (COM). Only ever
-    invoked on Windows: the doctor declares platforms={'windows'}, so
-    non-Windows checkups never request this domain."""
+    """Domain gatherer for 'audio' — worker thread only (COM).
+
+    Off-Windows this returns None (domain "not gathered", no error
+    noise): other doctors legitimately declare 'audio' cross-platform —
+    the Config Doctor's binding check reads it — so a macOS checkup
+    requesting it is normal, not a failure. On WINDOWS with the probe
+    unavailable it raises: that's a real dependency problem the report's
+    probe errors should surface, and it keeps AudioDoctor.run() on its
+    UNKNOWN path rather than running checks against a half-gathered
+    snapshot."""
     if not probe_windows.available():
-        # Same gate every probe caller uses (see probe_windows'
-        # docstring). Raising here lands a clear message in the
-        # snapshot's probe errors instead of a cryptic NameError — and
-        # keeps AudioDoctor.run() on its UNKNOWN path rather than
-        # running checks against a half-gathered snapshot.
-        raise RuntimeError(
-            'audio probe unavailable (pycaw/comtypes not installed)')
+        if sys.platform == 'win32':
+            raise RuntimeError(
+                'audio probe unavailable (pycaw/comtypes not installed)')
+        return None
     with probe_windows.com_initialized():
         return probe_windows.gather_snapshot()
 

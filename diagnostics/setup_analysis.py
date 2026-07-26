@@ -136,7 +136,10 @@ class SetupAnalyzer:
                 )
             else:
                 rec.udp_port = target_port
-                rec.udp_ip = source_app.udp_ip if source_app else '127.0.0.1'
+                # udp_ip can be '' when the user cleared the address to
+                # disable UDP — recommend the standard loopback then.
+                rec.udp_ip = ((source_app.udp_ip or '127.0.0.1')
+                              if source_app else '127.0.0.1')
 
         # --- Detect potential forward port needs ---
         other_listeners = [a for a in running_apps

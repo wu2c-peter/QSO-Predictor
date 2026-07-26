@@ -242,6 +242,12 @@ class Doctor(Protocol):
    "you may be editing the copy you don't run"); config references audio
    devices/ports that don't exist right now (needs `audio`, `serial` as
    they become available — domains are additive over releases).
+   IMPLEMENTED 2026-07-26 (`doctors/config.py`): inventory, duplicates
+   w/ mtimes, callsign presence, audio-binding staleness (usable-state
+   endpoints only — registry ghosts must not satisfy a binding).
+   Declares `apps` AND `audio` per Contract 4; the audio gatherer
+   returns None off-Windows ("not gathered", no error noise), so
+   cross-platform doctors may declare platform-limited domains freely.
 3. **Network Doctor** — `apps` + `udp_ports`. Checks: reconstruct intended
    UDP topology from configs (WSJT-X → forwarders → consumers), diff
    against live port table; report the broken link by name ("GridTracker
@@ -254,8 +260,13 @@ class Doctor(Protocol):
    `HAM_PORT_RANGE` (2230–2260) — the live 4242 daisy-chain hop was
    invisible to the fixed range. Groundwork LANDED post-merge:
    `PortScanner.scan_udp_ports(extra_ports=...)`, wired into the
-   checkup gatherer and both wizard paths. Remaining for this doctor:
-   the chain reconstruction itself.
+   checkup gatherer and both wizard paths.
+   IMPLEMENTED 2026-07-26 (`doctors/network.py`) v1: first-hop chain
+   verification (each sender's UDP target vs live listeners; broken
+   link named with consequence; idle senders INFO; multicast
+   acknowledged) + listener inventory. The daisy-chain fixture is in
+   `tests/test_config_network_doctors.py`. Future: multi-hop
+   reconstruction (forwarder configs), firewall hints.
 4. **Serial/CAT Doctor** — `serial` (new probes; the largest new work).
    Checks: expected port (from configs) exists; driver present and not a
    known-bad version (counterfeit-Prolific trap); port exclusively held by
