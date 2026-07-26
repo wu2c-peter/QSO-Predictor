@@ -179,6 +179,10 @@ def render_report(checkup: CheckupRun, tool_name: str, tool_version: str,
         if ident:
             call, grid = ident
             lines.append(f"- Station: {call}" + (f" ({grid})" if grid else ""))
+    else:
+        # An anonymized report must be distinguishable from a failed
+        # config parse — readers should know the omission is deliberate.
+        lines.append("- Station: (withheld by operator)")
     lines.append("")
 
     # --- Findings (FAIL / WARNING only, worst first) ---

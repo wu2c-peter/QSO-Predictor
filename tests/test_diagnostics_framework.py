@@ -180,6 +180,9 @@ def test_report_identity_toggle_and_path_scrubbing():
     without = render_report(_sample_checkup(), 'ShackCheck', 'v0.1',
                             include_identity=False)
     assert 'Station: WU2C' not in without
+    # Deliberate omission must be distinguishable from a parse failure
+    # (a real anonymized Windows report was misread as a callsign bug).
+    assert 'Station: (withheld by operator)' in without
 
 
 def test_report_machine_appendix_is_valid_json_of_problems_only():
