@@ -91,7 +91,10 @@ hiddenimports = [
     'diagnostics.models',
     'diagnostics.probe_apps',
     'diagnostics.probe_ports',
+    'diagnostics.registry',
+    'diagnostics.report',
     'diagnostics.setup_analysis',
+    'audio_doctor.doctor',
 ]
 
 if sys.platform == 'win32':

@@ -18,6 +18,7 @@ import logging
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -306,6 +307,12 @@ class ConfigFileReader:
                 config_path=ini_path,
                 instance_name=instance,
             )
+            try:
+                app.config_mtime = datetime.fromtimestamp(
+                    ini_path.stat().st_mtime, timezone.utc
+                ).strftime('%Y-%m-%dT%H:%M:%SZ')
+            except OSError:
+                pass    # "" = unread, per the field's convention
 
             # Search across all sections for our keys
             app.callsign = self._find_value(config, self.KEYS_CALLSIGN)

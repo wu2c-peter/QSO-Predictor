@@ -1,8 +1,11 @@
 # Diagnostics framework ("Doctors") — design spec
 
-Status: DRAFT — Migration steps 1–2 implemented 2026-07-26 (step 1:
+Status: DRAFT — Migration steps 1–3 implemented 2026-07-26 (step 1:
 `diagnostics/` package, re-exports, conventions tests; step 2: detection
-layer lifted from `setup_wizard.py` with first unit coverage); steps 3–5
+layer lifted from `setup_wizard.py` with first unit coverage; step 3:
+`StationSnapshot` + `registry.py` + `report.py` + Audio Doctor adapter in
+`audio_doctor/doctor.py`, not yet wired to any menu). Step 4 (Clock
+Doctor + Diagnostics menu — the report format's freeze point) and step 5
 not started.
 Companion reading: `DEVELOPMENT_NOTES.md` § Audio Doctor.
 

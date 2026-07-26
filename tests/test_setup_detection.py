@@ -55,6 +55,8 @@ def test_read_config_wsjtx_full(tmp_path):
     app = _read(tmp_path, WSJTX_INI)
     assert app is not None
     assert app.name == 'WSJT-X'
+    # mtime evidence recorded as ISO UTC (spec Contract 3 Details)
+    assert app.config_mtime.endswith('Z') and 'T' in app.config_mtime
     assert app.callsign == 'WU2C'
     assert app.grid == 'FN30pr'
     assert app.udp_ip == '127.0.0.1'

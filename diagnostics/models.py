@@ -127,6 +127,9 @@ class DetectedApp:
     """A ham radio application detected on this system."""
     name: str                       # e.g. "WSJT-X", "JTDX", "JTAlert"
     config_path: Optional[Path]     # Path to config file (if found)
+    config_mtime: str = ""          # config file mtime, ISO UTC ("" = unread);
+                                    #   evidence for stale/duplicate-config
+                                    #   diagnoses (spec Contract 3)
     instance_name: str = ""         # For multi-instance (e.g. "OmniRig Rig 1")
     callsign: str = ""
     grid: str = ""
@@ -159,3 +162,47 @@ class SetupRecommendation:
     source: str = ""                # Where the recommendation came from
     warnings: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+
+
+# =============================================================================
+# StationSnapshot — Contract 1 of dev-docs/DIAGNOSTICS_SPEC.md
+# =============================================================================
+
+SNAPSHOT_SCHEMA_VERSION = 1
+
+# StationSnapshot fields that are checkup metadata, not gatherable
+# domains. Everything else is a domain: the registry validates gatherer
+# registrations against this split, and the report skips these in its
+# Details section.
+SNAPSHOT_META_FIELDS = frozenset({'schema_version', 'taken_at_utc',
+                                  'platform', 'os_detail', 'errors'})
+
+
+@dataclass
+class StationSnapshot:
+    """Everything one checkup's probe pass gathered, across all domains.
+
+    Two-level availability semantics:
+      - Domain level: a domain field of None means "not gathered" (no
+        gatherer registered, unsupported platform, or the probe failed —
+        see `errors`). Present-but-empty means "gathered, nothing found".
+      - Field level inside a domain snapshot: follow that snapshot's own
+        convention (None = unreadable; checks report UNKNOWN).
+
+    Evolution is additive only: new domains and fields get defaults;
+    existing field meanings never change (bump SNAPSHOT_SCHEMA_VERSION
+    otherwise). Domain snapshot types owned by app-side packages appear
+    as string annotations with no runtime import — the import direction
+    is one-way, app -> diagnostics (see the spec's import-direction
+    rule), so `AudioSnapshot` is never imported here.
+    """
+    schema_version: int
+    taken_at_utc: str                  # ISO 8601, Z suffix
+    platform: str                      # "windows" / "macos" / "linux"
+    os_detail: str = ""                # e.g. "Windows-11-...", "macOS-15.5"
+
+    audio: Optional["AudioSnapshot"] = None       # audio_doctor.models (app-side)
+    apps: Optional[List[DetectedApp]] = None      # probe_apps
+    udp_ports: Optional[List[PortInfo]] = None    # probe_ports
+
+    errors: List[str] = field(default_factory=list)  # probe-time notes
