@@ -83,6 +83,11 @@ hiddenimports = [
     'audio_doctor.models',
     'audio_doctor.parsing',
     'audio_doctor.checks',
+
+    # Diagnostics framework core (dev-docs/DIAGNOSTICS_SPEC.md) —
+    # audio_doctor.models re-exports its types.
+    'diagnostics',
+    'diagnostics.models',
 ]
 
 if sys.platform == 'win32':

@@ -5,6 +5,10 @@ Pure stdlib — no Qt, no COM. `probe_windows.py` populates these from live
 Windows state; `checks.py` reasons over them. Keeping the types platform-
 neutral is what lets the diagnostic logic run under pytest on any OS.
 
+The framework-wide types (`Severity`, `CheckResult`, `SettingsPanel`) live
+in `diagnostics.models` (see dev-docs/DIAGNOSTICS_SPEC.md) and are
+re-exported here so existing import sites keep working.
+
 QSO Predictor
 Copyright (C) 2026 Peter Hirst (WU2C)
 """
@@ -12,6 +16,15 @@ Copyright (C) 2026 Peter Hirst (WU2C)
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import List, Optional
+
+from diagnostics.models import CheckResult, SettingsPanel, Severity
+
+__all__ = [
+    'AppSessionInfo', 'AudioFormat', 'AudioSnapshot', 'CheckResult',
+    'DataFlow', 'DeviceState', 'EndpointInfo', 'PersistedAppAudio',
+    'SettingsPanel', 'Severity', 'TxProbeSample', 'TxVerdict',
+    'VerdictText', 'verdict_display',
+]
 
 
 # =============================================================================
@@ -42,80 +55,6 @@ _STATE_LABEL = {
     DeviceState.DISABLED: "Disabled",
     DeviceState.NOTPRESENT: "Not present",
     DeviceState.UNPLUGGED: "Unplugged",
-}
-
-
-class SettingsPanel(Enum):
-    """A Windows settings surface a finding's fix lives in. Pure data —
-    the dialog renders these as "Open ..." links and probe_windows owns
-    the actual launch commands."""
-    PLAYBACK_DEVICES = "playback_devices"      # mmsys.cpl Playback tab
-    RECORDING_DEVICES = "recording_devices"    # mmsys.cpl Recording tab
-    SOUND_SCHEME = "sound_scheme"              # mmsys.cpl Sounds tab
-    COMMUNICATIONS = "communications"          # mmsys.cpl Communications tab
-    VOLUME_MIXER = "volume_mixer"              # per-app volume / routing
-    POWER_OPTIONS = "power_options"            # Fast Startup checkbox
-
-    @property
-    def label(self) -> str:
-        return _PANEL_LABEL[self]
-
-
-_PANEL_LABEL = {
-    SettingsPanel.PLAYBACK_DEVICES: "Open playback devices",
-    SettingsPanel.RECORDING_DEVICES: "Open recording devices",
-    SettingsPanel.SOUND_SCHEME: "Open sound scheme settings",
-    SettingsPanel.COMMUNICATIONS: "Open the Communications tab",
-    SettingsPanel.VOLUME_MIXER: "Open the volume mixer",
-    SettingsPanel.POWER_OPTIONS: "Open power options",
-}
-
-
-class Severity(IntEnum):
-    """Outcome of one audit check. IntEnum so results sort worst-first
-    with plain `sorted(..., reverse=True)` on the enum value."""
-    OK = 0
-    INFO = 1
-    UNKNOWN = 2     # state could not be read — not proof of a problem
-    WARNING = 3
-    FAIL = 4
-
-    @property
-    def label(self) -> str:
-        return _SEVERITY_LABEL[self]
-
-    @property
-    def color(self) -> str:
-        """Dark-theme hex color for dialog rendering."""
-        return _SEVERITY_COLOR[self]
-
-    @property
-    def symbol(self) -> str:
-        return _SEVERITY_SYMBOL[self]
-
-
-_SEVERITY_LABEL = {
-    Severity.OK: "OK",
-    Severity.INFO: "Info",
-    Severity.UNKNOWN: "Unknown",
-    Severity.WARNING: "Warning",
-    Severity.FAIL: "Problem",
-}
-
-_SEVERITY_COLOR = {
-    Severity.OK: "#00C853",
-    Severity.INFO: "#40C4FF",
-    Severity.UNKNOWN: "#9E9E9E",
-    Severity.WARNING: "#FFB300",
-    Severity.FAIL: "#FF5252",
-}
-
-_SEVERITY_SYMBOL = {
-    Severity.OK: "✓",
-    Severity.INFO: "ℹ",
-    Severity.UNKNOWN: "?",
-    Severity.WARNING: "⚠",
-    Severity.FAIL: "✗",
 }
 
 
@@ -404,17 +343,6 @@ class AudioSnapshot:
             if ep.id == endpoint_id:
                 return ep
         return None
-
-
-@dataclass
-class CheckResult:
-    """Outcome of one audit check, in display order."""
-    check_id: str              # stable slug, e.g. "default-communication"
-    title: str
-    severity: Severity
-    detail: str
-    fix: str = ""
-    panel: Optional[SettingsPanel] = None   # where the fix lives, if a Windows setting
 
 
 @dataclass

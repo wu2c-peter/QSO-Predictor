@@ -119,6 +119,61 @@ def test_release_workflow_installs_every_spec_hiddenimport():
     )
 
 
+def test_diagnostics_stays_free_of_qt_and_app_imports():
+    """diagnostics/ is the doctors-framework core (dev-docs/
+    DIAGNOSTICS_SPEC.md): a future standalone/headless tester must be
+    buildable from it, and doctors' check logic must stay unit-testable
+    on any platform. So: no Qt and no app module AT ALL — the ban list
+    is computed from the repo root (every root *.py and every local
+    package except utils, which is pure stdlib by its own test) so new
+    app modules are banned automatically. audio_doctor especially:
+    audio_doctor.models imports diagnostics.models at module load, so a
+    diagnostics -> audio_doctor import is an instant circular-import
+    crash. Platform-only libraries are confined to probe_* modules
+    (same convention as audio_doctor)."""
+    allowed_local = {'diagnostics', 'utils', 'tests'}
+    banned = {'PyQt6'}
+    for p in REPO_ROOT.glob('*.py'):
+        banned.add(p.stem)
+    for p in REPO_ROOT.iterdir():
+        if (p / '__init__.py').exists() and p.name not in allowed_local:
+            banned.add(p.name)
+    qt_and_app = re.compile(
+        r'^\s*(from|import)\s+(' + '|'.join(map(re.escape, sorted(banned)))
+        + r')\b')
+    platform_only = re.compile(r'^\s*(from|import)\s+(pycaw|comtypes|winreg|'
+                               r'psutil)\b')
+    offenders = []
+    for path in (REPO_ROOT / 'diagnostics').rglob('*.py'):
+        if any(part in EXCLUDED_DIRS for part in path.parts):
+            continue
+        rel = path.relative_to(REPO_ROOT)
+        for lineno, line in enumerate(
+                path.read_text(encoding='utf-8', errors='replace').splitlines(), 1):
+            if qt_and_app.match(line):
+                offenders.append(f"{rel}:{lineno} (Qt/app)")
+            elif not path.name.startswith('probe_') and platform_only.match(line):
+                offenders.append(f"{rel}:{lineno} (platform-only)")
+    assert not offenders, (
+        f"diagnostics/ must stay free of Qt/app-module imports, with "
+        f"platform access confined to probe_* modules: {offenders}"
+    )
+
+
+def test_diagnostics_reexports_are_the_same_objects():
+    """audio_doctor.models re-exports the framework types from
+    diagnostics.models. Identity (not just equality) is the contract:
+    if audio_doctor ever drifts back to local definitions, cross-module
+    enum comparisons and isinstance checks silently break while every
+    other test stays green (same drift class as the freq_to_band
+    copies)."""
+    import audio_doctor.models as am
+    import diagnostics.models as dm
+    assert am.Severity is dm.Severity
+    assert am.CheckResult is dm.CheckResult
+    assert am.SettingsPanel is dm.SettingsPanel
+
+
 def test_audio_doctor_core_stays_free_of_qt_and_windows_imports():
     """audio_doctor's models/parsing/checks are pure stdlib by design —
     that's what makes the diagnostic logic unit-testable off-Windows.

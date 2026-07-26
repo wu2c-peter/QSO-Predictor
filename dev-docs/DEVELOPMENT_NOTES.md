@@ -279,6 +279,7 @@ and should be preserved by future changes.
 | `local_intel/` | Offline ML stack — models, predictor, session tracker, log parser |
 | `ionis/` | IONIS propagation engine — numpy inference + features |
 | `audio_doctor/` | Windows TX-audio diagnostics — pure core + COM probe (v2.6.0) |
+| `diagnostics/` | Doctors-framework core: `Severity`, `CheckResult`, `SettingsPanel` (re-exported by `audio_doctor.models`). No Qt / app-module imports — enforced by `test_conventions.py`. Design: `DIAGNOSTICS_SPEC.md` |
 | `utils/` | Pure-stdlib helpers with no Qt / main-app deps (e.g. `version.py`) |
 | `training/` | Out-of-process model training |
 
@@ -457,7 +458,11 @@ endpoints, wrong endpoint format.
   enforced by `test_conventions.py`). ALL COM (pycaw/comtypes) and winreg
   access lives in `audio_doctor/probe_windows.py`. Keep it that way — the
   probe can only be exercised on a Windows box, so every line of logic
-  moved into it is a line that loses test coverage.
+  moved into it is a line that loses test coverage. Since the step-1
+  extraction (`DIAGNOSTICS_SPEC.md`), the framework types `Severity` /
+  `CheckResult` / `SettingsPanel` are defined in `diagnostics/models.py`
+  (also pure stdlib) and re-exported by `audio_doctor.models`; import
+  direction is one-way, app → diagnostics, never back.
 - **Threading contract**: every probe call runs on a daemon worker thread
   inside `with probe_windows.com_initialized():` (comtypes needs
   per-thread CoInitialize). Never call the probe from the Qt main thread.
