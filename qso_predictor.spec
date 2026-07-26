@@ -90,10 +90,13 @@ hiddenimports = [
     'diagnostics',
     'diagnostics.models',
     'diagnostics.probe_apps',
+    'diagnostics.probe_clock',
     'diagnostics.probe_ports',
     'diagnostics.registry',
     'diagnostics.report',
     'diagnostics.setup_analysis',
+    'diagnostics.doctors',
+    'diagnostics.doctors.clock',
     'audio_doctor.doctor',
 ]
 

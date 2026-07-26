@@ -508,7 +508,7 @@ endpoints, wrong endpoint format.
 
 ### Windows smoke-test checklist (first run on the Windows box)
 
-1. Tools → Audio Doctor: audit populates; codec found; no probe notes.
+1. Diagnostics → Audio Doctor: audit populates; codec found; no probe notes.
 2. Sanity-check ducking: flip the Communications-tab setting and re-scan —
    confirm the reported label follows (validates the 0–3 mapping).
 3. Press Tune in WSJT-X → "Check TX path" → expect AUDIO_FLOWING.

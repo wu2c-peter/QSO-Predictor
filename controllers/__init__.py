@@ -15,6 +15,7 @@ from .ionis_integration import IonisIntegration
 from .fox_hound import FoxHoundController
 from .target_coordinator import TargetCoordinator
 from .audio_health import AudioHealthController
+from .diagnostics_controller import DiagnosticsController
 
 __all__ = [
     "UpdateChecker",
@@ -24,4 +25,5 @@ __all__ = [
     "FoxHoundController",
     "TargetCoordinator",
     "AudioHealthController",
+    "DiagnosticsController",
 ]

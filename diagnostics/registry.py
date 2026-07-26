@@ -124,9 +124,15 @@ def _gather_udp_ports():
     return PortScanner.scan_udp_ports()
 
 
+def _gather_clock():
+    from diagnostics.probe_clock import gather_clock
+    return gather_clock()
+
+
 def _register_builtin_gatherers() -> None:
     _GATHERERS.setdefault('apps', _gather_apps)
     _GATHERERS.setdefault('udp_ports', _gather_udp_ports)
+    _GATHERERS.setdefault('clock', _gather_clock)
 
 
 _register_builtin_gatherers()
@@ -191,7 +197,8 @@ class CheckupRun:
 
 
 def run_checkup(doctors: Optional[Iterable[Doctor]] = None,
-                snapshot: Optional[StationSnapshot] = None) -> CheckupRun:
+                snapshot: Optional[StationSnapshot] = None,
+                extra_domains: Optional[Iterable[str]] = None) -> CheckupRun:
     """Run a checkup: gather once, then every applicable doctor over the
     same snapshot.
 
@@ -200,6 +207,11 @@ def run_checkup(doctors: Optional[Iterable[Doctor]] = None,
     snapshot: pre-gathered snapshot to reuse (skips probing — used by
         tests and re-renders); default gathers the union of the
         applicable doctors' declared domains.
+    extra_domains: context domains to gather beyond what doctors declare.
+        The report's Station identity line and Details tables read
+        domains no current doctor may declare (e.g. 'apps' for
+        callsign/grid until the Config Doctor exists) — the consumer
+        requests them here.
     """
     doctor_list = list(doctors) if doctors is not None else list(_DOCTORS)
     plat = current_platform()
@@ -208,7 +220,7 @@ def run_checkup(doctors: Optional[Iterable[Doctor]] = None,
                for d in doctor_list if plat not in d.platforms]
 
     if snapshot is None:
-        domains = set()
+        domains = set(extra_domains or ())
         for d in applicable:
             domains |= set(d.domains)
         snapshot = gather_snapshot(domains)

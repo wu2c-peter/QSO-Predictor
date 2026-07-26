@@ -1074,7 +1074,7 @@ QSOP keeps a small amount of local data to support Local Intelligence and future
 
 ## 12. Audio Doctor (Windows)
 
-**Tools → Audio Doctor...** (v2.6.0) diagnoses the Windows audio path between WSJT-X/JTDX and your rig. It exists because of one of digital modes' most maddening failures: **RX works fine, but your TX audio is silently dead** — and nothing inside WSJT-X shows anything wrong.
+**Diagnostics → Audio Doctor...** (v2.6.0) diagnoses the Windows audio path between WSJT-X/JTDX and your rig. It exists because of one of digital modes' most maddening failures: **RX works fine, but your TX audio is silently dead** — and nothing inside WSJT-X shows anything wrong.
 
 Windows keeps per-app volume and mute state *per device* in the registry. It survives reboots, it's invisible inside WSJT-X, and several everyday events can silence it: a browser using your microphone (communications ducking), a stray click in the Volume Mixer, or the codec re-enumerating after a USB port change. Audio Doctor checks all of these in seconds.
 
@@ -1084,7 +1084,7 @@ Windows keeps per-app volume and mute state *per device* in the registry. It sur
 
 ### Opening It
 
-**Tools → Audio Doctor...** The dialog has two panels: a **Configuration audit** that runs automatically when the dialog opens (and again whenever you click **Re-scan**), and a **Live TX path check** you run on demand.
+**Diagnostics → Audio Doctor...** The dialog has two panels: a **Configuration audit** that runs automatically when the dialog opens (and again whenever you click **Re-scan**), and a **Live TX path check** you run on demand.
 
 ### Reading the Configuration Audit
 
@@ -1152,7 +1152,7 @@ The configuration audit finds stored problems; the live check catches your TX au
 You don't have to remember to open Audio Doctor. Whenever WSJT-X reports it has started transmitting, QSOP quietly probes the TX path in the background for about 4 seconds (at most once per minute). If WSJT-X claims to be transmitting but no audio session or samples reach the codec, a sticky warning appears in the status bar:
 
 ```
-⚠ TX audio: No WSJT-X audio session on the codec — see Tools → Audio Doctor
+⚠ TX audio: No WSJT-X audio session on the codec — see Diagnostics → Audio Doctor
 ```
 
 The warning clears automatically on the next healthy transmission (or after 10 minutes). It stands down while an FT8web browser client is connected — in that setup the browser plays your TX audio, not wsjtx.exe, so a missing WSJT-X session is expected.
@@ -1206,7 +1206,7 @@ Even if you never hit a problem, these explain most "my TX audio vanished" myste
 
 Decodes appear normally and the rig keys up on transmit, but no audio goes out — and everything inside WSJT-X looks correct.
 
-This is almost always Windows-side per-app audio state: a persisted mixer mute, communications ducking after a browser call, or a stale device binding after a USB port change. Run **Tools → Audio Doctor** (see [Section 12](#12-audio-doctor-windows)) — press Tune in WSJT-X and click "Check TX path", and it will tell you which layer of the TX path is silent in about 4 seconds.
+This is almost always Windows-side per-app audio state: a persisted mixer mute, communications ducking after a browser call, or a stale device binding after a USB port change. Run **Diagnostics → Audio Doctor** (see [Section 12](#12-audio-doctor-windows)) — press Tune in WSJT-X and click "Check TX path", and it will tell you which layer of the TX path is silent in about 4 seconds.
 
 ### Running with Multiple Apps
 

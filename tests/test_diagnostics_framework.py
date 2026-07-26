@@ -322,3 +322,16 @@ def test_gather_audio_raises_cleanly_when_probe_unavailable():
     from audio_doctor.doctor import gather_audio
     with pytest.raises(RuntimeError, match='audio probe unavailable'):
         gather_audio()
+
+
+def test_checkup_gathers_requested_context_domains(clean_registry):
+    """The report's Station identity and Details tables read domains no
+    current doctor declares — the consumer requests them as
+    extra_domains (step-4 review: the identity checkbox was a no-op
+    because 'apps' was never gathered)."""
+    registry.register_gatherer('apps', lambda: [
+        DetectedApp(name='WSJT-X', config_path=None, callsign='WU2C')])
+    doc = FakeDoctor(id='noapps', domains=frozenset())
+    run = registry.run_checkup(doctors=[doc], extra_domains={'apps'})
+    assert run.snapshot.apps is not None
+    assert run.snapshot.apps[0].callsign == 'WU2C'

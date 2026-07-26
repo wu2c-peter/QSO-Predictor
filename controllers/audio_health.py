@@ -8,7 +8,7 @@ Two responsibilities:
    claims to be transmitting but no audio session/samples reach the rig
    codec, hold a problem verdict that HealthMonitor surfaces as a sticky
    "⚠" status-bar warning via check_tx_health().
-2. On-demand Audio Doctor dialog (Tools menu): full configuration audit
+2. On-demand Audio Doctor dialog (Diagnostics menu): full configuration audit
    plus an interactive TX-path check.
 
 The monitor stands down while FT8web is the active source — there the
@@ -174,14 +174,14 @@ class AudioHealthController(QObject):
             self._problem_verdict = None
             return (True, "")
         return (False,
-                f"⚠ TX audio: {verdict.headline} — see Tools → Audio Doctor")
+                f"⚠ TX audio: {verdict.headline} — see Diagnostics → Audio Doctor")
 
     # ------------------------------------------------------------------
     # Dialog
     # ------------------------------------------------------------------
 
     def show_dialog(self):
-        """Open the Audio Doctor dialog (Tools menu, Windows only)."""
+        """Open the Audio Doctor dialog (Diagnostics menu, Windows only)."""
         mw = self.main_window
         if not self.is_available() or not AUDIO_DIALOG_AVAILABLE:
             reason = ("Audio Doctor requires Windows."

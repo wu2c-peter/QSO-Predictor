@@ -179,6 +179,7 @@ from widgets import (
 # Focused subsystems extracted from MainWindow. See controllers/__init__.py.
 from controllers import (
     AudioHealthController,
+    DiagnosticsController,
     FoxHoundController,
     HealthMonitor,
     HuntCoordinator,
@@ -323,6 +324,11 @@ class MainWindow(QMainWindow):
         # Inert on non-Windows / without pycaw: on_status_update no-ops and
         # check_tx_health always reports healthy.
         self.audio_health = AudioHealthController(self)
+
+        # --- v2.7.0: DIAGNOSTICS (Doctors framework — Full Checkup) ---
+        # Registers the doctor list; after audio_health, whose rig hint
+        # it snapshots at each checkup. See dev-docs/DIAGNOSTICS_SPEC.md.
+        self.diagnostics = DiagnosticsController(self)
 
         # --- UDP STATUS TRACKING ---
         self._decode_count = 0
@@ -753,17 +759,37 @@ class MainWindow(QMainWindow):
             disabled_action.setEnabled(False)
             tools_menu.addAction(disabled_action)
 
-        # v2.6.0: Audio Doctor — Windows-only, same hide-not-disable
-        # convention as the MSIX 'Check for Updates' gating.
+        # --- v2.7.0: DIAGNOSTICS MENU (Doctors framework) ---
+        # Layout per dev-docs/DIAGNOSTICS_SPEC.md: Full Checkup on top,
+        # individual doctors below. Audio Doctor moved here from Tools
+        # (v2.6.0) — still Windows-only, same hide-not-disable convention
+        # as the MSIX 'Check for Updates' gating; on other platforms the
+        # Full Checkup report lists it under "Not checked".
+        diag_menu = menu.addMenu("Diagnostics")
+
+        full_checkup_action = QAction("Run Full Checkup...", self)
+        full_checkup_action.setToolTip(
+            "Run every doctor and build a shareable diagnostic report")
+        full_checkup_action.triggered.connect(
+            self.diagnostics.run_full_checkup)
+        diag_menu.addAction(full_checkup_action)
+        diag_menu.addSeparator()
+
         if sys.platform == 'win32':
-            tools_menu.addSeparator()
             audio_doctor_action = QAction("Audio Doctor...", self)
             audio_doctor_action.setToolTip(
                 "Diagnose the Windows audio path to your rig")
             audio_doctor_action.triggered.connect(
                 self.audio_health.show_dialog)
-            tools_menu.addAction(audio_doctor_action)
-        
+            diag_menu.addAction(audio_doctor_action)
+
+        clock_doctor_action = QAction("Clock Doctor...", self)
+        clock_doctor_action.setToolTip(
+            "Check the system clock against NTP — FT8's silent killer")
+        clock_doctor_action.triggered.connect(
+            self.diagnostics.run_clock_doctor)
+        diag_menu.addAction(clock_doctor_action)
+
         # Help Menu
         help_menu = menu.addMenu("Help")
         guide_action = QAction("User Guide", self)

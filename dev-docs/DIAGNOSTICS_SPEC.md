@@ -1,12 +1,14 @@
 # Diagnostics framework ("Doctors") — design spec
 
-Status: DRAFT — Migration steps 1–3 implemented 2026-07-26 (step 1:
+Status: Migration steps 1–4 implemented 2026-07-26 (step 1:
 `diagnostics/` package, re-exports, conventions tests; step 2: detection
 layer lifted from `setup_wizard.py` with first unit coverage; step 3:
 `StationSnapshot` + `registry.py` + `report.py` + Audio Doctor adapter in
-`audio_doctor/doctor.py`, not yet wired to any menu). Step 4 (Clock
-Doctor + Diagnostics menu — the report format's freeze point) and step 5
-not started.
+`audio_doctor/doctor.py`; step 4: Clock Doctor + Diagnostics menu with
+Full Checkup and `widgets/checkup_dialog.py`, on branch
+`feat/diagnostics-menu` pending Windows verification). **Step 4's release
+freezes the report format** — review Contract 3 wording before shipping.
+Step 5 (one doctor per release, roster order) is the ongoing phase.
 Companion reading: `DEVELOPMENT_NOTES.md` § Audio Doctor.
 
 ## What and why
@@ -217,6 +219,11 @@ class Doctor(Protocol):
   reported under "Not checked", not skipped silently.
 - **Per-doctor menu item:** same flow, doctor list of one, gathering only
   its declared domains. Cheap re-run loop after a fix.
+- **Context domains:** the consumer may pass `extra_domains` to
+  `run_checkup()` for data the *report* needs but no current doctor
+  declares — e.g. `apps` for the Station identity line and Details
+  tables until the Config Doctor exists. QSOP's controller requests
+  `{'apps', 'udp_ports'}` on every checkup.
 - `run()` must be pure (no I/O, no Qt) — enforced by the no-Qt
   architectural test on the package, and by code review for I/O.
 - Cross-system checks (e.g. UDP chain topology, which needs `apps` +

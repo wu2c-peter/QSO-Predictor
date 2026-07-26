@@ -17,8 +17,9 @@ carry no drive letter. Callsign/grid render only when the caller passes
 include_identity=True — the toggle covers the Station line AND the
 Details dumps.
 
-Wording is still adjustable until the first doctor-menu release ships
-(spec migration step 4) — after that the schema is effectively frozen.
+This wording ships with the first Diagnostics-menu release (spec
+migration step 4) and is effectively frozen from then on — helpers and
+LLMs learn the layout from circulated reports.
 
 QSO Predictor
 Copyright (C) 2026 Peter Hirst (WU2C)
@@ -40,14 +41,15 @@ _IDENTITY_FIELDS = frozenset({'callsign', 'grid'})
 
 _USER_DIR_RE = re.compile(r'(?i)([\\/](?:Users|home)[\\/])([^\\/|\s"\']+)')
 
+# Deliberately domain-agnostic: this text is frozen once reports
+# circulate, and the set of gathered domains grows with every doctor.
 _PREAMBLE = (
     "You are helping an amateur radio operator troubleshoot their "
     "station. Below is a machine-collected snapshot of the PC side of "
-    "their setup — detected apps and configs, UDP ports, and audio "
-    "state — plus findings from automated checks. Sections listed under "
-    "\"Not checked\" were NOT examined; do not assume they are healthy. "
-    "Machine-read facts in this report are more reliable than anyone's "
-    "recollection of their settings."
+    "their setup, plus findings from automated checks. Sections listed "
+    "under \"Not checked\" were NOT examined; do not assume they are "
+    "healthy. Machine-read facts in this report are more reliable than "
+    "anyone's recollection of their settings."
 )
 
 

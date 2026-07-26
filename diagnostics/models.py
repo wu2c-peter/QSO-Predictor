@@ -165,6 +165,21 @@ class SetupRecommendation:
 
 
 # =============================================================================
+# Clock domain (filled by probe_clock, consumed by the Clock Doctor)
+# =============================================================================
+
+@dataclass
+class ClockSnapshot:
+    """System-clock state vs NTP. offset_s None = no NTP server was
+    reachable (common off-grid) — checks report UNKNOWN, not failure."""
+    offset_s: Optional[float] = None    # system minus NTP; positive = fast
+    round_trip_s: Optional[float] = None
+    ntp_server: str = ""                # server that answered
+    timezone_name: str = ""
+    utc_offset_min: Optional[int] = None
+
+
+# =============================================================================
 # StationSnapshot — Contract 1 of dev-docs/DIAGNOSTICS_SPEC.md
 # =============================================================================
 
@@ -204,5 +219,6 @@ class StationSnapshot:
     audio: Optional["AudioSnapshot"] = None       # audio_doctor.models (app-side)
     apps: Optional[List[DetectedApp]] = None      # probe_apps
     udp_ports: Optional[List[PortInfo]] = None    # probe_ports
+    clock: Optional[ClockSnapshot] = None         # probe_clock
 
     errors: List[str] = field(default_factory=list)  # probe-time notes
