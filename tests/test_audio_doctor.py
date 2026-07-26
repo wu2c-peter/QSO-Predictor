@@ -697,3 +697,26 @@ def test_parse_property_store_entry_rejects_device_level_placeholder():
     raw = ("{2}.\\\\?\\usb#vid_08bb&pid_2901&mi_00#{6994ad04-93ef-11d0-"
            "a3cc-00a0c9223196}\\global/00010002|#")
     assert parse_property_store_entry(raw + "%b{guid}") is None
+
+
+def test_remote_desktop_offenders_get_the_listen_only_note():
+    """Field-confirmed 2026-07-26: RustDesk's codec session was a
+    loopback tap (Tune audible remotely, default-device audio not). The
+    check can't distinguish tap from playback, so for known
+    remote-desktop apps the wording explains the benign case and the
+    discriminating test instead of implying injection."""
+    snap = healthy_snapshot(sessions=[_foreign("rustdesk.exe", active=True)])
+    r = result_by_id(run_checks(snap), "audio/foreign-session")
+    assert r.severity == Severity.WARNING          # still worth knowing
+    assert "listen-only" in r.detail
+    assert "Tune" in r.detail
+    # A non-remote-desktop offender gets no such benefit of the doubt
+    snap = healthy_snapshot(sessions=[_foreign("spotify.exe", active=True)])
+    r = result_by_id(run_checks(snap), "audio/foreign-session")
+    assert "listen-only" not in r.detail
+    # Mixed offenders: don't soften when a non-RD app is present
+    snap = healthy_snapshot(sessions=[
+        _foreign("rustdesk.exe", active=True),
+        _foreign("spotify.exe", active=True)])
+    r = result_by_id(run_checks(snap), "audio/foreign-session")
+    assert "listen-only" not in r.detail

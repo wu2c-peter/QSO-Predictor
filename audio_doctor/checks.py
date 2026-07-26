@@ -367,6 +367,19 @@ BROWSER_PROCESSES = frozenset({
     'vivaldi.exe', 'msedgewebview2.exe', 'duckduckgo.webview.exe',
 })
 
+# Remote-desktop hosts commonly hold a LISTEN-ONLY loopback tap on a
+# render endpoint (recording what it plays for the remote viewer —
+# e.g. hearing the rig while operating remotely). WASAPI shows capture
+# taps and playback streams identically, so the check can't tell them
+# apart — but when every offender is a known remote-desktop app, the
+# wording says so instead of implying injection is likely. Confirmed
+# empirically 2026-07-26: RustDesk's codec session was a loopback tap
+# (Tune audible remotely; default-device audio not).
+REMOTE_DESKTOP_PROCESSES = frozenset({
+    'rustdesk.exe', 'anydesk.exe', 'teamviewer.exe', 'parsecd.exe',
+    'remoting_host.exe',
+})
+
 
 def _check_foreign_sessions(snap: AudioSnapshot,
                             rig_render: List[EndpointInfo],
@@ -405,6 +418,12 @@ def _check_foreign_sessions(snap: AudioSnapshot,
             subject = (f"Other applications have open audio streams on "
                        f"the rig codec: {listing}. Anything they play can "
                        f"be transmitted.")
+        if all(n.casefold() in REMOTE_DESKTOP_PROCESSES for n in names):
+            subject += (" Remote-desktop apps often hold a listen-only "
+                        "tap here (recording this device so you hear it "
+                        "remotely — plays nothing). To tell which: with "
+                        "the remote session open, press Tune — hearing "
+                        "the tone remotely means it's a harmless tap.")
         return CheckResult(
             check_id, title, Severity.WARNING, subject,
             "If this is not deliberately your TX source, close the app "
