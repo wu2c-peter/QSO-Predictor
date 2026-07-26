@@ -120,8 +120,17 @@ def _gather_apps():
 
 
 def _gather_udp_ports():
+    from diagnostics.probe_apps import ConfigFileReader
     from diagnostics.probe_ports import PortScanner
-    return PortScanner.scan_udp_ports()
+    # Config-referenced ports must be scanned even outside the
+    # conventional range (the 4242 daisy-chain lesson). This re-reads the
+    # configs because gatherers are independent by design — usually a
+    # cheap known-paths pass, though on machines with NO configs it
+    # repeats the broader fallback search; acceptable for a
+    # user-initiated checkup.
+    extra = {a.udp_port for a in ConfigFileReader().discover_configs()
+             if a.udp_port}
+    return PortScanner.scan_udp_ports(extra_ports=extra)
 
 
 def _gather_clock():

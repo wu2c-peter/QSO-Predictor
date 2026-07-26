@@ -166,3 +166,48 @@ def test_recommendation_lists_are_per_instance():
     a, b = SetupRecommendation(), SetupRecommendation()
     a.warnings.append('x')
     assert b.warnings == []
+
+
+# ---------------------------------------------------------------------------
+# PortScanner.extra_ports — config-referenced ports outside the range
+# ---------------------------------------------------------------------------
+
+def test_is_wanted_covers_range_and_extra_ports():
+    from diagnostics.probe_ports import PortScanner
+    assert PortScanner._is_wanted(2237)
+    assert PortScanner._is_wanted(2259)
+    assert not PortScanner._is_wanted(4242)            # the daisy-chain hop
+    assert PortScanner._is_wanted(4242, frozenset({4242}))
+    assert not PortScanner._is_wanted(2260)            # range is exclusive
+
+
+def test_scan_udp_ports_probes_requested_out_of_range_port():
+    """A bound out-of-range port must be reported when requested via
+    extra_ports — the socket-probe fallback covers platforms where the
+    table parse misses it."""
+    import socket
+    from diagnostics.probe_ports import PortScanner
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind(('0.0.0.0', 0))
+        port = sock.getsockname()[1]           # ephemeral, way out of range
+        found = PortScanner.scan_udp_ports(extra_ports={port})
+        assert any(p.port == port for p in found)
+    finally:
+        sock.close()
+
+
+def test_scan_udp_ports_survives_out_of_range_config_values():
+    """A hand-edited UDPServerPort=70000 (or negative) must not crash the
+    scan — OverflowError from bind() is not an OSError, and one bad value
+    used to silently empty the whole setup wizard."""
+    from diagnostics.probe_ports import PortScanner
+    found = PortScanner.scan_udp_ports(extra_ports={70000, -1, 0})
+    assert all(0 < p.port < 65536 for p in found)
+
+
+def test_read_config_clamps_out_of_range_port(tmp_path):
+    app = _read(tmp_path, "[Configuration]\nUDPServerPort=70000\n")
+    assert app is not None and app.udp_port == 2237
+    app = _read(tmp_path, "[Configuration]\nUDPServerPort=-5\n")
+    assert app is not None and app.udp_port == 2237

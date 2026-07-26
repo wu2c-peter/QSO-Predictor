@@ -1,10 +1,12 @@
 """
 UDP port probes: which ham-range ports are occupied, and by whom.
 
-Lifted unchanged from `setup_wizard.py` (v2.2.0) in migration step 2 of
-dev-docs/DIAGNOSTICS_SPEC.md. Uses platform-native tools (netstat / lsof
-/ ss) via subprocess rather than psutil to avoid a dependency; per-OS
-branches run at call time, so the module imports safely everywhere.
+Lifted from `setup_wizard.py` (v2.2.0) in migration step 2 of
+dev-docs/DIAGNOSTICS_SPEC.md; extended post-merge with `extra_ports`
+(config-referenced ports outside the conventional range — see
+`_is_wanted`). Uses platform-native tools (netstat / lsof / ss) via
+subprocess rather than psutil to avoid a dependency; per-OS branches run
+at call time, so the module imports safely everywhere.
 
 QSO Predictor
 Copyright (C) 2025 Peter Hirst (WU2C)
@@ -15,7 +17,7 @@ import re
 import socket
 import subprocess
 import sys
-from typing import List
+from typing import FrozenSet, Iterable, List
 
 from diagnostics.models import PortInfo
 
@@ -34,25 +36,42 @@ class PortScanner:
     HAM_PORT_RANGE = range(2230, 2260)
 
     @staticmethod
-    def scan_udp_ports() -> List[PortInfo]:
+    def _is_wanted(port: int,
+                   extra_ports: FrozenSet[int] = frozenset()) -> bool:
+        """A port is interesting if it's in the conventional ham range OR
+        explicitly requested. Real stations use ports outside the range —
+        the first live Full Checkup report's 4242 daisy-chain hop was
+        invisible to the fixed range (dev-docs/DIAGNOSTICS_SPEC.md,
+        Network Doctor lesson)."""
+        return port in PortScanner.HAM_PORT_RANGE or port in extra_ports
+
+    @staticmethod
+    def scan_udp_ports(extra_ports: Iterable[int] = ()) -> List[PortInfo]:
         """
-        Find processes listening on UDP ports in the ham radio range.
-        Returns list of PortInfo for occupied ports.
+        Find processes listening on UDP ports in the ham radio range,
+        plus any explicitly requested ports (config-referenced ports the
+        fixed range would miss). Returns list of PortInfo for occupied
+        ports.
         """
+        # Range-validate: config files are user-editable, and an
+        # out-of-range value (UDPServerPort=70000) must not crash the
+        # scan (bind() raises OverflowError, which is not an OSError).
+        extra = frozenset(p for p in (int(v) for v in extra_ports if v)
+                          if 0 < p < 65536)
         occupied = []
 
         try:
             if sys.platform == 'win32':
-                occupied = PortScanner._scan_windows()
+                occupied = PortScanner._scan_windows(extra)
             elif sys.platform == 'darwin':
-                occupied = PortScanner._scan_macos()
+                occupied = PortScanner._scan_macos(extra)
             else:
-                occupied = PortScanner._scan_linux()
+                occupied = PortScanner._scan_linux(extra)
         except Exception as e:
             logger.debug(f"Setup: Port scan failed: {e}")
 
-        # Also do a quick socket probe for common ports
-        for port in [2237, 2238, 2239, 2240]:
+        # Also do a quick socket probe for common + requested ports
+        for port in sorted({2237, 2238, 2239, 2240, *extra}):
             if not any(p.port == port for p in occupied):
                 if PortScanner._is_port_in_use(port):
                     occupied.append(PortInfo(port=port, ip='0.0.0.0',
@@ -65,7 +84,7 @@ class PortScanner:
         return occupied
 
     @staticmethod
-    def _scan_windows() -> List[PortInfo]:
+    def _scan_windows(extra: FrozenSet[int] = frozenset()) -> List[PortInfo]:
         """Parse netstat -ano on Windows for UDP listeners."""
         result = []
         try:
@@ -83,7 +102,7 @@ class PortScanner:
                         ip, port_str = addr.rsplit(':', 1)
                         try:
                             port = int(port_str)
-                            if port in PortScanner.HAM_PORT_RANGE:
+                            if PortScanner._is_wanted(port, extra):
                                 pid = int(parts[-1]) if parts[-1].isdigit() else 0
                                 proc_name = PortScanner._get_process_name_win(pid)
                                 result.append(PortInfo(
@@ -116,7 +135,7 @@ class PortScanner:
         return f'PID {pid}'
 
     @staticmethod
-    def _scan_macos() -> List[PortInfo]:
+    def _scan_macos(extra: FrozenSet[int] = frozenset()) -> List[PortInfo]:
         """Parse lsof on macOS for UDP listeners."""
         result = []
         try:
@@ -132,7 +151,7 @@ class PortScanner:
                         port_str = name_field.rsplit(':', 1)[-1]
                         try:
                             port = int(port_str)
-                            if port in PortScanner.HAM_PORT_RANGE:
+                            if PortScanner._is_wanted(port, extra):
                                 result.append(PortInfo(
                                     port=port, ip='0.0.0.0',
                                     process_name=parts[0],
@@ -145,7 +164,7 @@ class PortScanner:
         return result
 
     @staticmethod
-    def _scan_linux() -> List[PortInfo]:
+    def _scan_linux(extra: FrozenSet[int] = frozenset()) -> List[PortInfo]:
         """Parse ss on Linux for UDP listeners."""
         result = []
         try:
@@ -161,7 +180,7 @@ class PortScanner:
                         port_str = addr.rsplit(':', 1)[-1]
                         try:
                             port = int(port_str)
-                            if port in PortScanner.HAM_PORT_RANGE:
+                            if PortScanner._is_wanted(port, extra):
                                 # Extract process name from users: field
                                 proc = 'unknown'
                                 for p in parts:
@@ -181,15 +200,21 @@ class PortScanner:
 
     @staticmethod
     def _is_port_in_use(port: int) -> bool:
-        """Quick check if a UDP port is in use by trying to bind it."""
+        """Quick check if a UDP port is in use by trying to bind it.
+
+        No SO_REUSEADDR: on Windows it allows binding OVER another
+        process's port (steal-bind), which made this probe report every
+        occupied port as free — on exactly the platform the
+        config-referenced-port lesson came from. A plain bind gets
+        EADDRINUSE correctly on every platform (UDP has no TIME_WAIT to
+        work around)."""
         sock = None
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(('0.0.0.0', port))
             return False  # We bound it, so it was free
-        except OSError:
-            return True   # Already in use
+        except (OSError, OverflowError, ValueError):
+            return True   # In use (or unusable — same for our purposes)
         finally:
             if sock:
                 try:

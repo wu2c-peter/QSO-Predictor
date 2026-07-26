@@ -65,7 +65,8 @@ class ScanWorker(QThread):
             apps = reader.discover_configs()
 
             self.progress.emit("Checking for port conflicts...")
-            ports = PortScanner.scan_udp_ports()
+            ports = PortScanner.scan_udp_ports(
+                extra_ports={a.udp_port for a in apps if a.udp_port})
 
             self.progress.emit("Detecting running applications...")
             running = RunningAppDetector.detect()
@@ -343,7 +344,8 @@ def run_auto_detect() -> Optional[SetupRecommendation]:
     """
     reader = ConfigFileReader()
     apps = reader.discover_configs()
-    ports = PortScanner.scan_udp_ports()
+    ports = PortScanner.scan_udp_ports(
+        extra_ports={a.udp_port for a in apps if a.udp_port})
     running = RunningAppDetector.detect()
     return SetupAnalyzer.analyze(apps, ports, running)
 

@@ -252,8 +252,10 @@ class Doctor(Protocol):
    Lesson from the first real Windows report (2026-07-26): the port scan
    must also probe every config-referenced port, not just
    `HAM_PORT_RANGE` (2230–2260) — the live 4242 daisy-chain hop was
-   invisible to the fixed range, so the chain's middle link could not be
-   observed at all.
+   invisible to the fixed range. Groundwork LANDED post-merge:
+   `PortScanner.scan_udp_ports(extra_ports=...)`, wired into the
+   checkup gatherer and both wizard paths. Remaining for this doctor:
+   the chain reconstruction itself.
 4. **Serial/CAT Doctor** — `serial` (new probes; the largest new work).
    Checks: expected port (from configs) exists; driver present and not a
    known-bad version (counterfeit-Prolific trap); port exclusively held by

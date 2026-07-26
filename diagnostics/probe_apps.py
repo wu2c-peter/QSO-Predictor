@@ -321,7 +321,10 @@ class ConfigFileReader:
             port_str = self._find_value(config, self.KEYS_UDP_PORT)
             if port_str:
                 try:
-                    app.udp_port = int(port_str)
+                    port = int(port_str)
+                    # Range-clamp: hand-edited/corrupt configs happen,
+                    # and out-of-range ports crash downstream binds.
+                    app.udp_port = port if 0 < port < 65536 else 2237
                 except ValueError:
                     app.udp_port = 2237  # Default
             else:
