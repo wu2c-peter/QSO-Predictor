@@ -92,6 +92,7 @@ hiddenimports = [
     'diagnostics.probe_apps',
     'diagnostics.probe_clock',
     'diagnostics.probe_ports',
+    'diagnostics.probe_system',
     'diagnostics.registry',
     'diagnostics.report',
     'diagnostics.setup_analysis',
@@ -99,6 +100,7 @@ hiddenimports = [
     'diagnostics.doctors.clock',
     'diagnostics.doctors.config',
     'diagnostics.doctors.network',
+    'diagnostics.doctors.system',
     'audio_doctor.doctor',
 ]
 

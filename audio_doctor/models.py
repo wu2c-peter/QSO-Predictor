@@ -334,7 +334,8 @@ class AudioSnapshot:
     sessions: List[AppSessionInfo] = field(default_factory=list)
     persisted: Optional[List[PersistedAppAudio]] = None
     ducking_preference: Optional[int] = None       # see parsing.DUCKING_LABELS
-    fast_startup: Optional[bool] = None
+    # fast_startup moved to diagnostics.models.PowerInfo in v2.7.0 (the
+    # System Doctor owns the check now — spec: "Fast Startup ownership").
     sound_scheme: Optional[str] = None             # '.None' means silent scheme
     errors: List[str] = field(default_factory=list)  # probe-time notes for the log
 

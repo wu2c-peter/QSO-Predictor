@@ -80,10 +80,16 @@ def _fmt_value(value) -> str:
         return f"{value:.6g}"
     if dataclasses.is_dataclass(value):
         # Compact nested-dataclass rendering (e.g. AudioFormat ->
-        # "channels=2, sample_rate_hz=48000, bits_per_sample=16")
-        return ", ".join(
-            f"{f.name}={_fmt_value(getattr(value, f.name))}"
-            for f in dataclasses.fields(value))
+        # "channels=2, sample_rate_hz=48000, bits_per_sample=16").
+        # None/empty fields are omitted — "fast_startup=" noise for
+        # platform-inapplicable fields tells the reader nothing.
+        bits = []
+        for f in dataclasses.fields(value):
+            v = getattr(value, f.name)
+            if v is None or v == "":
+                continue
+            bits.append(f"{f.name}={_fmt_value(v)}")
+        return ", ".join(bits)
     return _scrub(str(value))
 
 
@@ -128,8 +134,16 @@ def _dump_domain(name: str, value,
             v = getattr(value, f.name)
             if isinstance(v, (list, tuple)):
                 sublists.append((f.name, list(v)))
-            elif f.name not in redact:
-                lines.append(f"- {f.name}: {_fmt_value(v) or '(unreadable)'}")
+            elif f.name in redact:
+                continue
+            elif v is None or v == "":
+                # A generic dump cannot tell "unreadable" from "not
+                # applicable on this platform" (review 2026-07-27) —
+                # omit rather than mislabel; check-level UNKNOWNs in
+                # "Not checked" carry the real could-not-read story.
+                continue
+            else:
+                lines.append(f"- {f.name}: {_fmt_value(v)}")
         lines.append("")
         for sub_name, sub in sublists:
             lines.append(f"#### {name}.{sub_name} ({len(sub)})")
@@ -207,7 +221,17 @@ def render_report(checkup: CheckupRun, tool_name: str, tool_version: str,
         any_passed = True
         lines.append(f"### {entry.title}")
         lines.append("")
-        lines += [f"- {r.severity.symbol} {_scrub(r.title)}" for r in passed]
+        for r in passed:
+            # Advice-bearing INFO (a fix attached) renders in full: the
+            # advice is the point of the check, and title-only rendering
+            # made it unreachable text (review 2026-07-27 — the Fast
+            # Startup migration made this visible). Plain OK/INFO rows
+            # stay one line.
+            if r.severity == Severity.INFO and r.fix:
+                lines.append(f"- {r.severity.symbol} {_scrub(r.title)} — "
+                             f"{_scrub(r.detail)} Fix: {_scrub(r.fix)}")
+            else:
+                lines.append(f"- {r.severity.symbol} {_scrub(r.title)}")
         lines.append("")
     if not any_passed:
         lines += ["(none)", ""]

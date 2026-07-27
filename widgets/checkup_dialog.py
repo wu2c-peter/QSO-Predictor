@@ -109,6 +109,23 @@ class CheckupDialog(QDialog):
                 "<h3><span style='color:#00C853'>✓ No problems found"
                 "</span></h3><p>All checks that ran came back clean.</p>")
 
+        # Advice-bearing INFO (a fix attached): the advice is the point
+        # of the check — a count-only rendering would make it invisible
+        # (review 2026-07-27).
+        advisories = [(t, r) for t, r in flat
+                      if r.severity == Severity.INFO and r.fix]
+        if advisories:
+            parts.append("<h3>Advisories</h3>")
+            for doctor_title, r in advisories:
+                parts.append(
+                    f"<p><span style='color:{r.severity.color}; "
+                    f"font-weight:bold'>{r.severity.symbol} "
+                    f"{html.escape(r.title)}</span> "
+                    f"<span style='color:#888888'>"
+                    f"({html.escape(doctor_title)})</span><br>"
+                    f"{html.escape(r.detail)}<br>"
+                    f"<i>Fix: {html.escape(r.fix)}</i></p>")
+
         if c.skipped or unknowns:
             parts.append("<h3>Not checked</h3><ul>")
             for s in c.skipped:

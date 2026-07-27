@@ -138,17 +138,6 @@ def read_ducking_preference() -> Optional[int]:
         return None
 
 
-def read_fast_startup() -> Optional[bool]:
-    try:
-        with _open_key(winreg.HKEY_LOCAL_MACHINE,
-                       parsing.FAST_STARTUP_KEY_PATH) as key:
-            value, _ = winreg.QueryValueEx(key, parsing.FAST_STARTUP_VALUE_NAME)
-            return bool(value)
-    except OSError as exc:
-        logger.debug("Audio Doctor: Fast Startup flag unreadable: %s", exc)
-        return None
-
-
 def read_sound_scheme() -> Optional[str]:
     try:
         with _open_key(winreg.HKEY_CURRENT_USER,
@@ -400,7 +389,6 @@ def gather_snapshot() -> AudioSnapshot:
             logger.warning("Audio Doctor: %s", msg)
     snapshot.persisted = read_persisted_app_audio()
     snapshot.ducking_preference = read_ducking_preference()
-    snapshot.fast_startup = read_fast_startup()
     snapshot.sound_scheme = read_sound_scheme()
     _log_snapshot_summary(snapshot)
     return snapshot
@@ -416,9 +404,9 @@ def _log_snapshot_summary(snapshot: AudioSnapshot,
     persisted = snapshot.persisted or []
     logger.debug(
         "Audio Doctor snapshot: %d endpoints, %d sessions, %d persisted "
-        "entries, ducking=%s, fast_startup=%s",
+        "entries, ducking=%s",
         len(snapshot.endpoints), len(snapshot.sessions), len(persisted),
-        snapshot.ducking_preference, snapshot.fast_startup)
+        snapshot.ducking_preference)
     for s in snapshot.sessions:
         if any(k in s.process_name for k in interesting):
             logger.debug("  session: %s pid=%s on %r vol=%s muted=%s "

@@ -97,7 +97,6 @@ def run_checks(snap: AudioSnapshot,
         _check_live_sessions(snap, rig_render, app_names),
         _check_foreign_sessions(snap, rig_render, app_names, browser_tx),
         _check_sound_scheme(snap, rig_render),
-        _check_fast_startup(snap),
     ]
     return results
 
@@ -460,24 +459,9 @@ def _check_sound_scheme(snap: AudioSnapshot,
         "default device, but 'No Sounds' is cheap insurance.")
 
 
-def _check_fast_startup(snap: AudioSnapshot) -> CheckResult:
-    check_id, title = "fast-startup", "Windows Fast Startup"
-    if snap.fast_startup is None:
-        return CheckResult(check_id, title, Severity.UNKNOWN,
-                           "Could not read the Fast Startup flag.")
-    if snap.fast_startup:
-        return CheckResult(
-            check_id, title, Severity.INFO,
-            "Fast Startup is ON: 'Shut down' resumes a saved kernel "
-            "image and does NOT reinitialize audio drivers. When "
-            "troubleshooting audio, use Restart — a shutdown/power-on "
-            "cycle proves nothing.",
-            "Optional: Power Options → 'Change settings that are "
-            "currently unavailable' → untick 'Turn on fast startup'. "
-            "(The checkbox is absent if hibernation is disabled.)",
-            panel=SettingsPanel.POWER_OPTIONS)
-    return CheckResult(check_id, title, Severity.OK,
-                       "Fast Startup is off — a shutdown is a real reboot.")
+# NOTE: the "fast-startup" check moved to the System Doctor
+# (diagnostics/doctors/system.py) in v2.7.0 with its check_id unchanged —
+# see dev-docs/DIAGNOSTICS_SPEC.md, "Fast Startup ownership".
 
 
 # =============================================================================

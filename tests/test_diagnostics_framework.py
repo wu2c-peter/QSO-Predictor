@@ -351,3 +351,48 @@ def test_floats_render_compactly_in_report():
     assert _fmt_value(0.6000000238418579) == '0.6'
     assert _fmt_value(1.0) == '1'
     assert _fmt_value(-1.8477439880371094e-05) == '-1.84774e-05'
+
+
+def test_advice_bearing_info_renders_detail_and_fix_in_passed_section():
+    """Review 2026-07-27 (System Doctor): INFO checks that carry a fix
+    exist to deliver advice — title-only rendering made the advice
+    unreachable (the migrated fast-startup text would have been
+    invisible everywhere). Plain OK/INFO rows stay one line."""
+    from diagnostics.models import CheckResult, Severity
+    from diagnostics.registry import CheckupRun, DoctorRun
+    from diagnostics.report import render_report
+    run = CheckupRun(snapshot=_snapshot(), entries=[DoctorRun(
+        'system', 'System Doctor', [
+            CheckResult('fast-startup', 'Windows Fast Startup',
+                        Severity.INFO, 'Fast Startup is ON: use Restart.',
+                        fix='Untick fast startup.'),
+            CheckResult('system/autostart', 'Ham apps autostart',
+                        Severity.INFO, 'Nothing autostarts.'),
+        ])])
+    report = render_report(run, 'QSO Predictor', '2.7.0')
+    passed = report[report.index('## Passed checks'):
+                    report.index('## Not checked')]
+    assert 'Fast Startup is ON: use Restart.' in passed
+    assert 'Fix: Untick fast startup.' in passed
+    # The fixless INFO row stays title-only.
+    assert 'Nothing autostarts.' not in passed
+
+
+def test_details_dump_omits_none_and_empty_fields():
+    """Review 2026-07-27: '(unreadable)' was rendered for fields that
+    are None because they don't apply on this platform (mic_clients on
+    Windows, serial groups on macOS) — a generic dump can't tell those
+    apart, so None/empty fields are omitted entirely; check-level
+    UNKNOWNs carry the could-not-read story."""
+    from diagnostics.models import PowerInfo, SystemSnapshot
+    from diagnostics.report import _dump_domain, _fmt_value
+    snap = SystemSnapshot(power=PowerInfo(standby_ac_min=1),
+                          autostart_other_count=8)
+    text = '\n'.join(_dump_domain('system', snap))
+    assert 'unreadable' not in text
+    assert 'mic_clients' not in text
+    assert 'autostart_other_count: 8' in text
+    # Nested-dataclass compact rendering omits None fields too — no
+    # 'fast_startup=' dangling-equals noise.
+    assert 'fast_startup' not in _fmt_value(PowerInfo(standby_ac_min=1))
+    assert 'standby_ac_min=1' in _fmt_value(PowerInfo(standby_ac_min=1))

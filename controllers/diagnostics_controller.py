@@ -24,6 +24,7 @@ from diagnostics import registry as doctor_registry
 from diagnostics.doctors.clock import ClockDoctor
 from diagnostics.doctors.config import ConfigDoctor
 from diagnostics.doctors.network import NetworkDoctor
+from diagnostics.doctors.system import SystemDoctor
 from utils.version import get_version
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,8 @@ class DiagnosticsController(QObject):
             doctor_registry.register(ConfigDoctor())
         if 'network' not in ids:
             doctor_registry.register(NetworkDoctor())
+        if 'system' not in ids:
+            doctor_registry.register(SystemDoctor())
 
     # --- Entry points (menu actions; main thread) -----------------------
 
@@ -75,6 +78,9 @@ class DiagnosticsController(QObject):
 
     def run_network_doctor(self):
         self._start(doctor_ids={'network'}, title="Network Doctor")
+
+    def run_system_doctor(self):
+        self._start(doctor_ids={'system'}, title="System Doctor")
 
     # Context domains gathered on every checkup beyond what the doctors
     # declare, so the report's Station identity line and Details tables

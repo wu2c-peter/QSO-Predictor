@@ -3,7 +3,8 @@
 Two panels:
 1. Configuration audit — read-only checklist over a full snapshot of
    Windows audio state (device roles, ducking, persisted per-app mixer
-   state, endpoint formats, stale duplicates, Fast Startup).
+   state, endpoint formats, stale duplicates). The Fast Startup check
+   moved to the System Doctor in v2.7.0.
 2. Live TX-path check — the user presses Tune in WSJT-X, we watch the
    per-session and endpoint peak meters for a few seconds and return a
    verdict pointing at the exact layer that is silent.

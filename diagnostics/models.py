@@ -182,6 +182,88 @@ class ClockSnapshot:
 
 
 # =============================================================================
+# System domain (filled by probe_system, consumed by the System Doctor)
+# =============================================================================
+
+@dataclass
+class PowerInfo:
+    """OS power-management state. Windows fills everything it can read;
+    macOS fills the sleep timeouts (pmset) and the live sleep-prevention
+    evidence. None = unreadable on a platform that has the concept —
+    checks on other platforms simply don't run, so a None here never
+    turns into check noise."""
+    fast_startup: Optional[bool] = None      # Windows: EFFECTIVE state —
+                                             #   HiberbootEnabled gated by
+                                             #   hibernation being enabled
+    hibernate_enabled: Optional[bool] = None
+    plan_name: str = ""                      # active power scheme ("" = unknown)
+    usb_selective_suspend_ac: Optional[bool] = None
+    usb_selective_suspend_dc: Optional[bool] = None
+    standby_ac_min: Optional[int] = None     # minutes until sleep; 0 = never
+    standby_dc_min: Optional[int] = None
+    sleep_prevented_by: str = ""             # macOS: processes currently
+                                             #   holding sleep off (pmset -g
+                                             #   "sleep prevented by ...");
+                                             #   "" = nothing / not macOS
+
+
+@dataclass
+class TccMicClient:
+    """One macOS TCC microphone decision for a ham-relevant app. Only
+    ham-relevant clients are stored — the full TCC table is an inventory
+    of the user's software and doesn't belong in a circulated report."""
+    client: str                     # bundle id or binary path
+    allowed: Optional[bool] = None  # None = value scheme not understood
+
+
+@dataclass
+class AutostartEntry:
+    """One autostart item matching a known ham app. Non-ham entries are
+    counted, never listed (privacy: a startup inventory fingerprints the
+    machine)."""
+    name: str
+    source: str                     # e.g. "HKCU Run", "Startup folder",
+                                    #   "LaunchAgents", "autostart dir"
+    app: str = ""                   # canonical ham app name it matched
+    command: str = ""
+    disabled: bool = False          # present but switched off (Task
+                                    #   Manager's StartupApproved state,
+                                    #   .desktop Hidden=true, plist
+                                    #   Disabled) — it will NOT start
+
+
+@dataclass
+class SystemSnapshot:
+    """OS-level station environment: power management, permissions,
+    autostart. Per-platform fields stay None on platforms where the
+    concept doesn't exist or the probe didn't run — the System Doctor
+    only emits checks appropriate to snapshot.platform."""
+    power: Optional[PowerInfo] = None                 # windows (+ macOS sleep)
+    mic_clients: Optional[List[TccMicClient]] = None  # macos; None = TCC db
+                                                      #   unreadable (normal
+                                                      #   without Full Disk
+                                                      #   Access)
+    serial_member_groups: Optional[List[str]] = None  # linux: serial-granting
+                                                      #   groups the user is IN.
+                                                      #   Only the intersection
+                                                      #   is stored — the full
+                                                      #   group list would leak
+                                                      #   the username (primary
+                                                      #   group) and fingerprint
+                                                      #   the machine
+    serial_groups: Optional[List[str]] = None         # linux: serial-granting
+                                                      #   groups that exist here
+    serial_devices: Optional[List[str]] = None        # linux: /dev candidates
+    is_root: Optional[bool] = None                    # linux: euid == 0 (root
+                                                      #   needs no group)
+    autostart_entries: Optional[List[AutostartEntry]] = None
+    autostart_other_count: Optional[int] = None       # non-ham entries, counted
+    autostart_note: str = ""                          # platform caveat (e.g.
+                                                      #   macOS Login Items are
+                                                      #   not visible)
+
+
+# =============================================================================
 # StationSnapshot — Contract 1 of dev-docs/DIAGNOSTICS_SPEC.md
 # =============================================================================
 
@@ -222,5 +304,6 @@ class StationSnapshot:
     apps: Optional[List[DetectedApp]] = None      # probe_apps
     udp_ports: Optional[List[PortInfo]] = None    # probe_ports
     clock: Optional[ClockSnapshot] = None         # probe_clock
+    system: Optional[SystemSnapshot] = None       # probe_system
 
     errors: List[str] = field(default_factory=list)  # probe-time notes

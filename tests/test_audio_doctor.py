@@ -237,7 +237,6 @@ def healthy_snapshot(**overrides):
         sessions=[],
         persisted=[],
         ducking_preference=3,
-        fast_startup=False,
         sound_scheme=".None",
     )
     for key, value in overrides.items():
@@ -260,7 +259,7 @@ def test_is_rig_endpoint_matches_renamed_duplicate():
 
 def test_healthy_snapshot_has_no_warnings_or_failures():
     results = run_checks(healthy_snapshot())
-    assert len(results) == 12
+    assert len(results) == 11    # v2.7.0: fast-startup moved to System Doctor
     worst = max(r.severity for r in results)
     assert worst <= Severity.INFO, [
         (r.check_id, r.severity, r.detail) for r in results
@@ -435,7 +434,7 @@ def test_expired_session_on_wrong_device_does_not_warn():
 def test_summarize_unknown_only_does_not_claim_zero_issues():
     """Review 2026-07: one unreadable registry key on an otherwise
     healthy box must not produce 'UNKNOWN: 0 issues found'."""
-    results = run_checks(healthy_snapshot(fast_startup=None))
+    results = run_checks(healthy_snapshot(ducking_preference=None))
     severity, text = summarize_checks(results)
     assert severity == Severity.UNKNOWN
     assert "could not run" in text
@@ -448,11 +447,11 @@ def test_system_sounds_with_codec_default_warns():
     assert r.severity == Severity.WARNING
 
 
-def test_fast_startup_is_informational():
-    snap = healthy_snapshot(fast_startup=True)
-    r = result_by_id(run_checks(snap), "fast-startup")
-    assert r.severity == Severity.INFO
-    assert "Restart" in r.detail
+def test_fast_startup_no_longer_reported_by_audio_doctor():
+    """v2.7.0: the fast-startup check moved to the System Doctor with
+    its check_id intact — the Audio Doctor must not emit a duplicate."""
+    ids = {r.check_id for r in run_checks(healthy_snapshot())}
+    assert "fast-startup" not in ids
 
 
 # ---------------------------------------------------------------------------
@@ -539,7 +538,6 @@ def test_actionable_findings_carry_the_right_settings_panel():
 
     snap = healthy_snapshot(
         ducking_preference=1,
-        fast_startup=True,
         persisted=[PersistedAppAudio(
             endpoint_id=CODEC_RENDER.id,
             exe_path="\\Device\\HarddiskVolume3\\wsjtx.exe",
@@ -548,8 +546,6 @@ def test_actionable_findings_carry_the_right_settings_panel():
     assert result_by_id(results, "ducking").panel == SettingsPanel.COMMUNICATIONS
     assert (result_by_id(results, "app-mixer-persisted").panel
             == SettingsPanel.VOLUME_MIXER)
-    assert (result_by_id(results, "fast-startup").panel
-            == SettingsPanel.POWER_OPTIONS)
 
 
 def test_format_checks_link_to_matching_device_tab():

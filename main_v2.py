@@ -804,6 +804,14 @@ class MainWindow(QMainWindow):
             self.diagnostics.run_network_doctor)
         diag_menu.addAction(network_doctor_action)
 
+        system_doctor_action = QAction("System Doctor...", self)
+        system_doctor_action.setToolTip(
+            "Power management, permissions and autostart traps that "
+            "break stations")
+        system_doctor_action.triggered.connect(
+            self.diagnostics.run_system_doctor)
+        diag_menu.addAction(system_doctor_action)
+
         # Help Menu
         help_menu = menu.addMenu("Help")
         guide_action = QAction("User Guide", self)

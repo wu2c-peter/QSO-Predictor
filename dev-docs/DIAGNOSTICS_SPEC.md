@@ -278,6 +278,19 @@ class Doctor(Protocol):
    permission; Linux `dialout` membership; autostart present for apps that
    the topology says are required (companion recommendation:
    "flrig is part of your chain but doesn't start automatically").
+   IMPLEMENTED 2026-07-27 (`doctors/system.py` + `probe_system.py`).
+   Windows power state comes from the registry, not `powercfg` parsing
+   (powercfg localizes labels; the registry layout — scheme override
+   falling back to per-scheme default — is what powercfg resolves).
+   Fast Startup migrated with check_id stable AND improved: the
+   effective state is HiberbootEnabled gated by HibernateEnabled
+   (`powercfg /h off` leaves the flag behind). Checks are
+   platform-scoped by `snapshot.platform` — foreign-platform concepts
+   emit nothing, not UNKNOWN rows. Autostart privacy rule: only
+   ham-matched entries are stored/listed; everything else is a count.
+   v1 autostart check is an inventory (INFO); the topology-driven
+   "required but not autostarted" refinement needs multi-hop chain
+   reconstruction (Network Doctor future work) first.
 6. **Audio Doctor** — exists; becomes a registered doctor with
    `platforms={"windows"}`, unchanged behavior. macOS/Linux audio probes
    are a future `probe_macos.py` / `probe_linux.py` inside
@@ -346,5 +359,8 @@ Full Checkup / ─── / Audio Doctor / Clock Doctor / …`.
 - **Active probes consent UX** — one shared "this will open/key things"
   pattern for TX probe (exists), future CAT query, RTS toggle. Needed by
   Serial/CAT Doctor at the earliest.
-- **Fast Startup ownership** — moves from Audio to System Doctor when the
-  latter exists; keep the `check_id` stable across the move.
+- **Fast Startup ownership** — RESOLVED 2026-07-27: moved from Audio to
+  System Doctor with `check_id` "fast-startup" unchanged. The
+  `AudioSnapshot.fast_startup` field, its probe read, and the Audio
+  Doctor check were removed (the standalone Audio Doctor dialog no
+  longer shows it; Full Checkup does, under System Doctor).

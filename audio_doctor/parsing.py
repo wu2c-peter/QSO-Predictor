@@ -68,9 +68,8 @@ MMDEVICES_CAPTURE_PATH = (
 # (Advanced tab "Default Format"); OEMFormat is the driver default.
 PKEY_DEVICE_FORMAT = "{f19f064d-082c-4e27-bc73-6882a1bb8e4c},0"
 
-# Fast Startup ("hiberboot"). 1 = shutdown does NOT reinit drivers.
-FAST_STARTUP_KEY_PATH = r"SYSTEM\CurrentControlSet\Control\Session Manager\Power"
-FAST_STARTUP_VALUE_NAME = "HiberbootEnabled"
+# (Fast Startup constants moved to diagnostics/probe_system.py in
+# v2.7.0 along with the check — spec: "Fast Startup ownership".)
 
 # Active system sound scheme; '.None' is the "No Sounds" scheme.
 SOUND_SCHEME_KEY_PATH = r"AppEvents\Schemes"

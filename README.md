@@ -50,9 +50,9 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ### Audio Doctor — find out why your TX audio went silent (Windows)
 
-The classic digital-mode failure: RX works fine, WSJT-X says it's transmitting, and nothing goes out over the air. The cause usually lives in Windows, not in WSJT-X — a per-app mute stored in the registry that survives reboots and shows nowhere inside WSJT-X, communications ducking armed by a browser using the mic, a stale "2- USB Audio CODEC" entry after the codec moved USB ports, or system sounds going out over the air because the codec became the Windows default device. **Tools → Audio Doctor...** finds these in seconds:
+The classic digital-mode failure: RX works fine, WSJT-X says it's transmitting, and nothing goes out over the air. The cause usually lives in Windows, not in WSJT-X — a per-app mute stored in the registry that survives reboots and shows nowhere inside WSJT-X, communications ducking armed by a browser using the mic, a stale "2- USB Audio CODEC" entry after the codec moved USB ports, or system sounds going out over the air because the codec became the Windows default device. **Diagnostics → Audio Doctor...** finds these in seconds:
 
-- **Configuration audit** — 11 read-only checks of the Windows audio path between WSJT-X/JTDX and the rig, sorted worst-first: default-device roles, communications ducking, TX/RX sample formats, duplicate codec entries, the persisted per-app mixer state, Fast Startup, and more
+- **Configuration audit** — 11 read-only checks of the Windows audio path between WSJT-X/JTDX and the rig, sorted worst-first: default-device roles, communications ducking, TX/RX sample formats, duplicate codec entries, the persisted per-app mixer state, foreign apps streaming on the rig codec, and more
 - **Live TX path check** — press Tune in WSJT-X, click **Check TX path**; Audio Doctor watches the Windows peak meters for 4 seconds and reports which layer of the path is silent
 - **Automatic silent-TX warning** — whenever WSJT-X reports it's transmitting, QSOP quietly verifies audio is actually reaching the rig codec and posts a sticky status-bar warning if it isn't
 
@@ -364,7 +364,7 @@ Use QSOP with [FT8web](https://ft8web.ok1cdj.com/), a browser-based FT8/FT4 clie
 
 ### Audio Doctor (Windows)
 
-Read-only diagnosis of the Windows audio path between WSJT-X/JTDX and your rig (**Tools → Audio Doctor...**):
+Read-only diagnosis of the Windows audio path between WSJT-X/JTDX and your rig (**Diagnostics → Audio Doctor...**):
 
 * 11-point configuration audit — default-device roles, communications ducking, sample formats, duplicate codec entries, and the hidden per-app mutes that silence TX while showing nowhere inside WSJT-X
 * Live TX path check — press Tune in WSJT-X, and Audio Doctor watches the Windows peak meters to report which layer is silent
