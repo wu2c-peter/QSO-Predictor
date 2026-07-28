@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.7.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.7.1-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9MWCW2FTB866)
@@ -46,7 +46,13 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.7.0
+## 🆕 What's New in v2.7.1
+
+*(v2.7.1 is the v2.7.0 Doctors release plus two same-day fixes to the
+status bar's "N reporting &lt;your call&gt;" count: it now counts distinct
+receivers instead of raw reports — it overstated 3–6× while running
+frequency — and only counts receptions on the band you're operating.
+See [RELEASE_NOTES_v2.7.1.md](dev-docs/RELEASE_NOTES_v2.7.1.md).)*
 
 ### The Doctors — full station diagnostics with one shareable report
 
