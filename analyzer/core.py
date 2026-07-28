@@ -20,6 +20,30 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def count_unique_reporters(reports: List[Dict]) -> int:
+    """Distinct receivers in a list of reception reports.
+
+    v2.7.0 fix: the status bar's "N reporting <call>" used the raw
+    report-list length — while running frequency, every receiver that
+    copies you appears once per TX cycle (~6x in the 3-minute window),
+    so the count read 3-6x high. Same bug class as the v2.0.4
+    "count unique callsigns, not total spots" fix on the Tracking side.
+    """
+    return len({r.get('receiver', '').upper()
+                for r in reports if r.get('receiver')})
+
+
+def count_unique_reporters_near(reports: List[Dict],
+                                target_field: str) -> int:
+    """Distinct receivers whose grid field (2 chars) matches the
+    target's — same dedup rule as count_unique_reporters."""
+    return len({r.get('receiver', '').upper()
+                for r in reports
+                if r.get('receiver')
+                and r.get('grid', '')[:2] == target_field})
+
+
 class QSOAnalyzer(QObject):
     cache_updated = pyqtSignal()
     status_message = pyqtSignal(str)
@@ -1294,19 +1318,20 @@ class QSOAnalyzer(QObject):
                     # Use shorter window for "who reports me" - recent propagation matters
                     # FIX v2.0.4: Safe comparison
                     self.my_reception_cache = [
-                        r for r in self.my_reception_cache 
+                        r for r in self.my_reception_cache
                         if isinstance(r.get('time'), (int, float)) and r['time'] > cutoff_recent
                     ]
-                    reporting_me_count = len(self.my_reception_cache)
-                    
+                    # v2.7.0: unique receivers, not raw report count —
+                    # see count_unique_reporters.
+                    reporting_me_count = count_unique_reporters(
+                        self.my_reception_cache)
+
                     # v2.2.0: Count how many reporters are near current target
                     near_target_count = 0
                     if self.current_target_grid and len(self.current_target_grid) >= 2:
-                        target_field = self.current_target_grid[:2]
-                        for rep in self.my_reception_cache:
-                            rep_grid = rep.get('grid', '')
-                            if rep_grid and len(rep_grid) >= 2 and rep_grid[:2] == target_field:
-                                near_target_count += 1
+                        near_target_count = count_unique_reporters_near(
+                            self.my_reception_cache,
+                            self.current_target_grid[:2])
                     
                     # --- NEW: Cleanup receiver_cache ---
                     receiver_keys_to_remove = []
