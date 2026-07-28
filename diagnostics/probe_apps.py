@@ -16,6 +16,7 @@ Copyright (C) 2025 Peter Hirst (WU2C)
 import configparser
 import logging
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -64,6 +65,13 @@ class ConfigFileReader:
     KEYS_ACCEPT_UDP = ['AcceptUDPRequests', 'acceptUDPRequests']
     KEYS_SOUND_IN = ['SoundInName', 'soundInName']
     KEYS_SOUND_OUT = ['SoundOutName', 'soundOutName']
+    # Rig control (v2.7.0 — Serial/CAT Doctor). PTTMethod is stored as a
+    # QVariant blob ("@Variant(...PTT_method_VOX\0)"); _read_config
+    # regex-extracts the method name.
+    KEYS_RIG = ['Rig']
+    KEYS_CAT_PORT = ['CATSerialPort']
+    KEYS_PTT_PORT = ['PTTport', 'PTTPort']
+    KEYS_PTT_METHOD = ['PTTMethod']
 
     def __init__(self):
         self._search_paths = self._build_search_paths()
@@ -309,7 +317,11 @@ class ConfigFileReader:
         WSJT-X/JTDX files have them. Pinned by test.
         """
         try:
-            config = configparser.ConfigParser()
+            # interpolation=None: Qt QSettings does no %-interpolation,
+            # and a bare '%' in any value (a device name, a free-text
+            # field) would otherwise raise at get() and silently drop
+            # the whole DetectedApp (review 2026-07-27).
+            config = configparser.ConfigParser(interpolation=None)
             # Preserve case of keys (Qt QSettings is case-sensitive)
             config.optionxform = str
 
@@ -368,6 +380,17 @@ class ConfigFileReader:
             # re-enumeration renames a device).
             app.sound_in = self._find_value(config, self.KEYS_SOUND_IN)
             app.sound_out = self._find_value(config, self.KEYS_SOUND_OUT)
+
+            # Rig control — the Serial/CAT Doctor verifies configured
+            # ports against enumerated serial hardware. PTTMethod is a
+            # QVariant blob; the method name is embedded as
+            # "PTT_method_VOX" etc.
+            app.rig_name = self._find_value(config, self.KEYS_RIG)
+            app.cat_port = self._find_value(config, self.KEYS_CAT_PORT)
+            app.ptt_port = self._find_value(config, self.KEYS_PTT_PORT)
+            raw_method = self._find_value(config, self.KEYS_PTT_METHOD)
+            m = re.search(r'PTT_method_(\w+)', raw_method)
+            app.ptt_method = m.group(1) if m else raw_method
 
             logger.debug(f"Setup: {app_name}{' (' + instance + ')' if instance else ''}: "
                         f"call={app.callsign}, grid={app.grid}, "

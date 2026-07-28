@@ -24,6 +24,7 @@ from diagnostics import registry as doctor_registry
 from diagnostics.doctors.clock import ClockDoctor
 from diagnostics.doctors.config import ConfigDoctor
 from diagnostics.doctors.network import NetworkDoctor
+from diagnostics.doctors.serial import SerialDoctor
 from diagnostics.doctors.system import SystemDoctor
 from utils.version import get_version
 
@@ -62,6 +63,8 @@ class DiagnosticsController(QObject):
             doctor_registry.register(ConfigDoctor())
         if 'network' not in ids:
             doctor_registry.register(NetworkDoctor())
+        if 'serial' not in ids:
+            doctor_registry.register(SerialDoctor())
         if 'system' not in ids:
             doctor_registry.register(SystemDoctor())
 
@@ -78,6 +81,9 @@ class DiagnosticsController(QObject):
 
     def run_network_doctor(self):
         self._start(doctor_ids={'network'}, title="Network Doctor")
+
+    def run_serial_doctor(self):
+        self._start(doctor_ids={'serial'}, title="Serial/CAT Doctor")
 
     def run_system_doctor(self):
         self._start(doctor_ids={'system'}, title="System Doctor")

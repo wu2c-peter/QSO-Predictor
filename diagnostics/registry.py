@@ -143,11 +143,17 @@ def _gather_system():
     return gather_system()
 
 
+def _gather_serial():
+    from diagnostics.probe_serial import gather_serial
+    return gather_serial()
+
+
 def _register_builtin_gatherers() -> None:
     _GATHERERS.setdefault('apps', _gather_apps)
     _GATHERERS.setdefault('udp_ports', _gather_udp_ports)
     _GATHERERS.setdefault('clock', _gather_clock)
     _GATHERERS.setdefault('system', _gather_system)
+    _GATHERERS.setdefault('serial', _gather_serial)
 
 
 _register_builtin_gatherers()

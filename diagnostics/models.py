@@ -140,6 +140,15 @@ class DetectedApp:
     sound_out: str = ""             # configured playback device name ("" = key absent)
     is_running: bool = False
     log_directory: Optional[Path] = None
+    # Rig control (v2.7.0, consumed by the Serial/CAT Doctor). "" = key
+    # absent/unset. rig_name "None" means no CAT — WSJT-X leaves a
+    # placeholder CATSerialPort behind, so port fields mean nothing
+    # unless the matching method is actually selected.
+    rig_name: str = ""
+    cat_port: str = ""              # CATSerialPort
+    ptt_port: str = ""              # PTTport
+    ptt_method: str = ""            # decoded from the QVariant blob:
+                                    #   "VOX" / "CAT" / "DTR" / "RTS"
 
 
 @dataclass
@@ -179,6 +188,59 @@ class ClockSnapshot:
     ntp_server: str = ""                # server that answered
     timezone_name: str = ""
     utc_offset_min: Optional[int] = None
+
+
+# =============================================================================
+# Serial domain (filled by probe_serial, consumed by the Serial/CAT Doctor)
+# =============================================================================
+
+@dataclass
+class SerialPortInfo:
+    """One serial port present on the system right now."""
+    device: str                     # "COM3", "/dev/cu.usbserial-1420",
+                                    #   "/dev/ttyUSB0"
+    friendly_name: str = ""         # OS display name / USB product string
+    vid: Optional[int] = None       # USB vendor id (None = not USB / unknown)
+    pid: Optional[int] = None
+    chip: str = ""                  # identified adapter family ("FTDI",
+                                    #   "CP210x", "CH340", "Prolific", ...)
+    device_label: str = ""          # recognized product (e.g. "Digirig")
+    driver_name: str = ""
+    driver_version: str = ""
+    in_use_by: str = ""             # process holding the port ("" = free
+                                    #   or not determinable — see note)
+    problem_code: Optional[int] = None  # Windows Device Manager problem
+                                        #   code (0 = fine, 10 = cannot
+                                        #   start, 28 = no driver); None =
+                                        #   not read
+    aliases: List[str] = field(default_factory=list)  # other paths for the
+                                                      #   same port (by-id
+                                                      #   symlink, tty./cu.
+                                                      #   twin)
+
+
+@dataclass
+class UsbSerialAdapter:
+    """One USB serial-adapter-class device from the USB inventory —
+    evidence even when it can't be tied to a specific port node
+    (macOS)."""
+    vid: int
+    pid: int
+    product: str = ""
+    manufacturer: str = ""
+    chip: str = ""
+
+
+@dataclass
+class SerialSnapshot:
+    """Serial/CAT hardware state. Passive: enumeration only — no port is
+    ever opened (opening a CAT port can toggle DTR/RTS and key the
+    transmitter)."""
+    ports: Optional[List[SerialPortInfo]] = None      # None = not gathered
+    adapters: Optional[List[UsbSerialAdapter]] = None  # USB inventory
+                                                       #   (macOS today)
+    note: str = ""                  # platform caveat (e.g. holder
+                                    #   detection unavailable on Windows)
 
 
 # =============================================================================
@@ -305,5 +367,6 @@ class StationSnapshot:
     udp_ports: Optional[List[PortInfo]] = None    # probe_ports
     clock: Optional[ClockSnapshot] = None         # probe_clock
     system: Optional[SystemSnapshot] = None       # probe_system
+    serial: Optional[SerialSnapshot] = None       # probe_serial
 
     errors: List[str] = field(default_factory=list)  # probe-time notes

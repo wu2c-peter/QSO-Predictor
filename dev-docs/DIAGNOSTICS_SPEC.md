@@ -273,6 +273,40 @@ class Doctor(Protocol):
    another process; USB chip identification incl. Digirig detection.
    Active CAT probing (send a query via Hamlib) is a *later, opt-in*
    feature per the passive-by-default rule.
+   IMPLEMENTED 2026-07-27 (`doctors/serial.py` + `probe_serial.py`).
+   STRICTLY PASSIVE: no port is ever opened — opening can toggle
+   DTR/RTS and key PTT. Enumeration: Windows SERIALCOMM (live ports)
+   merged with Enum branches USB/FTDIBUS (VID/PID, driver, FriendlyName)
+   and cfgmgr32 problem codes (Code 10 on Prolific = the counterfeit
+   signature); macOS /dev/cu.* + system_profiler USB JSON + lsof
+   holders; Linux sysfs identity + /proc fd holders. DetectedApp gained
+   rig_name/cat_port/ptt_port/ptt_method (PTTMethod decoded from the
+   QVariant blob). Semantics rule learned from the dev Mac's own
+   config: Rig=None leaves a placeholder CATSerialPort behind and VOX
+   ignores PTTport — a port is only "expected" when the matching
+   feature is selected; network-CAT rig names (Hamlib NET, FLRig,
+   OmniRig, Commander) expect no serial port. Windows holder detection
+   is impossible passively — stated in SerialSnapshot.note, never
+   inferred. Checks: inventory, configured-port-exists,
+   driver-problem (Windows), counterfeit-traps (FTDI-gate PID 0000
+   FAIL; Prolific advisory), port-sharing (multi-claim INFO w/
+   rig-sharing hint; foreign holder WARNING).
+   Review lessons (25-agent adversarial, 22 confirmed all fixed):
+   SERIALCOMM lists only successfully-STARTED drivers — a Code-10
+   counterfeit device is absent from it and must be surfaced from its
+   present-but-broken Enum entry, and portless adapters (bricked FTDI,
+   driverless chip) need the separate USB `adapters` inventory (now
+   populated on all three platforms) or the flagship checks are dead
+   code. cfgmgr32 locate flag NORMAL(0) doubles as the passive
+   presence test filtering stale Enum entries. '\\.\COMn' config
+   forms (incl. QSettings backslash-doubling) normalize before
+   matching. configparser needs interpolation=None ('%' in any value
+   silently dropped the whole DetectedApp). macOS: lsof must be handed
+   the tty.* twins; Bluetooth-Incoming-Port/debug-console are
+   placeholders, not serial hardware; CM108-class devices never create
+   port nodes so they are excluded from single-adapter pairing.
+   Awaiting Windows field verification (registry/cfgmgr32 paths are
+   knowledge-verified only).
 5. **System Doctor** — `system`. Checks: USB selective suspend / power
    plan; Fast Startup (migrates from Audio Doctor); macOS TCC mic
    permission; Linux `dialout` membership; autostart present for apps that

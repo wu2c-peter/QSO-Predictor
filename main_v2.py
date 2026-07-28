@@ -804,6 +804,14 @@ class MainWindow(QMainWindow):
             self.diagnostics.run_network_doctor)
         diag_menu.addAction(network_doctor_action)
 
+        serial_doctor_action = QAction("Serial/CAT Doctor...", self)
+        serial_doctor_action.setToolTip(
+            "Check serial ports, adapter chips, and configured CAT/PTT "
+            "ports")
+        serial_doctor_action.triggered.connect(
+            self.diagnostics.run_serial_doctor)
+        diag_menu.addAction(serial_doctor_action)
+
         system_doctor_action = QAction("System Doctor...", self)
         system_doctor_action.setToolTip(
             "Power management, permissions and autostart traps that "
