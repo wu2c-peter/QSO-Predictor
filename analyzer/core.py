@@ -21,6 +21,23 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# The band gate every spot cache uses: a spot belongs to the current
+# band when it falls within the dial's FT8/FT4 sub-band passband
+# (dial .. dial+4 kHz audio, with margin).
+BAND_GATE_HZ = 5000
+
+
+def spot_is_on_dial_band(spot_freq: int, dial_freq: int) -> bool:
+    """v2.7.0 fix: the reception cache ("N reporting <call>", and the
+    Path Intelligence "target decoded your signal" evidence) ingested
+    spots of my_call from EVERY band — the self-spot MQTT subscription
+    is band-wildcarded. A reception on 10m says nothing about who hears
+    you on 20m (and with two same-call instances on air it displayed
+    the other station's audience), so receptions pass the same gate as
+    the band map."""
+    return abs(spot_freq - dial_freq) < BAND_GATE_HZ
+
+
 def count_unique_reporters(reports: List[Dict]) -> int:
     """Distinct receivers in a list of reception reports.
 
@@ -145,11 +162,15 @@ class QSOAnalyzer(QObject):
                 if self.current_dial_freq == 0:
                     self.current_dial_freq = int(spot_freq / 1000) * 1000 
                 
-                if spot['sender'] == self.my_call:
+                # v2.7.0: current-band receptions only — see
+                # spot_is_on_dial_band.
+                if (spot['sender'] == self.my_call
+                        and spot_is_on_dial_band(spot_freq,
+                                                 self.current_dial_freq)):
                     self.my_reception_cache.append(spot)
-                
+
                 # Original band_cache (keyed by frequency)
-                if abs(spot_freq - self.current_dial_freq) < 5000:
+                if spot_is_on_dial_band(spot_freq, self.current_dial_freq):
                     if spot_freq not in self.band_cache:
                         self.band_cache[spot_freq] = []
                     self.band_cache[spot_freq].append(spot)

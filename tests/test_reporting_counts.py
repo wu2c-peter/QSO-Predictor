@@ -64,3 +64,26 @@ def test_near_target_handles_missing_or_short_grids():
     reports = [_report('K1ABC', grid=''), _report('K2DEF', grid='F'),
                {'receiver': 'K3GHI', 'time': 1000.0}]
     assert count_unique_reporters_near(reports, 'GN') == 0
+
+
+# ---------------------------------------------------------------------------
+# Band gating (v2.7.0 field report: Mac on 10m displayed "12 reporting
+# WU2C" — live 20m receptions of the OTHER same-call station, because
+# the self-spot MQTT subscription is band-wildcarded and the reception
+# cache had no band gate)
+# ---------------------------------------------------------------------------
+
+from analyzer.core import spot_is_on_dial_band
+
+
+def test_reception_band_gate_matches_the_band_map_rule():
+    dial = 14_074_000
+    # In the FT8 passband above dial: on band.
+    assert spot_is_on_dial_band(14_074_000, dial)
+    assert spot_is_on_dial_band(14_075_500, dial)
+    assert spot_is_on_dial_band(14_078_000, dial)
+    # The field case: 10m dial, 20m spots of the same callsign.
+    assert not spot_is_on_dial_band(14_075_000, 28_074_000)
+    # Another band, another sub-band, adjacent FT4 slot.
+    assert not spot_is_on_dial_band(28_074_000, 14_074_000)
+    assert not spot_is_on_dial_band(14_080_000, 14_074_000)
