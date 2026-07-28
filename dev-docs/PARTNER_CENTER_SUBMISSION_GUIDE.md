@@ -260,6 +260,29 @@ This is a desktop utility, not a learning tool. If you are new to amateur radio,
 (The GitHub-release IONIS disclosure is deliberately absent here —
 Store builds were never affected.)
 
+**v2.7.1 submission (prepared 2026-07-28; 1,288 chars):**
+
+> NEW: The Doctors — full station diagnostics (Diagnostics menu, all
+> platforms). Run Full Checkup examines your whole station passively —
+> system clock vs internet time, app configs, the UDP decode chain,
+> serial/CAT ports and adapter chips, power-management traps, and the
+> Windows TX-audio path — and builds one shareable report designed to
+> be pasted into a forum post or an AI assistant when you need help.
+> Findings come first with fixes; every passed check is listed so
+> "checked and fine" is distinguishable from "not examined"; usernames
+> are scrubbed and your callsign is included only if you choose. Five
+> new doctors join the Audio Doctor: Clock (FT8's silent killer is a
+> clock one second off), Config (duplicate config files, stale
+> audio-device bindings), Network (verifies who is actually listening
+> on your UDP chain and names the broken link), Serial/CAT (identifies
+> adapter chips, catches missing COM ports and the counterfeit-Prolific
+> driver trap — without ever opening a port), and System (Fast Startup,
+> USB selective suspend, sleep, autostart). Nothing is changed, opened,
+> or transmitted. Audio Doctor moved from Tools to the new Diagnostics
+> menu. Also: the status bar's "reporting" count now shows distinct
+> receivers on your current band. Plus a much larger automated test
+> suite.
+
 ### Product features (up to 20 bullets, 200 chars each)
 
 Eight bullets:
@@ -285,6 +308,21 @@ reconcile when convenient).
 Description field also gained an "Audio Doctor." paragraph under KEY
 CAPABILITIES at v2.6.0 (see chat/RELEASE_NOTES_v2.6.0.md for the text
 as entered).
+
+**Added at v2.7.1 submission (prepared 2026-07-28; 186 chars —
+existing bullets 1–9 unchanged, #9 Audio Doctor still accurate):**
+
+10. `Station diagnostics: one Full Checkup verifies clock, configs, UDP chain, serial/CAT ports and power traps — and builds a shareable report made to paste into a forum post or AI assistant`
+
+Description KEY CAPABILITIES paragraph to add at v2.7.1 (before or
+after the Audio Doctor paragraph):
+
+> Station Diagnostics. One Full Checkup passively examines the system
+> clock, app configs, the UDP decode chain, serial/CAT hardware, and
+> OS power-management traps, then builds a single shareable report —
+> written to be pasted into a forum post or an AI assistant, with
+> findings first and your identity included only if you choose.
+> Nothing on your system is changed, opened, or transmitted.
 
 ### Screenshots (at least one required)
 
