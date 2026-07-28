@@ -46,25 +46,29 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.6.0
+## 🆕 What's New in v2.7.0
 
-### Audio Doctor — find out why your TX audio went silent (Windows)
+### The Doctors — full station diagnostics with one shareable report
 
-The classic digital-mode failure: RX works fine, WSJT-X says it's transmitting, and nothing goes out over the air. The cause usually lives in Windows, not in WSJT-X — a per-app mute stored in the registry that survives reboots and shows nowhere inside WSJT-X, communications ducking armed by a browser using the mic, a stale "2- USB Audio CODEC" entry after the codec moved USB ports, or system sounds going out over the air because the codec became the Windows default device. **Diagnostics → Audio Doctor...** finds these in seconds:
+Digital-mode stations are chains: configs, UDP links, serial ports, audio devices, the system clock, OS power management. When one link silently breaks, the classic outcome is an evening of guessing — or a forum thread where helpers spend twenty replies extracting basic facts about your setup. The new **Diagnostics** menu fixes the fact-gathering step: **Run Full Checkup** probes the whole station once, runs every doctor over the snapshot, and produces a single markdown report written to be **pasted** — into a forum thread or an AI assistant — findings first, passed checks listed (so "checked and fine" is distinguishable from "not examined"), evidence tables at the bottom, usernames scrubbed, callsign/grid behind an identity checkbox.
 
-- **Configuration audit** — 11 read-only checks of the Windows audio path between WSJT-X/JTDX and the rig, sorted worst-first: default-device roles, communications ducking, TX/RX sample formats, duplicate codec entries, the persisted per-app mixer state, foreign apps streaming on the rig codec, and more
-- **Live TX path check** — press Tune in WSJT-X, click **Check TX path**; Audio Doctor watches the Windows peak meters for 4 seconds and reports which layer of the path is silent
-- **Automatic silent-TX warning** — whenever WSJT-X reports it's transmitting, QSOP quietly verifies audio is actually reaching the rig codec and posts a sticky status-bar warning if it isn't
+Five new doctors join the Audio Doctor (each also runnable individually):
 
-Audio Doctor changes nothing on your system — every finding says where to fix it — most with a clickable "Open ..." link that jumps to the exact Windows settings page. Windows only; the menu item doesn't appear on macOS/Linux.
+- **Clock Doctor** — measures your real offset against NTP; FT8's silent killer is a clock ~1 s off while the waterfall looks alive
+- **Config Doctor** — duplicate configs where you edit the copy the app doesn't read; stored audio devices that no longer exist (the USB-rename trap)
+- **Network Doctor** — verifies the UDP decode chain against what's actually listening and names the broken link; unusual-but-consistent chains are healthy, not suspicious
+- **Serial/CAT Doctor** — adapter chips identified (FTDI/CP210x/CH340/Prolific), configured CAT/PTT ports that don't exist, the counterfeit-Prolific "Code 10" trap, FTDI-gate-bricked cables, port contention — and it **never opens a port** (opening one can key your transmitter)
+- **System Doctor** — Fast Startup, USB selective suspend, automatic sleep vs unattended operation, macOS mic permission, Linux serial groups, autostart inventory
 
-### IONIS propagation restored in the downloadable builds
-
-A packaging bug meant the GitHub-release downloads from v2.4.0 through v2.5.8 shipped without the IONIS propagation engine, so Path Prediction was silently unavailable in those builds (macOS DMGs also lacked the model data). Microsoft Store installs were not affected. v2.6.0 builds include IONIS again, and CI now fails any build that drops it. If you run a downloaded release, upgrade to get propagation predictions back. See [RELEASE_NOTES_v2.6.0.md](dev-docs/RELEASE_NOTES_v2.6.0.md) for details on everything in this release.
+Everything is passive: nothing is changed, opened, or transmitted. See [RELEASE_NOTES_v2.7.0.md](dev-docs/RELEASE_NOTES_v2.7.0.md) for details.
 
 ---
 
 ## Previous Releases
+
+### v2.6.0
+
+**Audio Doctor — find out why your TX audio went silent (Windows).** The classic failure — RX fine, WSJT-X "transmitting", nothing on the air — usually lives in Windows: a registry-persisted per-app mute, communications ducking armed by a browser, a stale "2- USB Audio CODEC" entry, system sounds on the default device. **Diagnostics → Audio Doctor...** runs 11 read-only checks over the audio path, a live TX-path probe that watches the Windows peak meters layer by layer, and an automatic silent-TX status-bar warning; every finding links to the exact Windows settings page where the fix lives. Also: a packaging bug had shipped GitHub-release downloads v2.4.0–v2.5.8 **without the IONIS propagation engine** (Store installs unaffected) — fixed and CI-guarded, so upgrading restores Path Prediction. See [RELEASE_NOTES_v2.6.0.md](dev-docs/RELEASE_NOTES_v2.6.0.md) for details.
 
 ### v2.5.8
 

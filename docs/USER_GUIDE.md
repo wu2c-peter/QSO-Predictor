@@ -34,9 +34,10 @@ description: >-
 9. [Fox/Hound & SuperFox Mode](#9-foxhound--superfox-mode)
 10. [Workflows & Tips](#10-workflows--tips)
 11. [Settings](#11-settings)
-12. [Audio Doctor (Windows)](#12-audio-doctor-windows)
-13. [Troubleshooting](#13-troubleshooting)
-14. [FAQ](#14-faq)
+12. [Diagnostics & Full Checkup](#12-diagnostics--full-checkup)
+13. [Audio Doctor (Windows)](#13-audio-doctor-windows)
+14. [Troubleshooting](#14-troubleshooting)
+15. [FAQ](#15-faq)
 
 ---
 
@@ -1072,7 +1073,67 @@ QSOP keeps a small amount of local data to support Local Intelligence and future
 
 ---
 
-## 12. Audio Doctor (Windows)
+## 12. Diagnostics & Full Checkup
+
+*(v2.7.0)* The **Diagnostics** menu holds a family of "doctors" — one
+per station subsystem — plus **Run Full Checkup**, which runs every
+doctor applicable to your platform and builds a single shareable
+report.
+
+### Why This Exists
+
+Digital-mode stations are chains: configs, UDP links, serial ports,
+audio devices, the system clock, OS power management. When something
+silently breaks, the classic outcome is an evening lost to guessing —
+or a forum thread where helpers spend twenty replies asking for basic
+facts about your setup. A checkup collects those facts in seconds,
+passively (nothing is changed, no port is opened, nothing transmits),
+and turns them into findings.
+
+### The Report Is Made for Sharing
+
+Every checkup ends in a markdown report you can **Copy** or **Save**.
+It is written for someone who cannot see your machine — paste it into
+a forum thread, an email to your club's guru, or an AI assistant, and
+it carries its own context: findings first (worst first), then every
+check that passed, then what was *not* checked (so nobody assumes an
+unexamined subsystem is healthy), then the raw evidence tables.
+
+Privacy: usernames are scrubbed from paths, and your callsign/grid are
+included only while the **"Include station identity"** checkbox is
+ticked — untick it for an anonymized report.
+
+### The Doctors
+
+| Doctor | What it catches |
+|--------|-----------------|
+| **Clock Doctor** | The FT8 silent killer: a system clock more than ~1 s off UTC decodes nothing while everything looks fine. Measures your real offset against NTP (one 48-byte query) and checks timezone sanity. |
+| **Config Doctor** | Duplicate config files where you edit the copy the app doesn't read (modification times tell the story); configs whose stored audio devices no longer exist (the Windows USB-rename trap); missing callsigns. |
+| **Network Doctor** | The UDP decode chain, verified link by link: who is configured to send where, and whether anything is actually listening there. Names the broken link ("GridTracker isn't running, so nothing reaches QSO Predictor"). Unusual-but-consistent chains are recognized as healthy, not flagged. |
+| **Serial/CAT Doctor** | Rig-control hardware: every serial port with its adapter chip identified (FTDI, CP210x, CH340, Prolific); configured CAT/PTT ports that don't exist (the COM-renumber trap); the counterfeit-Prolific "Code 10" trap and FTDI-gate bricked cables; two apps fighting over one port. Strictly passive — it never opens a port, because opening one can key your transmitter. |
+| **System Doctor** | OS-level traps: Windows Fast Startup ("Shut down" isn't a reboot), USB selective suspend (the vanishing-mid-session USB device), automatic sleep ending unattended sessions, macOS microphone permission, Linux serial-group membership, and which ham apps do (or don't) start automatically. |
+| **Audio Doctor** (Windows) | The TX-audio path — see [Section 13](#13-audio-doctor-windows). |
+
+Every doctor also runs from its own menu item, which is the cheap
+re-run loop after you fix something.
+
+### Reading the Results
+
+Findings use the same severity chips as the Audio Doctor (✓ OK,
+ℹ Info, ? Unknown, ⚠ Warning, ✗ Problem). Two conventions worth
+knowing:
+
+- **"Unknown" means not examined** — the doctor could not read that
+  state (often a platform limitation), so verify it manually rather
+  than assuming it's fine. The report lists these under "Not checked".
+- **Advisories** are informational findings that still carry a
+  concrete suggestion (e.g. "Fast Startup is ON — use Restart when
+  troubleshooting hardware"). They are not problems, but the advice is
+  shown in full.
+
+---
+
+## 13. Audio Doctor (Windows)
 
 **Diagnostics → Audio Doctor...** (v2.6.0) diagnoses the Windows audio path between WSJT-X/JTDX and your rig. It exists because of one of digital modes' most maddening failures: **RX works fine, but your TX audio is silently dead** — and nothing inside WSJT-X shows anything wrong.
 
@@ -1184,7 +1245,7 @@ Even if you never hit a problem, these explain most "my TX audio vanished" myste
 
 ---
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 ### No Decodes Appearing
 
@@ -1210,7 +1271,7 @@ Even if you never hit a problem, these explain most "my TX audio vanished" myste
 
 Decodes appear normally and the rig keys up on transmit, but no audio goes out — and everything inside WSJT-X looks correct.
 
-This is almost always Windows-side per-app audio state: a persisted mixer mute, communications ducking after a browser call, or a stale device binding after a USB port change. Run **Diagnostics → Audio Doctor** (see [Section 12](#12-audio-doctor-windows)) — press Tune in WSJT-X and click "Check TX path", and it will tell you which layer of the TX path is silent in about 4 seconds.
+This is almost always Windows-side per-app audio state: a persisted mixer mute, communications ducking after a browser call, or a stale device binding after a USB port change. Run **Diagnostics → Audio Doctor** (see [Section 13](#13-audio-doctor-windows)) — press Tune in WSJT-X and click "Check TX path", and it will tell you which layer of the TX path is silent in about 4 seconds.
 
 ### Running with Multiple Apps
 
@@ -1333,7 +1394,7 @@ In SuperHound mode, WSJT-X suppresses decode window clicks and does not send tar
 
 ---
 
-## 14. FAQ
+## 15. FAQ
 
 **Q: Does QSO Predictor transmit for me?**  
 A: No. It's advisory only. You control your radio through WSJT-X/JTDX.
