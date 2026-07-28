@@ -14,8 +14,8 @@ This revision incorporates real-world discoveries from the actual submission wal
 
 **First successful submission:** 2026-04-22, status: In certification as of that date.
 
-**v2.7.1 submission:** 2026-07-28, package QSOPredictor_2.7.1.0_x64.msix,
-in certification as of that date. Listing changes: new what's-new text,
+**v2.7.1 submission:** 2026-07-28, package QSOPredictor_2.7.1.0_x64.msix.
+Certification PASSED and published to the Store same day (2026-07-28). Listing changes: new what's-new text,
 feature bullet #10 (Station diagnostics), and a Station Diagnostics
 KEY CAPABILITIES paragraph — exact copy recorded in Sections 8 below.
 Supersedes v2.6.0's never-submitted Store cycle (Store users go
