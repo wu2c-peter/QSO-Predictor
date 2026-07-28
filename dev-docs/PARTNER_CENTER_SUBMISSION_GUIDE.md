@@ -14,6 +14,13 @@ This revision incorporates real-world discoveries from the actual submission wal
 
 **First successful submission:** 2026-04-22, status: In certification as of that date.
 
+**v2.7.1 submission:** 2026-07-28, package QSOPredictor_2.7.1.0_x64.msix,
+in certification as of that date. Listing changes: new what's-new text,
+feature bullet #10 (Station diagnostics), and a Station Diagnostics
+KEY CAPABILITIES paragraph — exact copy recorded in Sections 8 below.
+Supersedes v2.6.0's never-submitted Store cycle (Store users go
+2.5.x -> 2.7.1 directly).
+
 **Values submitted:**
 - Product name: QSO Predictor
 - Package: QSOPredictor_2.5.4.0_x64.msix (102.53 MB)
@@ -260,7 +267,7 @@ This is a desktop utility, not a learning tool. If you are new to amateur radio,
 (The GitHub-release IONIS disclosure is deliberately absent here —
 Store builds were never affected.)
 
-**v2.7.1 submission (prepared 2026-07-28; 1,288 chars):**
+**v2.7.1 submission (submitted 2026-07-28; 1,288 chars):**
 
 > NEW: The Doctors — full station diagnostics (Diagnostics menu, all
 > platforms). Run Full Checkup examines your whole station passively —
@@ -309,7 +316,7 @@ Description field also gained an "Audio Doctor." paragraph under KEY
 CAPABILITIES at v2.6.0 (see chat/RELEASE_NOTES_v2.6.0.md for the text
 as entered).
 
-**Added at v2.7.1 submission (prepared 2026-07-28; 186 chars —
+**Added at v2.7.1 submission (submitted 2026-07-28; 186 chars —
 existing bullets 1–9 unchanged, #9 Audio Doctor still accurate):**
 
 10. `Station diagnostics: one Full Checkup verifies clock, configs, UDP chain, serial/CAT ports and power traps — and builds a shareable report made to paste into a forum post or AI assistant`
