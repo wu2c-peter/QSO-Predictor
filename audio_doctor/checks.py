@@ -509,6 +509,44 @@ def evaluate_tx_probe(samples: Sequence[TxProbeSample]) -> TxVerdict:
     return TxVerdict.INCONCLUSIVE
 
 
+class SilentTxDebounce:
+    """Two-strike filter for the passive silent-TX monitor.
+
+    A single problem verdict is routinely a false positive: one probe
+    watches one 4 s window at the start of one transmission, and a Halt
+    TX or mid-cycle QSY inside that window is genuine silence without
+    being a fault. A dead TX path, by contrast, fails every probe. So
+    the monitor only warns once two problem verdicts land in a row —
+    "in a row" meaning within CONFIRM_WINDOW_S of each other with no
+    healthy verdict in between.
+
+    Pure state machine (no clock of its own — the caller passes `now`)
+    so it stays testable off-Windows; the Qt controller owns timing,
+    probing, and display.
+    """
+
+    # Probes fire at most once per minute, on TX rising edges only —
+    # sparse when the operator pauses. Match the monitor's warning TTL:
+    # strikes further apart than a held warning would even live are
+    # independent events, not a persistent fault.
+    CONFIRM_WINDOW_S = 600.0
+
+    def __init__(self, confirm_window_s: float = CONFIRM_WINDOW_S):
+        self.confirm_window_s = confirm_window_s
+        self._last_problem_time: Optional[float] = None
+
+    def observe_problem(self, now: float) -> bool:
+        """Record a problem verdict; True → confirmed, show the warning."""
+        confirmed = (self._last_problem_time is not None
+                     and now - self._last_problem_time <= self.confirm_window_s)
+        self._last_problem_time = now
+        return confirmed
+
+    def observe_healthy(self) -> None:
+        """Any non-problem verdict (or a dropped warning) resets the count."""
+        self._last_problem_time = None
+
+
 def summarize_checks(results: Sequence[CheckResult]) -> Tuple[Severity, str]:
     """One-line rollup for logs / status display: worst severity plus a
     count of non-OK findings."""

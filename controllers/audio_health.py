@@ -6,8 +6,10 @@ Two responsibilities:
    stream, tapped pre-throttle in MainWindow.handle_status_update), run
    a short Core Audio meter probe on a daemon worker thread. If WSJT-X
    claims to be transmitting but no audio session/samples reach the rig
-   codec, hold a problem verdict that HealthMonitor surfaces as a sticky
-   "⚠" status-bar warning via check_tx_health().
+   codec on two probes in a row (SilentTxDebounce — one silent probe is
+   routinely a halted TX, not a dead path), hold a problem verdict that
+   HealthMonitor surfaces as a sticky "⚠" status-bar warning via
+   check_tx_health().
 2. On-demand Audio Doctor dialog (Diagnostics menu): full configuration audit
    plus an interactive TX-path check.
 
@@ -30,7 +32,9 @@ import time
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QDialog, QMessageBox
 
-from audio_doctor.checks import DEFAULT_RIG_HINT, evaluate_tx_probe
+from audio_doctor.checks import (
+    DEFAULT_RIG_HINT, SilentTxDebounce, evaluate_tx_probe,
+)
 from audio_doctor import probe_windows
 
 try:
@@ -63,6 +67,7 @@ class AudioHealthController(QObject):
         self._last_probe_time = 0.0
         self._problem_verdict = None
         self._problem_time = 0.0
+        self._debounce = SilentTxDebounce()
         self._verdict_signal.connect(self._on_verdict)
 
     # ------------------------------------------------------------------
@@ -143,11 +148,20 @@ class AudioHealthController(QObject):
         if verdict is None:
             return
         if verdict.is_problem:
-            self._problem_verdict = verdict
-            self._problem_time = time.time()
-            logger.warning("Audio Doctor: silent TX detected — %s",
-                           verdict.headline)
+            # Two-strike debounce: one silent probe is routinely a
+            # halted TX or mid-cycle QSY caught inside the 4 s window,
+            # not a dead path — warn only on the second in a row.
+            if self._debounce.observe_problem(time.time()):
+                self._problem_verdict = verdict
+                self._problem_time = time.time()
+                logger.warning("Audio Doctor: silent TX detected — %s",
+                               verdict.headline)
+            else:
+                logger.info("Audio Doctor: silent TX on one probe (%s) — "
+                            "waiting for a second probe to confirm",
+                            verdict.headline)
         else:
+            self._debounce.observe_healthy()
             if self._problem_verdict is not None:
                 logger.info("Audio Doctor: TX audio path healthy again "
                             "(%s)", verdict.value)
@@ -169,9 +183,11 @@ class AudioHealthController(QObject):
             logger.info("Audio Doctor: dropping silent-TX warning — "
                         "FT8web is the active source")
             self._problem_verdict = None
+            self._debounce.observe_healthy()
             return (True, "")
         if time.time() - self._problem_time > self.WARNING_TTL_S:
             self._problem_verdict = None
+            self._debounce.observe_healthy()
             return (True, "")
         return (False,
                 f"⚠ TX audio: {verdict.headline} — see Diagnostics → Audio Doctor")

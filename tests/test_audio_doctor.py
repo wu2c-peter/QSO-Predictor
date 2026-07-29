@@ -24,8 +24,8 @@ import struct
 import pytest
 
 from audio_doctor.checks import (
-    DEFAULT_RIG_HINT, evaluate_tx_probe, is_rig_endpoint, run_checks,
-    summarize_checks,
+    DEFAULT_RIG_HINT, SilentTxDebounce, evaluate_tx_probe, is_rig_endpoint,
+    run_checks, summarize_checks,
 )
 from audio_doctor.models import (
     AppSessionInfo, AudioFormat, AudioSnapshot, DataFlow, DeviceState,
@@ -716,3 +716,52 @@ def test_remote_desktop_offenders_get_the_listen_only_note():
         _foreign("spotify.exe", active=True)])
     r = result_by_id(run_checks(snap), "audio/foreign-session")
     assert "listen-only" not in r.detail
+
+
+# ---------------------------------------------------------------------------
+# SilentTxDebounce — two-strike filter for the passive monitor
+# ---------------------------------------------------------------------------
+# Field-observed 2026-07-28: a single silent probe raised the status-bar
+# warning during a 20m->17m->10m band-hopping session, then self-cleared
+# on the next healthy TX. One probe watches one 4 s window at the start
+# of one transmission — a Halt TX or mid-cycle QSY inside that window is
+# genuine silence but not a fault. A dead TX path fails EVERY probe, so
+# requiring two problem verdicts in a row filters the false positive
+# without hiding the real failure.
+
+def test_debounce_single_silent_probe_does_not_confirm():
+    d = SilentTxDebounce()
+    assert d.observe_problem(now=1000.0) is False
+
+
+def test_debounce_second_consecutive_silent_probe_confirms():
+    d = SilentTxDebounce()
+    assert d.observe_problem(now=1000.0) is False
+    assert d.observe_problem(now=1061.0) is True   # next TX cycle, ~1 min later
+
+
+def test_debounce_healthy_probe_resets_the_first_strike():
+    d = SilentTxDebounce()
+    assert d.observe_problem(now=1000.0) is False
+    d.observe_healthy()
+    assert d.observe_problem(now=1061.0) is False  # back to first strike
+
+
+def test_debounce_stale_first_strike_does_not_confirm():
+    """Two silent probes separated by more than the confirm window are
+    independent events (e.g. two different operating sessions), not a
+    persistent fault."""
+    d = SilentTxDebounce()
+    assert d.observe_problem(now=1000.0) is False
+    late = 1000.0 + SilentTxDebounce.CONFIRM_WINDOW_S + 1.0
+    assert d.observe_problem(now=late) is False
+    assert d.observe_problem(now=late + 60.0) is True  # but it re-arms
+
+
+def test_debounce_confirmation_chains_across_ongoing_problem_probes():
+    """While the path stays dead, every subsequent probe within the
+    window of the previous one keeps the warning confirmed."""
+    d = SilentTxDebounce()
+    assert d.observe_problem(now=0.0) is False
+    for t in (61.0, 130.0, 200.0):
+        assert d.observe_problem(now=t) is True
