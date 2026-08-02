@@ -35,6 +35,7 @@ minima:
 # accessed via the site title in the header.
 header_pages:
   - USER_GUIDE.md
+  - integrations/index.md
   - privacy.md
   - support.md
 

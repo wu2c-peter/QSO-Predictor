@@ -31,6 +31,12 @@ weather from NOAA SWPC. No telemetry. No tracking.
 - [User Guide](https://qsop.wu2c.net/user-guide/): Installation, configuration, and how to use each feature of the app.
 - [Home page](https://qsop.wu2c.net/): Project overview, installation options, key features.
 
+## Integration guides
+
+- [Integrations overview](https://qsop.wu2c.net/integrations/): Running QSO Predictor alongside the rest of the FT8 ecosystem.
+- [Run WSJT-X with GridTracker, JTAlert, and your logger at the same time](https://qsop.wu2c.net/integrations/wsjtx-udp-multicast/): Why only one app receives WSJT-X UDP decodes, and the two fixes — multicast (recommended) and daisy-chain forwarding — with exact settings and troubleshooting. Applies to WSJT-X and JTDX, with or without QSO Predictor.
+- [QSO Predictor + GridTracker](https://qsop.wu2c.net/integrations/gridtracker/): Both apps on one UDP stream — multicast and daisy-chain configurations, verification steps, troubleshooting.
+
 ## Technical and deeper documentation
 
 - [How and Why It Works](https://github.com/wu2c-peter/QSO-Predictor/wiki/QSO-Predictor-How-and-Why-It-Works): Algorithms, architecture, and design rationale.

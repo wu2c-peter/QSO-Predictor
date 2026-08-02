@@ -54,6 +54,7 @@ the Store.
 ## Documentation
 
 - [User Guide](/user-guide/) — Getting started, workflow, and interpreting the display
+- [Integrations](/integrations/) — Running QSO Predictor alongside GridTracker, JTAlert, and your logger (UDP multicast and daisy-chain setups)
 - [Technical Wiki](https://github.com/wu2c-peter/QSO-Predictor/wiki) — Deep dives, troubleshooting, and internals for advanced users
 
 ## Open source
