@@ -15,6 +15,8 @@ Import diagnostics.* only: setup_wizard imports QtWidgets, which the test
 suite never does (no display available in CI).
 """
 
+import pytest
+
 from diagnostics.models import DetectedApp, PortInfo, SetupRecommendation
 from diagnostics.probe_apps import ConfigFileReader
 from diagnostics.setup_analysis import SetupAnalyzer
@@ -150,6 +152,28 @@ def test_analyze_jtalert_running_without_conflict_keeps_2237():
     assert rec.udp_port == 2237
     assert rec.udp_ip == '127.0.0.1'
     assert any('JTAlert' in w for w in rec.warnings)
+
+
+@pytest.mark.parametrize("ports,running", [
+    # Generic conflict: configured port held by a forwarder
+    ([PortInfo(port=2237, process_name='GridTracker', pid=4242)],
+     ['GridTracker']),
+    # JTAlert branch: 2237 occupied while JTAlert runs
+    ([PortInfo(port=2237, process_name='JTAlertV2.Manager', pid=1)],
+     ['JTAlert']),
+], ids=['forwarder-conflict', 'jtalert-conflict'])
+def test_analyze_conflict_advice_is_forwarding_or_multicast(ports, running):
+    """2026-08-02: conflict notes used to recommend the WSJT-X/JTDX
+    'secondary UDP server' as a decode feed — it only broadcasts logged-QSO
+    ADIF, so following that advice produced a silently dead listener. The
+    advice must offer forwarding or multicast, never the secondary server."""
+    rec = SetupAnalyzer.analyze(
+        [_app('WSJT-X', udp_port=2237)], ports_in_use=ports,
+        running_apps=running)
+    all_text = ' '.join(rec.notes + rec.warnings).lower()
+    assert 'secondary udp' not in all_text
+    assert 'forward' in all_text
+    assert 'multicast' in all_text
 
 
 def test_analyze_nothing_detected_is_low_confidence_default():

@@ -91,7 +91,8 @@ class SetupAnalyzer:
         elif jtalert_running:
             # JTAlert is running - likely needs multicast or secondary port
             rec.warnings.append(
-                "JTAlert is running — you may need multicast or a secondary UDP port"
+                "JTAlert is running — apps can't share a unicast port; "
+                "use one multicast group for every app, or a forwarding chain"
             )
             # Check if port 2237 is occupied
             port_2237_used = any(p.port == 2237 for p in ports_in_use)
@@ -102,8 +103,16 @@ class SetupAnalyzer:
                 rec.notes.append(
                     f"Port 2237 in use — recommending port {free_port}"
                 )
+                # Never suggest the WSJT-X/JTDX "secondary UDP server" here:
+                # it broadcasts logged-QSO ADIF only, no decodes (shipped
+                # advice fixed 2026-08-02)
                 rec.notes.append(
-                    "Configure WSJT-X/JTDX secondary UDP to match this port"
+                    f"To feed port {free_port}, have the app holding 2237 "
+                    f"forward its UDP stream here (GridTracker: 'Forward UDP "
+                    f"Messages'; JTAlert: 'Resend WSJT-X UDP Packets') — or "
+                    f"switch every app to one multicast group (e.g. "
+                    f"239.255.0.0:2237, no forwarding needed): "
+                    f"qsop.wu2c.net/integrations/wsjtx-udp-multicast/"
                 )
             else:
                 rec.udp_port = 2237
@@ -130,9 +139,14 @@ class SetupAnalyzer:
                 rec.warnings.append(
                     f"Port {target_port} is in use by {occupier_name}"
                 )
+                # See note above: the "secondary UDP server" is ADIF-only
+                # and must not be recommended as a decode feed
                 rec.notes.append(
-                    f"Recommending port {free_port} — configure WSJT-X/JTDX "
-                    f"secondary UDP to send to 127.0.0.1:{free_port}"
+                    f"Recommending port {free_port} — have {occupier_name} "
+                    f"forward its UDP stream to 127.0.0.1:{free_port}, or "
+                    f"switch every app to one multicast group (e.g. "
+                    f"239.255.0.0:2237, no forwarding needed): "
+                    f"qsop.wu2c.net/integrations/wsjtx-udp-multicast/"
                 )
             else:
                 rec.udp_port = target_port
