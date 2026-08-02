@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 # Common UDP configurations
 UDP_PRESETS = {
     "Standard (localhost)": ("127.0.0.1", 2237),
-    "Multicast (JTAlert/N3FJP)": ("239.0.0.2", 2237),
+    # 239.255.0.0, not 239.0.0.2: WSJT-X rejects x.0.0.y groups as
+    # "MAC-ambiguous" (collide with the reserved 224.0.0.0/24 block)
+    "Multicast (JTAlert/N3FJP)": ("239.255.0.0", 2237),
     "Custom": (None, None),  # User-defined
 }
 
@@ -43,7 +45,7 @@ class SettingsDialog(QDialog):
         self.config = config
         self.udp_status = udp_status
         self.setWindowTitle("Configuration")
-        self.resize(500, 420)
+        self.resize(520, 520)
         self.init_ui()
 
     def init_ui(self):
@@ -114,12 +116,13 @@ class SettingsDialog(QDialog):
         
         udp_layout.addLayout(fields_layout)
         
-        # Help text
+        # Help text. Keep each <br> line short: rich-text labels that need
+        # to word-wrap under-report their height through nested group boxes
+        # and paint clipped (reported 2026-08-02).
         help_label = QLabel(
-            "<small><b>Port tips:</b> Default is 2237. If another app (GridTracker, JTAlert) "
-            "already uses this port, try 2238 or 2239.<br>"
-            "<b>Multicast:</b> Use if JTDX sends to a multicast group (e.g., 239.0.0.2) "
-            "so multiple apps can receive.<br>"
+            "<small><b>Port tips:</b> default 2237; if taken, try 2238/2239.<br>"
+            "<b>Multicast:</b> enter the group address (e.g., 239.255.0.0)<br>"
+            "so every app receives independently.<br>"
             "<b>Important:</b> WSJT-X/JTDX UDP settings must match.</small>"
         )
         help_label.setWordWrap(True)
