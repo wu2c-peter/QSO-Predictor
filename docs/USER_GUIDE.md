@@ -1041,9 +1041,16 @@ UDP Port: 2237
 
 **Multicast (with JTAlert, N3FJP):**
 ```
-UDP IP: 239.0.0.2
+UDP IP: 239.255.0.0
 UDP Port: 2237
 ```
+
+> **Choosing a group address:** WSJT-X rejects multicast groups of the
+> form `x.0.0.y` or `x.128.0.y` (e.g. `239.0.0.2`) with the error
+> *"MAC-ambiguous multicast groups addresses not supported"* — they
+> collide with a reserved Ethernet address block. `239.255.0.0` is a
+> safe choice. JTDX accepts these addresses, but use one WSJT-X would
+> also accept so the same group works everywhere.
 
 See Troubleshooting section for multi-app setups.
 
@@ -1279,18 +1286,27 @@ This is almost always Windows-side per-app audio state: a persisted mixer mute, 
 
 **Problem:** GridTracker, JTAlert, and QSO Predictor all need UDP data.
 
-**Solution 1: Secondary UDP (Simplest)**
+**Solution 1: Multicast (recommended)**
 ```
-JTDX → 2237 → GridTracker
-    └→ 2238 → QSO Predictor
+JTDX → 239.255.0.0:2237 → All apps receive
 ```
-In JTDX: Settings → Reporting → Secondary UDP Server → port 2238
+Configure all apps to use the same multicast address. (Avoid `x.0.0.y`
+addresses like `239.0.0.2` — WSJT-X rejects them as "MAC-ambiguous".)
 
-**Solution 2: Multicast**
+**Solution 2: Daisy-chain forwarding**
 ```
-JTDX → 239.0.0.2:2237 → All apps receive
+JTDX → 2237 → GridTracker → 2238 → QSO Predictor
 ```
-Configure all apps to use multicast address.
+GridTracker receives on 2237 and forwards a copy to 2238 (its UDP
+forwarding option); QSO Predictor listens on 2238. QSOP can also be the
+middle hop — its **UDP Forwarding** setting re-emits to further ports.
+
+> **Do not use JTDX's "2nd UDP server" for this.** That field sits under
+> "Send logged QSO ADIF data" in JTDX's Reporting tab — like WSJT-X's
+> Secondary UDP Server, it broadcasts logged-QSO records only, never the
+> decode stream. An app pointed at it will see completed QSOs and
+> nothing else. (Earlier versions of this guide suggested it — that
+> advice was wrong.)
 
 ### FT8web Data Source Warnings (v2.5.8)
 
