@@ -336,3 +336,80 @@ def test_network_ipv6_multicast_is_recognized():
                 'network/decode-chain')
     assert r.severity == Severity.OK
     assert 'multicast' in r.detail
+
+
+# ---------------------------------------------------------------------------
+# Network Doctor — shared unicast port contention (2026-08-02 regression:
+# JTAlert's 127.0.0.1:4242 binding silently captured the WSJT-X stream
+# from GridTracker's 0.0.0.0:4242, and the checkup reported no problems)
+# ---------------------------------------------------------------------------
+
+def _contention_snap(apps, ports):
+    return _snap(apps=apps, udp_ports=ports)
+
+
+def test_shared_unicast_port_warns_and_names_winner_and_starved():
+    """The literal 4242 scenario from the 2026-08-02 station report."""
+    apps = [_app(udp_ip='127.0.0.1', udp_port=4242, is_running=True)]
+    ports = [
+        PortInfo(port=4242, ip='0.0.0.0',
+                 process_name='GridTracker2.exe', pid=4004),
+        PortInfo(port=4242, ip='0.0.0.0',
+                 process_name='JTAlertV2.Manager.exe', pid=15852),
+        PortInfo(port=4242, ip='127.0.0.1',
+                 process_name='JTAlertV2.Manager.exe', pid=15852),
+    ]
+    r = _result(NetworkDoctor(), _contention_snap(apps, ports),
+                'network/port-contention')
+    assert r.severity == Severity.WARNING
+    assert 'JTAlertV2.Manager.exe' in r.detail       # the winner
+    assert 'GridTracker2.exe' in r.detail            # the starved app
+    assert '127.0.0.1' in r.detail                   # why it wins
+    assert 'multicast' in r.fix                      # the way out
+
+
+def test_multicast_station_shared_port_is_not_flagged():
+    """After a multicast migration every member binds the wildcard on the
+    same port — a scan can't see group memberships, so the sender config
+    (239.x target) is what marks the sharing as legitimate."""
+    apps = [_app(udp_ip='239.255.0.0', udp_port=2237, is_running=True)]
+    ports = [
+        PortInfo(port=2237, ip='0.0.0.0',
+                 process_name='GridTracker2.exe', pid=1),
+        PortInfo(port=2237, ip='0.0.0.0', process_name='python.exe', pid=2),
+        PortInfo(port=2237, ip='0.0.0.0',
+                 process_name='JTAlertV2.Manager.exe', pid=3),
+    ]
+    r = _result(NetworkDoctor(), _contention_snap(apps, ports),
+                'network/port-contention')
+    assert r.severity == Severity.OK
+
+
+def test_single_process_dual_bind_is_not_contention():
+    """One process holding both 0.0.0.0 and 127.0.0.1 on its port (JTAlert
+    does this) is normal, not a conflict."""
+    apps = [_app(udp_ip='127.0.0.1', udp_port=2237, is_running=True)]
+    ports = [
+        PortInfo(port=2237, ip='0.0.0.0',
+                 process_name='JTAlertV2.Manager.exe', pid=7),
+        PortInfo(port=2237, ip='127.0.0.1',
+                 process_name='JTAlertV2.Manager.exe', pid=7),
+    ]
+    r = _result(NetworkDoctor(), _contention_snap(apps, ports),
+                'network/port-contention')
+    assert r.severity == Severity.OK
+
+
+def test_shared_port_nobody_sends_to_stays_quiet():
+    """Two processes sharing a port that no detected sender targets is
+    outside the decode chain this doctor can reason about — winner and
+    loser aren't decidable, so no warning."""
+    apps = [_app(udp_ip='127.0.0.1', udp_port=2237, is_running=True)]
+    ports = [
+        PortInfo(port=2237, ip='0.0.0.0', process_name='python.exe', pid=1),
+        PortInfo(port=9999, ip='0.0.0.0', process_name='appA.exe', pid=2),
+        PortInfo(port=9999, ip='0.0.0.0', process_name='appB.exe', pid=3),
+    ]
+    r = _result(NetworkDoctor(), _contention_snap(apps, ports),
+                'network/port-contention')
+    assert r.severity == Severity.OK

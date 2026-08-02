@@ -144,6 +144,70 @@ def _check_decode_chain(apps: List[DetectedApp],
                        "; ".join(detail_bits) + ".")
 
 
+def _check_port_contention(apps: List[DetectedApp],
+                           udp_ports: List[PortInfo]) -> CheckResult:
+    """Multiple processes bound to one unicast UDP port.
+
+    SO_REUSEADDR lets several processes bind the same unicast port
+    without any error, but each datagram is delivered to only ONE of
+    them — the most-specific local binding wins — so one app silently
+    starves, and so does everything downstream of it if it was a
+    forwarder. Found live 2026-08-02: JTAlert bound 127.0.0.1:4242
+    beside GridTracker's 0.0.0.0:4242 and captured the whole WSJT-X
+    stream; this doctor passed because the decode chain's first hop
+    still had *a* listener.
+
+    A port scan cannot see multicast group memberships (members bind
+    the wildcard address like everyone else), so sharing is judged
+    against the SENDER configs: a port some sender targets as a
+    multicast group is legitimately shared and never flagged, and the
+    warning fires only for ports a sender targets via loopback unicast
+    — the only case where the winner/loser is decidable locally.
+    """
+    check_id, title = "network/port-contention", "Shared unicast ports"
+
+    def _identity(row: PortInfo):
+        return row.pid if row.pid else (row.process_name or id(row))
+
+    multicast_ports = {a.udp_port for a in apps
+                       if a.udp_ip and a.udp_port
+                       and _is_multicast(a.udp_ip)}
+    findings = []
+    for app in apps:
+        if (not app.udp_ip or not app.udp_port
+                or not _is_loopback(app.udp_ip)
+                or app.udp_port in multicast_ports):
+            continue
+        rows = [p for p in udp_ports
+                if p.port == app.udp_port and not _is_multicast(p.ip)]
+        if len({_identity(p) for p in rows}) < 2:
+            continue
+        # Most-specific binding for the sender's destination wins
+        specific = [p for p in rows
+                    if p.ip and p.ip not in _WILDCARDS]
+        winner = specific[0] if specific else rows[0]
+        losers = sorted({_who(p) or 'an unnamed process' for p in rows
+                         if _identity(p) != _identity(winner)})
+        findings.append(
+            f"port {app.udp_port} ({_label(app)}'s decode target) is "
+            f"bound by multiple processes; {_who(winner) or 'a process'}"
+            f"'s {winner.ip or '0.0.0.0'} binding is the most specific, "
+            f"so it receives the stream while "
+            f"{', '.join(losers)} silently get(s) nothing — and so does "
+            f"anything fed by their forwarding")
+    if findings:
+        return CheckResult(
+            check_id, title, Severity.WARNING, "; ".join(findings) + ".",
+            "Unicast ports cannot be shared — Windows allows the binds "
+            "but delivers each packet to only one process. Give each "
+            "app its own port in a forwarding chain, or move every app "
+            "to one multicast group (see "
+            "qsop.wu2c.net/integrations/wsjtx-udp-multicast/).")
+    return CheckResult(
+        check_id, title, Severity.OK,
+        "No unicast decode port is bound by more than one process.")
+
+
 def _check_listeners_inventory(udp_ports: List[PortInfo]) -> CheckResult:
     check_id, title = "network/listeners", "UDP listeners"
     if not udp_ports:
@@ -179,5 +243,6 @@ class NetworkDoctor:
             )]
         return [
             _check_decode_chain(snap.apps, snap.udp_ports),
+            _check_port_contention(snap.apps, snap.udp_ports),
             _check_listeners_inventory(snap.udp_ports),
         ]
