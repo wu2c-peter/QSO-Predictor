@@ -54,13 +54,13 @@ WSJT-X (UDP Server 239.255.0.0:2237)
 > "Outgoing interfaces", optionally alongside loopback. TTL 1 keeps the
 > traffic from leaving your own subnet.
 
-**GridTracker — Settings (gear) → General, Receiving section:**
-<!-- VERIFY: exact section label on current GridTracker -->
+**GridTracker — Settings (gear) → General tab, "Receive UDP Messages"
+panel:**
 
 | Setting | Value |
 |---|---|
-| Multicast | ✅ enabled |
-| IP Address | `239.255.0.0` |
+| Multicast? | ✅ ticked |
+| IP | `239.255.0.0` |
 | Port | `2237` |
 
 **QSO Predictor — Settings → Network:**
@@ -87,9 +87,9 @@ WSJT-X ──► 2237 GridTracker ──► 2238 QSO Predictor
 **WSJT-X — Settings → Reporting:** UDP Server `127.0.0.1`, port `2237`,
 "Accept UDP requests" checked.
 
-**GridTracker:** receive on `127.0.0.1:2237` (its default), then enable
-UDP forwarding ("Forward UDP Messages") to `127.0.0.1:2238`.
-<!-- VERIFY: exact toggle label on current GridTracker -->
+**GridTracker:** receive on `127.0.0.1:2237` (its default), then in the
+"Forward UDP Messages" panel (Settings → General tab) tick **Enabled?**
+and set IP `127.0.0.1`, Port `2238`.
 
 **QSO Predictor — Settings → Network:** Listen IP `127.0.0.1`, Listen
 Port `2238`.

@@ -96,8 +96,8 @@ the same multicast configuration.
 
 | App | Where | Values |
 |---|---|---|
-| GridTracker | Settings (gear) → General → Receiving <!-- VERIFY: exact section label on current GridTracker --> | enable **Multicast**, IP `239.255.0.0`, port `2237` |
-| JTAlert | Recent versions auto-detect multicast from the WSJT-X config when started <!-- VERIFY: behavior on current JTAlert version --> | — |
+| GridTracker | Settings (gear) → **General** tab → "Receive UDP Messages" panel | tick **Multicast?**, IP `239.255.0.0`, Port `2237` |
+| JTAlert | Nothing to configure — it reads the WSJT-X config on startup and follows it onto the multicast group (verified with JTAlert 2.81.10; restart JTAlert after changing WSJT-X's UDP settings) | — |
 | QSO Predictor | Settings → Network | Listen IP `239.255.0.0`, Listen Port `2237` |
 | N3FJP / other loggers | Their WSJT-X / UDP settings page | same group and port, multicast enabled |
 
@@ -116,10 +116,14 @@ WSJT-X ──► 2237 GridTracker ──► 2238 QSO Predictor ──► 2239 Lo
             forward to 2238)     forward to 2239)
 ```
 
-- **GridTracker:** enable UDP forwarding ("Forward UDP Messages") and set
-  the destination to `127.0.0.1:<next port>`. <!-- VERIFY: exact toggle label on current GridTracker -->
-- **JTAlert:** enable "Resend WSJT-X UDP Packets" to the next port
-  (Settings → Applications → WSJT-X). <!-- VERIFY: exact path/label on current JTAlert -->
+- **GridTracker:** Settings → General tab → "Forward UDP Messages" panel
+  (captioned *"e.g. GridTracker on another host"*): tick **Enabled?** and
+  set IP `127.0.0.1`, Port `<next port>`.
+- **JTAlert:** Settings → Applications → **Wsjtx / Jtdx** → tick
+  **"Resend WSJT-X UDP packets (received only)"** and set the IP and UDP
+  Port (default `2334`). The "(received only)" in the label is JTAlert
+  telling you the same thing this guide does: downstream apps receive
+  the stream but cannot send requests back.
 - **QSO Predictor:** Settings → Network → **UDP Forwarding** → "Forward to
   ports" (comma-separated; default `2238`). QSOP can sit anywhere in the
   chain, including the middle.
