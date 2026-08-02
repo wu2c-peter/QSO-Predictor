@@ -364,6 +364,17 @@ class OutcomeRecorder:
         except Exception as e:
             logger.debug(f"OutcomeRecorder: trace capture failed: {e}")
 
+    def set_station(self, my_callsign: str, my_grid: str):
+        """Apply a runtime callsign/grid change (Settings dialog).
+
+        Affects RESPONDED detection and distance calculation from now
+        on; an in-flight target keeps its already-captured context.
+        """
+        self._my_call = (my_callsign or '').upper()
+        self._my_grid = (my_grid or '').upper() if my_grid else ""
+        logger.info(f"OutcomeRecorder: station set to {self._my_call} "
+                    f"({self._my_grid or 'no grid'})")
+
     def on_decode(self, from_call: str, message: str):
         """Called on each decoded message — checks for target response.
         

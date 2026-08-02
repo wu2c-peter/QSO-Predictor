@@ -139,6 +139,38 @@ class QSOAnalyzer(QObject):
             self.mqtt.update_subscriptions(self.my_call, freq)
             self.cache_updated.emit()
 
+    def set_station_identity(self, my_call, my_grid):
+        """Apply a Settings-dialog callsign/grid change at runtime.
+
+        Every cache and evidence store is keyed to the old identity
+        (responded-to-me, reception reports, regional consensus), so
+        they are cleared exactly as a dial-frequency change clears
+        them, and the MQTT who-hears-me topic is resubscribed.
+        Returns True if anything changed.
+        """
+        my_call = (my_call or '').upper()
+        my_grid = (my_grid or '').upper()
+        if (my_call == (self.my_call or '').upper()
+                and my_grid == (self.my_grid or '').upper()):
+            return False
+        with self.lock:
+            self.my_call = my_call
+            self.my_grid = my_grid
+            self.band_cache.clear()
+            self.my_reception_cache.clear()
+            self.receiver_cache.clear()
+            self.grid_cache.clear()
+            self.sender_cache.clear()
+            self.decode_evidence.clear()
+            self.call_grid_map.clear()
+            self.responded_to_me.clear()
+        self.mqtt.update_subscriptions(
+            self.my_call, self.current_dial_freq or 14074000)
+        self.cache_updated.emit()
+        logger.info(f"Analyzer: station identity changed to "
+                    f"{my_call} ({my_grid or 'no grid'})")
+        return True
+
     def force_refresh(self):
         # Read freq safely
         f = self.current_dial_freq if self.current_dial_freq > 0 else 14074000

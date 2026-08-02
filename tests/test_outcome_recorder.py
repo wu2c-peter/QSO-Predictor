@@ -347,3 +347,18 @@ def test_followed_false_when_far_from_recommendation(outcome_recorder_home):
                if e['type'] == 'outcome'][0]
     assert outcome['followed'] is False
     assert outcome['score_delta'] == 42.0
+
+
+def test_set_station_updates_responded_detection(outcome_recorder_home):
+    """2026-08-02: a Settings-dialog callsign change used to require an app
+    restart — the recorder kept matching RESPONDED against the old call.
+    After set_station(), decodes addressed to the NEW call must count and
+    ones addressed to the old call must not."""
+    rec = OutcomeRecorder('W1OLD', 'FN30')
+    rec.set_station('W2NEW', 'FN42')
+
+    make_attempt(rec, call='JA1XYZ')
+    rec.on_decode('JA1XYZ', 'W1OLD JA1XYZ -05')   # old identity: ignored
+    assert rec._target_responded is False
+    rec.on_decode('JA1XYZ', 'W2NEW JA1XYZ -05')   # new identity: detected
+    assert rec._target_responded is True

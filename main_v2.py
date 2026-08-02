@@ -1010,15 +1010,13 @@ class MainWindow(QMainWindow):
         return "?"
 
     def setup_connections(self):
-        self.udp.new_decode.connect(self.handle_decode)
-        self.udp.status_update.connect(self.handle_status_update)
-        # v2.0.3: Connect QSO Logged signal
-        self.udp.qso_logged.connect(self.on_qso_logged)
-        # FT8web External Data Stream — same slots as the UDP source
-        self.ft8web.new_decode.connect(self.handle_decode)
-        self.ft8web.status_update.connect(self.handle_status_update)
-        self.ft8web.qso_logged.connect(self.on_qso_logged)
-        self.ft8web.client_state_changed.connect(self._on_ft8web_state)
+        # Startup-only wiring. The persistent objects below (analyzer,
+        # hunt coordinator) live for the app's lifetime — re-running this
+        # method stacks DUPLICATE Qt connections on them (every spot/status
+        # delivered twice per extra call; caused flaky behavior after
+        # settings saves, reported 2026-08-02). After a settings change,
+        # rewire only the recreated sources via _wire_data_sources().
+        self._wire_data_sources()
         # Note: Removed cache_updated -> refresh_analysis connection
         # With target perspective, re-analyzing all 500 rows every 2 seconds is too expensive.
         # Reconnect cache_updated to lightweight path refresh (not full analysis)
@@ -1028,8 +1026,24 @@ class MainWindow(QMainWindow):
         # v2.1.0: Hunt Mode - check MQTT spots against hunt list
         if self.hunt_manager:
             self.analyzer.spot_received.connect(self.hunt_coordinator.check_spot)
-    
-    
+
+    def _wire_data_sources(self):
+        """Wire the recreatable data sources (UDP / FT8web) to their slots.
+
+        Safe to call again after open_settings() replaces the handlers —
+        connections on the old, discarded objects die with them.
+        """
+        self.udp.new_decode.connect(self.handle_decode)
+        self.udp.status_update.connect(self.handle_status_update)
+        # v2.0.3: Connect QSO Logged signal
+        self.udp.qso_logged.connect(self.on_qso_logged)
+        # FT8web External Data Stream — same slots as the UDP source
+        self.ft8web.new_decode.connect(self.handle_decode)
+        self.ft8web.status_update.connect(self.handle_status_update)
+        self.ft8web.qso_logged.connect(self.on_qso_logged)
+        self.ft8web.client_state_changed.connect(self._on_ft8web_state)
+
+
     def _build_outcome_snapshot(self) -> dict:
         """Build a snapshot of QSOP's ephemeral state for OutcomeRecorder.
         
@@ -1692,6 +1706,8 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         # Calculate UDP status for settings dialog
         udp_status = self.health_monitor.get_udp_status()
+        old_call = self.config.get('ANALYSIS', 'my_callsign', fallback='')
+        old_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
         dlg = SettingsDialog(self.config, self, udp_status=udp_status)
         if dlg.exec():
             self.udp.stop()
@@ -1700,7 +1716,25 @@ class MainWindow(QMainWindow):
             self.ft8web.stop()
             self.ft8web = FT8WebHandler(self.config)
             self.ft8web.start()
-            self.setup_connections()
+            # Rewire only the recreated sources — re-running the full
+            # setup_connections() here duplicated the analyzer/hunt
+            # connections on every save (see setup_connections docstring)
+            self._wire_data_sources()
+            # Propagate a changed callsign/grid without restart. Local
+            # Intelligence (session tracker / training) still binds the
+            # callsign at startup — restart to retrain against a new call.
+            new_call = self.config.get('ANALYSIS', 'my_callsign', fallback='')
+            new_grid = self.config.get('ANALYSIS', 'my_grid', fallback='')
+            if (new_call, new_grid) != (old_call, old_grid):
+                self.analyzer.set_station_identity(new_call, new_grid)
+                if getattr(self, 'outcome_recorder', None):
+                    self.outcome_recorder.set_station(new_call, new_grid)
+                self.update_status_msg(
+                    f"Station identity updated: {new_call} ({new_grid}) — "
+                    f"restart to apply to Local Intelligence history")
+            # Refresh MQTT subscriptions after network churn — re-asserts
+            # the band + callsign topics on the current connection
+            self.analyzer.force_refresh()
             # Reset decode tracking after settings change
             self._decode_count = 0
             self._decode_start_time = None
