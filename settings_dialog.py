@@ -137,8 +137,9 @@ class SettingsDialog(QDialog):
         self.inp_fwd = QLineEdit(self.config.get('NETWORK', 'forward_ports'))
         fwd_layout.addRow("Forward to ports:", self.inp_fwd)
         fwd_help = QLabel(
-            "<small>Comma-separated ports to forward received packets to (e.g., 2238,2239).<br>"
-            "Useful for daisy-chaining to other apps.</small>"
+            "<small>Comma-separated targets to forward received packets to.<br>"
+            "A port (2238) goes to this PC; host:port (192.168.1.50:2237)<br>"
+            "reaches an app on another machine.</small>"
         )
         fwd_help.setWordWrap(True)
         fwd_help.setStyleSheet("color: #888888;")
@@ -346,22 +347,26 @@ class SettingsDialog(QDialog):
         forward_text = self.inp_fwd.text().strip()
         
         if forward_text:
-            try:
-                forward_ports = [int(p.strip()) for p in forward_text.split(',') if p.strip()]
-                if listen_port in forward_ports:
-                    QMessageBox.warning(
-                        self, 
-                        "Invalid Configuration",
-                        f"Forward port cannot be the same as listen port ({listen_port}).\n\n"
-                        "This would create a packet loop."
-                    )
-                    return  # Don't save, keep dialog open
-            except ValueError:
+            from config_manager import parse_forward_targets, is_local_host
+            entries = [e.strip() for e in forward_text.split(',') if e.strip()]
+            targets = parse_forward_targets(forward_text)
+            if len(targets) != len(entries):
                 QMessageBox.warning(
                     self,
-                    "Invalid Forward Ports",
-                    "Forward ports must be comma-separated numbers.\n\n"
-                    "Example: 2238,2239"
+                    "Invalid Forward Targets",
+                    "Each entry must be a port or host:port.\n\n"
+                    "Example: 2238, 192.168.1.50:2237"
+                )
+                return  # Don't save, keep dialog open
+            local_loop = any(port == listen_port and is_local_host(host)
+                             for host, port in targets)
+            if local_loop:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Configuration",
+                    f"A local forward cannot use the listen port ({listen_port}).\n\n"
+                    "This would create a packet loop. (Forwarding to the same "
+                    "port on ANOTHER machine is fine.)"
                 )
                 return  # Don't save, keep dialog open
         

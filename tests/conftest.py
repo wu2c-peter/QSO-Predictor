@@ -23,20 +23,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 class StubConfig:
     """Minimal stand-in for ConfigManager. Port 0 = ephemeral bind."""
 
-    def __init__(self, overrides=None, forward_ports=None):
+    def __init__(self, overrides=None, forward_targets=None):
         self.values = {
             ('NETWORK', 'udp_port'): '0',
             ('NETWORK', 'udp_ip'): '127.0.0.1',
         }
         if overrides:
             self.values.update(overrides)
-        self.forward_ports = forward_ports or []
+        self.forward_targets = forward_targets or []
 
     def get(self, section, key, fallback=None):
         return self.values.get((section, key), fallback)
 
-    def get_forward_ports(self):
-        return self.forward_ports
+    def get_forward_targets(self):
+        return self.forward_targets
 
 
 @pytest.fixture

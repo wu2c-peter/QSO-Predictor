@@ -28,6 +28,8 @@ import threading
 import time
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from config_manager import is_local_host
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,6 +80,21 @@ def parse_decode_message(message):
     return call, grid
 
 
+def strip_local_self_forwards(targets, listen_port):
+    """Drop LOCAL forward targets that match our own listen port — that
+    is a packet loop (and FT8web would re-ingest its own rebroadcast).
+    A REMOTE host reusing the same port number is a legitimate
+    cross-machine chain and is kept."""
+    kept = []
+    for host, port in targets:
+        if port == listen_port and is_local_host(host):
+            logger.warning(f"UDP: Removed self-forward to {host}:{port} "
+                           f"(same as listen port)")
+        else:
+            kept.append((host, port))
+    return kept
+
+
 def multicast_join_addrs():
     """Local IPv4 addresses to join a multicast group on, loopback first.
 
@@ -123,12 +140,9 @@ class UDPHandler(QObject):
         self.port = int(config.get('NETWORK', 'udp_port'))
         # Support multicast address configuration
         self.ip = config.get('NETWORK', 'udp_ip', fallback='0.0.0.0')
-        self.forward_ports = config.get_forward_ports()
-        
-        # Filter out self-forwarding at init time (not per-packet)
-        if self.port in self.forward_ports:
-            logger.warning(f"UDP: Removed self-forward to port {self.port} (same as listen port)")
-            self.forward_ports = [p for p in self.forward_ports if p != self.port]
+        # (host, port) tuples; bare ports in config mean 127.0.0.1
+        self.forward_targets = strip_local_self_forwards(
+            config.get_forward_targets(), self.port)
         
         self.running = False
         self.is_multicast = self._is_multicast_address(self.ip)
@@ -249,9 +263,10 @@ class UDPHandler(QObject):
             else:
                 logger.error("UDP: Cannot listen for data. Check Settings → Network.")
                 
-        # Log forward ports if configured
-        if self.forward_ports:
-            logger.info(f"UDP: Forwarding enabled to ports: {self.forward_ports}")
+        # Log forward targets if configured
+        if self.forward_targets:
+            logger.info("UDP: Forwarding enabled to: " + ", ".join(
+                f"{h}:{p}" for h, p in self.forward_targets))
     
     def _is_multicast_address(self, ip: str) -> bool:
         """Check if IP is in multicast range (224.0.0.0 - 239.255.255.255)"""
@@ -324,23 +339,29 @@ class UDPHandler(QObject):
             self._last_stats_log_time = now
 
     def _forward_packet(self, data):
-        """Forward packet to configured ports, handling errors gracefully."""
-        for port in self.forward_ports:
-            try: 
-                self.sock.sendto(data, ('127.0.0.1', port))
+        """Forward packet to configured targets, handling errors gracefully.
+
+        The SIO_UDP_CONNRESET ioctl set at init applies to this socket
+        for ANY destination: remote hosts' ICMP port-unreachable would
+        otherwise raise 10054 here exactly like local closed ports do.
+        """
+        for target in self.forward_targets:
+            label = f"{target[0]}:{target[1]}"
+            try:
+                self.sock.sendto(data, target)
             except OSError as e:
-                # Log each port's error only once to avoid spam
-                if port not in self._forward_errors_logged:
+                # Log each target's error only once to avoid spam
+                if target not in self._forward_errors_logged:
                     error_code = getattr(e, 'winerror', None) or getattr(e, 'errno', None)
                     if error_code == 10054:
-                        logger.info(f"UDP: Forward to port {port} - target not listening (will retry silently)")
+                        logger.info(f"UDP: Forward to {label} - target not listening (will retry silently)")
                     else:
-                        logger.warning(f"UDP: Forward to port {port} failed: {e}")
-                    self._forward_errors_logged.add(port)
+                        logger.warning(f"UDP: Forward to {label} failed: {e}")
+                    self._forward_errors_logged.add(target)
             except Exception as e:
-                if port not in self._forward_errors_logged:
-                    logger.debug(f"UDP: Forward to port {port} failed: {e}")
-                    self._forward_errors_logged.add(port)
+                if target not in self._forward_errors_logged:
+                    logger.debug(f"UDP: Forward to {label} failed: {e}")
+                    self._forward_errors_logged.add(target)
 
     def _parse_packet(self, data):
         if len(data) < 12: 

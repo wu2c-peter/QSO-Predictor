@@ -91,11 +91,45 @@ class ConfigManager:
     def get(self, section, key, fallback=None):
         return self.config.get(section, key, fallback=fallback)
 
-    def get_forward_ports(self):
-        ports_str = self.config.get('NETWORK', 'forward_ports', fallback='')
-        if not ports_str:
-            return []
+    def get_forward_targets(self):
+        return parse_forward_targets(
+            self.config.get('NETWORK', 'forward_ports', fallback=''))
+
+
+def parse_forward_targets(spec):
+    """Parse the NETWORK/forward_ports value into (host, port) tuples.
+
+    Persisted-format contract: bare ports ("2238") are the historic
+    syntax and mean 127.0.0.1:2238 — existing configs keep working
+    unchanged. "host:port" entries ("192.168.1.50:2237",
+    "shackpc.local:2237") forward across machines; multicast doesn't
+    traverse Wi-Fi/routers reliably, so multi-machine stations chain
+    with unicast forwards instead. Invalid entries are skipped with a
+    warning, never fatal.
+    """
+    targets = []
+    for entry in (spec or '').split(','):
+        entry = entry.strip()
+        if not entry:
+            continue
+        host, sep, port_str = entry.rpartition(':')
+        if not sep:
+            host, port_str = '127.0.0.1', entry
+        host = host.strip() or '127.0.0.1'
         try:
-            return [int(p.strip()) for p in ports_str.split(',') if p.strip()]
+            port = int(port_str.strip())
         except ValueError:
-            return []
+            logger.warning(f"Config: ignoring invalid forward target {entry!r}")
+            continue
+        if not 1 <= port <= 65535:
+            logger.warning(f"Config: ignoring out-of-range forward target {entry!r}")
+            continue
+        targets.append((host, port))
+    return targets
+
+
+def is_local_host(host):
+    """True for destinations on this machine (the self-forward filters
+    only ever strip LOCAL loops — a remote target reusing our listen
+    port number is legitimate)."""
+    return host.startswith('127.') or host.casefold() == 'localhost'

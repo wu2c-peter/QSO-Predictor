@@ -124,7 +124,7 @@ def stream_scenario():
     handler = FT8WebHandler(StubConfig(
         overrides={('FT8WEB', 'enabled'): 'true',
                    ('FT8WEB', 'ws_port'): str(ws_port)},
-        forward_ports=[fwd_port]))
+        forward_targets=[('127.0.0.1', fwd_port)]))
     received = {"decode": [], "status": [], "qso_logged": [], "state": []}
     handler.new_decode.connect(lambda d: received["decode"].append(d), direct)
     handler.status_update.connect(lambda d: received["status"].append(d), direct)

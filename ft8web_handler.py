@@ -39,7 +39,7 @@ import time
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from udp_handler import parse_decode_message
+from udp_handler import parse_decode_message, strip_local_self_forwards
 from utils import wsjtx_protocol
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,16 @@ class FT8WebHandler(QObject):
             self.port = int(config.get('FT8WEB', 'ws_port', fallback='2442'))
         except (TypeError, ValueError):
             self.port = 2442
-        self.forward_ports = config.get_forward_ports()
+        # (host, port) tuples. Same local-loop filter as UDPHandler: a
+        # local forward matching the UDP listen port would make QSOP
+        # re-ingest its own rebroadcast as a phantom second source.
+        try:
+            _listen_port = int(config.get('NETWORK', 'udp_port',
+                                          fallback='2237'))
+        except (TypeError, ValueError):
+            _listen_port = 2237
+        self.forward_targets = strip_local_self_forwards(
+            config.get_forward_targets(), _listen_port)
 
         self.running = False
         self._server_sock = None
@@ -116,7 +125,7 @@ class FT8WebHandler(QObject):
             'decodes_received': self._decodes_received,
             'last_message_age': (time.time() - self._last_message_time)
                                 if self._last_message_time else None,
-            'forward_ports': self.forward_ports,
+            'forward_targets': [f"{h}:{p}" for h, p in self.forward_targets],
         }
 
     # ------------------------------------------------------------------ #
@@ -171,7 +180,7 @@ class FT8WebHandler(QObject):
         last_heartbeat = 0.0
         while self.running:
             now = time.time()
-            if self.forward_ports and now - last_heartbeat >= HEARTBEAT_INTERVAL:
+            if self.forward_targets and now - last_heartbeat >= HEARTBEAT_INTERVAL:
                 self._forward(wsjtx_protocol.build_heartbeat(CLIENT_ID))
                 last_heartbeat = now
 
@@ -400,13 +409,14 @@ class FT8WebHandler(QObject):
     # ------------------------------------------------------------------ #
 
     def _forward(self, packet):
-        for port in self.forward_ports:
+        for target in self.forward_targets:
             try:
-                self._forward_sock.sendto(packet, ('127.0.0.1', port))
+                self._forward_sock.sendto(packet, target)
             except OSError as e:
-                if port not in self._forward_errors_logged:
-                    self._forward_errors_logged.add(port)
-                    logger.warning(f"FT8web: forward to port {port} failed: {e}")
+                if target not in self._forward_errors_logged:
+                    self._forward_errors_logged.add(target)
+                    logger.warning(f"FT8web: forward to "
+                                   f"{target[0]}:{target[1]} failed: {e}")
 
     def check_data_health(self) -> tuple:
         """FT8web is an optional source — its absence is never a warning."""
