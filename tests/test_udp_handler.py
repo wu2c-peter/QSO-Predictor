@@ -202,3 +202,70 @@ def test_has_recent_data_expires_outside_window(udp_handler):
     handler._last_data_time -= 120   # backdate beyond the 60 s default
     assert not handler.has_recent_data()
     assert handler.has_recent_data(window_seconds=300)
+
+
+# ---------------------------------------------------------------------------
+# Multicast membership: join on loopback + every interface, not only
+# INADDR_ANY. A lone INADDR_ANY join attaches to the lowest-metric
+# multicast route — observed live 2026-08-02: an idle NordVPN adapter
+# (metric 261) beat Ethernet (281), leaving QSOP deaf on a group that
+# GridTracker and JTAlert received fine.
+# ---------------------------------------------------------------------------
+
+import socket
+import struct
+
+import udp_handler as udp_mod
+
+
+def test_membership_requests_include_inaddr_any_and_each_addr():
+    reqs = udp_mod.multicast_membership_requests(
+        '239.255.0.0', ['127.0.0.1', '192.168.1.10'])
+    labels = [label for label, _ in reqs]
+    assert labels == ['default', '127.0.0.1', '192.168.1.10']
+    group = socket.inet_aton('239.255.0.0')
+    assert reqs[0][1] == struct.pack('4sl', group, socket.INADDR_ANY)
+    assert reqs[1][1] == struct.pack('4s4s', group,
+                                     socket.inet_aton('127.0.0.1'))
+    assert reqs[2][1] == struct.pack('4s4s', group,
+                                     socket.inet_aton('192.168.1.10'))
+
+
+def test_join_addrs_loopback_first_and_deduped(monkeypatch):
+    monkeypatch.setattr(udp_mod.socket, 'gethostname', lambda: 'shack-pc')
+    fake_infos = [
+        (socket.AF_INET, socket.SOCK_DGRAM, 17, '', ('192.168.160.60', 0)),
+        (socket.AF_INET, socket.SOCK_DGRAM, 17, '', ('192.168.160.60', 0)),
+        (socket.AF_INET, socket.SOCK_DGRAM, 17, '', ('10.5.0.2', 0)),
+        (socket.AF_INET, socket.SOCK_DGRAM, 17, '', ('127.0.0.1', 0)),
+    ]
+    monkeypatch.setattr(udp_mod.socket, 'getaddrinfo',
+                        lambda *a, **k: fake_infos)
+    assert udp_mod.multicast_join_addrs() == \
+        ['127.0.0.1', '192.168.160.60', '10.5.0.2']
+
+
+def test_join_addrs_survives_unresolvable_hostname(monkeypatch):
+    """Loopback must still be joined when the hostname doesn't resolve."""
+    def boom(*a, **k):
+        raise socket.gaierror("nodename nor servname provided")
+    monkeypatch.setattr(udp_mod.socket, 'getaddrinfo', boom)
+    assert udp_mod.multicast_join_addrs() == ['127.0.0.1']
+
+
+def test_multicast_handler_joins_multiple_interfaces():
+    """End-to-end: a multicast-configured handler must hold at least the
+    loopback membership (not just INADDR_ANY) and drop them all on stop."""
+    from tests.conftest import StubConfig
+    handler = udp_mod.UDPHandler(StubConfig(
+        overrides={('NETWORK', 'udp_ip'): '239.255.0.0'}))
+    try:
+        assert handler.is_multicast
+        assert handler._bind_ok
+        group = socket.inet_aton('239.255.0.0')
+        loopback_mreq = struct.pack('4s4s', group,
+                                    socket.inet_aton('127.0.0.1'))
+        assert loopback_mreq in handler._joined_memberships
+    finally:
+        handler.stop()
+    assert handler._joined_memberships == []

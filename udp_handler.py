@@ -78,6 +78,41 @@ def parse_decode_message(message):
     return call, grid
 
 
+def multicast_join_addrs():
+    """Local IPv4 addresses to join a multicast group on, loopback first.
+
+    Joining only with INADDR_ANY attaches the membership to whichever
+    interface holds the lowest-metric multicast route. That interface can
+    be an idle VPN adapter (observed live: NordVPN's NordLynx at metric
+    261 beat Ethernet's 281 with the VPN disconnected), leaving the socket
+    deaf while other apps on the same group receive normally. Joining on
+    loopback and every local address makes reception independent of the
+    sender's egress interface and of adapter metric games.
+    """
+    addrs = ['127.0.0.1']
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None,
+                                       socket.AF_INET,
+                                       socket.SOCK_DGRAM):
+            ip = info[4][0]
+            if ip not in addrs:
+                addrs.append(ip)
+    except OSError:
+        # Hostname doesn't resolve locally — loopback join still happens
+        pass
+    return addrs
+
+
+def multicast_membership_requests(group_ip, addrs):
+    """(label, packed ip_mreq) for INADDR_ANY plus each local address."""
+    group = socket.inet_aton(group_ip)
+    requests = [('default', struct.pack('4sl', group, socket.INADDR_ANY))]
+    for addr in addrs:
+        requests.append((addr, struct.pack('4s4s', group,
+                                           socket.inet_aton(addr))))
+    return requests
+
+
 class UDPHandler(QObject):
     new_decode = pyqtSignal(dict)
     status_update = pyqtSignal(dict)
@@ -147,21 +182,38 @@ class UDPHandler(QObject):
         # Previously, multicast join failure (e.g. WinError 10065) crashed the app
         # at startup, leaving users unable to fix their settings via the UI.
         self._bind_ok = False
-        
+        # Memberships that actually succeeded, so stop() drops exactly these
+        self._joined_memberships = []
+
         try:
             if self.is_multicast:
-                # Multicast setup: bind first, then try to join group
+                # Multicast setup: bind first, then join the group on every
+                # interface. A single INADDR_ANY join lands on the lowest-
+                # metric multicast route, which can be an idle VPN adapter —
+                # see multicast_join_addrs().
                 self.sock.bind(('', self.port))
-                try:
-                    mreq = struct.pack("4sl", socket.inet_aton(self.ip), socket.INADDR_ANY)
-                    self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                    logger.info(f"UDP: Multicast joined {self.ip}:{self.port}")
+                joined = []
+                for label, mreq in multicast_membership_requests(
+                        self.ip, multicast_join_addrs()):
+                    try:
+                        self.sock.setsockopt(socket.IPPROTO_IP,
+                                             socket.IP_ADD_MEMBERSHIP, mreq)
+                        self._joined_memberships.append(mreq)
+                        joined.append(label)
+                    except OSError as e:
+                        # Duplicate membership (INADDR_ANY resolved to this
+                        # interface already) or interface can't join — fine
+                        # as long as at least one join sticks
+                        logger.debug(f"UDP: Multicast join on {label} failed - {e}")
+                if joined:
+                    logger.info(f"UDP: Multicast joined {self.ip}:{self.port} "
+                                f"on: {', '.join(joined)}")
                     self._bind_ok = True
-                except OSError as e:
-                    # Multicast join failed (e.g. no route, VPN, adapter issue)
+                else:
+                    # No membership at all (e.g. no route, adapter issue)
                     # Socket is bound but won't receive multicast — user can fix in Settings
                     logger.error(
-                        f"UDP: Multicast join failed for {self.ip} - {e}. "
+                        f"UDP: Multicast join failed for {self.ip} on all interfaces. "
                         f"No UDP data will be received. "
                         f"Go to Settings → Network and switch to 'Standard (localhost)' "
                         f"if you don't need multicast."
@@ -222,13 +274,12 @@ class UDPHandler(QObject):
     def stop(self):
         logger.info(f"UDP: Stopping listener (total: {self.messages_received} packets, {self._decodes_received} decodes, {self._status_received} status)")
         self.running = False
-        try:
-            if self.is_multicast:
-                # Leave multicast group
-                mreq = struct.pack("4sl", socket.inet_aton(self.ip), socket.INADDR_ANY)
+        for mreq in self._joined_memberships:
+            try:
                 self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq)
-        except Exception as e:
-            logger.debug(f"UDP: Error leaving multicast group: {e}")
+            except Exception as e:
+                logger.debug(f"UDP: Error leaving multicast group: {e}")
+        self._joined_memberships = []
         try: 
             self.sock.close()
         except Exception as e:
