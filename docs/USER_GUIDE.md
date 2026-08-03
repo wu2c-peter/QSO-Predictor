@@ -380,10 +380,12 @@ into WSJT-X's Tx offset spinner (or let an auto-paste hotkey script do
 the typing; with click-to-call handling callsigns, such scripts only
 need to cover the offset).
 
-> **WSJT-X vs JTDX:** verified against WSJT-X (including the improved
-> edition). JTDX accepts Reply for CQs; its support for the Configure
-> message (any-callsign) is unverified — if it ignores it, double-click
-> still works for CQing stations.
+> **WSJT-X vs JTDX** (both verified live): WSJT-X — including the
+> improved edition — supports both behaviors. JTDX supports replying to
+> CQs but ignores the any-callsign Configure message (it forked before
+> WSJT-X 2.3 introduced it). QSOP detects JTDX and falls back: the
+> callsign is copied to the clipboard with a status-bar note, so one
+> paste finishes the job.
 
 ### Manual Target Entry (v2.4.5)
 

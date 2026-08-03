@@ -349,6 +349,13 @@ class UDPHandler(QObject):
     # Click-to-call: outgoing requests to WSJT-X/JTDX (v2.8)
     # ------------------------------------------------------------------ #
 
+    @property
+    def last_client_id(self):
+        """Instance id of the sender we last heard ("WSJT-X", "JTDX",
+        "WSJT-X - rig1", …). Lets callers adapt to per-app protocol
+        support — e.g. JTDX ignores the Configure message."""
+        return self._last_client_id
+
     def request_destination(self):
         """Where requests to WSJT-X must be sent, or None if unknowable.
 

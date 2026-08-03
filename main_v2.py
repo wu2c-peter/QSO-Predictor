@@ -1307,7 +1307,17 @@ class MainWindow(QMainWindow):
                 return
         if not grid:
             grid = self.analyzer.call_grid_map.get(call, '')
-        if self.udp.send_configure(call, grid):
+        if 'JTDX' in (self.udp.last_client_id or '').upper():
+            # JTDX forked before WSJT-X 2.3 and ignores the Configure
+            # message (verified live 2026-08-02) — don't claim success.
+            # Send it anyway (harmless, future-proof) but fall back to
+            # the clipboard so the operator can paste into DX Call.
+            self.udp.send_configure(call, grid)
+            QApplication.clipboard().setText(call)
+            self.update_status_msg(
+                f"JTDX can't set DX Call over UDP — {call} copied to "
+                f"clipboard instead (paste it, or double-click a fresh CQ)")
+        elif self.udp.send_configure(call, grid):
             self.update_status_msg(
                 f"{call} → WSJT-X (DX Call set — press Enable TX)")
         else:
