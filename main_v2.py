@@ -1313,8 +1313,8 @@ class MainWindow(QMainWindow):
         else:
             self.update_status_msg(
                 f"Can't reach WSJT-X to call {call} — click-to-call needs "
-                f"a direct or multicast UDP connection (not a forwarded "
-                f"stream)")
+                f"to hear WSJT-X directly (multicast or direct unicast, "
+                f"not a forwarded stream)")
 
     def _remember_cq_decode(self, data):
         """Cache fresh CQ decodes per caller so initiate_call() can Reply.

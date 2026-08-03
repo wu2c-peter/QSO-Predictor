@@ -133,78 +133,20 @@ def test_reply_requires_raw_time(udp_handler):
                                'message': 'CQ K1ABC'}) is False
 
 
-def test_multicast_requests_go_to_the_group():
+def test_multicast_requests_still_reply_to_source():
+    """2026-08-02, learned live twice over: WSJT-X does NOT listen on its
+    configured UDP server port (wsjtx.exe held no 2237 socket) — it
+    accepts requests only on the ephemeral socket it transmits from.
+    Group-addressed requests reached only the other listeners, which
+    ignored them. Requests therefore go to the packet source in EVERY
+    mode, multicast included."""
     handler = UDPHandler(StubConfig(
         overrides={('NETWORK', 'udp_ip'): '239.255.0.0',
                    ('NETWORK', 'udp_port'): '2237'}))
     try:
-        assert handler.request_destination() == ('239.255.0.0', 2237)
-    finally:
-        handler.stop()
-
-
-class _FakeSock:
-    """Duck-typed socket recording sends and multicast-egress selection."""
-
-    def __init__(self, fail_addrs=()):
-        self.sends = []          # (egress_addr_or_None, dest)
-        self.egress = None
-        self.fail_addrs = fail_addrs
-
-    def setsockopt(self, level, opt, value):
-        if opt == socket.IP_MULTICAST_IF:
-            self.egress = socket.inet_ntoa(value)
-
-    def sendto(self, packet, dest):
-        if self.egress in self.fail_addrs:
-            raise OSError("egress down")
-        self.sends.append((self.egress, dest))
-
-    def close(self):
-        pass
-
-
-def test_multicast_request_sent_on_every_interface(monkeypatch):
-    """2026-08-02 regression, send-side mirror of the join-everywhere fix:
-    a single multicast send egresses on the default route (an idle VPN
-    adapter on the affected station), so WSJT-X never saw the request.
-    Requests must go out once per local interface."""
-    handler = UDPHandler(StubConfig(
-        overrides={('NETWORK', 'udp_ip'): '239.255.0.0',
-                   ('NETWORK', 'udp_port'): '2237'}))
-    try:
-        import udp_handler as udp_mod
-        monkeypatch.setattr(udp_mod, 'multicast_join_addrs',
-                            lambda: ['127.0.0.1', '192.168.160.60'])
-        fake = _FakeSock()
-        handler.sock.close()
-        handler.sock = fake
-        handler._joined_memberships = []
-        assert handler.send_configure('V31DL') is True
-        egresses = [e for e, _ in fake.sends]
-        assert egresses == [None, '127.0.0.1', '192.168.160.60']
-        assert all(d == ('239.255.0.0', 2237) for _, d in fake.sends)
-        assert fake.egress == '0.0.0.0'   # default egress restored
-    finally:
-        handler.stop()
-
-
-def test_multicast_request_survives_partial_egress_failure(monkeypatch):
-    """One dead interface must not kill the request — mirror of the
-    per-interface join tolerance."""
-    handler = UDPHandler(StubConfig(
-        overrides={('NETWORK', 'udp_ip'): '239.255.0.0',
-                   ('NETWORK', 'udp_port'): '2237'}))
-    try:
-        import udp_handler as udp_mod
-        monkeypatch.setattr(udp_mod, 'multicast_join_addrs',
-                            lambda: ['127.0.0.1', '10.5.0.2'])
-        fake = _FakeSock(fail_addrs=('10.5.0.2',))
-        handler.sock.close()
-        handler.sock = fake
-        handler._joined_memberships = []
-        assert handler.send_configure('V31DL') is True
-        assert [e for e, _ in fake.sends] == [None, '127.0.0.1']
+        assert handler.request_destination() is None    # nothing heard yet
+        handler._last_source_addr = ('192.168.160.60', 53749)
+        assert handler.request_destination() == ('192.168.160.60', 53749)
     finally:
         handler.stop()
 
