@@ -774,11 +774,24 @@ SuperFox DXpeditions operate on **non-standard frequencies** — the 1512 Hz wid
 
 ### Windows Power Users: Auto-Paste to WSJT-X/JTDX
 
-You can set up one-click transfer of **frequencies** and **callsigns** using AutoHotkey (free):
+You can set up one-click transfer of **frequencies** and **callsigns** using AutoHotkey (free).
+
+> **Changed in v2.8:** [Click-to-Call](#click-to-call-v28) now sends
+> callsigns to **WSJT-X** natively over UDP — the script's WSJT-X
+> callsign branch is disabled below so the two don't double-drive the
+> app. The script still earns its keep for:
+> - **TX frequency** (both apps) — there is no UDP message for the
+>   offset, so clipboard + paste remains the only automation;
+> - **Callsigns on JTDX** — JTDX ignores the UDP Configure message, so
+>   when you double-click a non-CQ station QSOP copies the callsign to
+>   the clipboard, and this script completes the paste automatically.
 
 **The workflow:**
-1. Click band map → frequency auto-pastes to TX field
-2. Click target callsign → callsign auto-pastes to DX Call field, generates standard messages, and clicks Enable TX
+1. Click band map → frequency auto-pastes to TX field (both apps)
+2. Double-click a station → QSOP calls WSJT-X directly; on JTDX the
+   copied callsign auto-pastes to DX Call, generates messages, and
+   clicks Enable TX (delete the Enable TX step if you prefer to press
+   it yourself)
 
 **Quick setup:**
 
@@ -846,11 +859,15 @@ ClipboardChanged(dataType)
     }
 
     ; Callsign: 3-10 chars, has letter AND digit — Enter + Gen Msgs + Enable TX
+    ; v2.8: WSJT-X branch disabled — QSOP click-to-call sends callsigns
+    ; to WSJT-X over UDP; pasting too would double-drive it. JTDX stays
+    ; active: JTDX ignores the UDP Configure message, so QSOP copies the
+    ; callsign to the clipboard and this completes it.
     if RegExMatch(clip, "^[A-Z0-9/]{3,10}$") && RegExMatch(clip, "[A-Z]") && RegExMatch(clip, "\d") {
         if WinExist("JTDX")
             PasteCallsign("JTDX", JTDX_DX_X, JTDX_DX_Y, clip, JTDX_GEN_X, JTDX_GEN_Y, JTDX_ENTX_X, JTDX_ENTX_Y)
-        else if WinExist("WSJT-X")
-            PasteCallsign("WSJT-X", WSJTX_DX_X, WSJTX_DX_Y, clip, WSJTX_GEN_X, WSJTX_GEN_Y, WSJTX_ENTX_X, WSJTX_ENTX_Y)
+        ; else if WinExist("WSJT-X")
+        ;     PasteCallsign("WSJT-X", WSJTX_DX_X, WSJTX_DX_Y, clip, WSJTX_GEN_X, WSJTX_GEN_Y, WSJTX_ENTX_X, WSJTX_ENTX_Y)
         return
     }
 }
@@ -962,12 +979,17 @@ hs.timer.doEvery(0.5, function()
     end
 
     -- Callsign: 3-10 chars, has letter AND digit — Enter + Gen Msgs + Enable TX
+    -- v2.8: JTDX only — QSOP click-to-call sends callsigns to WSJT-X
+    -- over UDP; pasting too would double-drive it. JTDX ignores the UDP
+    -- Configure message, so QSOP copies the callsign and this completes it.
     if #clip >= 3 and #clip <= 10
        and clip:match("^[A-Z0-9/]+$")
        and clip:match("[A-Z]")
        and clip:match("%d") then
         local app, x, y, gx, gy, ex, ey = findAppCoords("DX")
-        if app then pasteCallsign(app, clip, x, y, gx, gy, ex, ey) end
+        if app and app:name():find("JTDX") then
+            pasteCallsign(app, clip, x, y, gx, gy, ex, ey)
+        end
     end
 end)
 
