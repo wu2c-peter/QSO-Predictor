@@ -290,6 +290,28 @@ Store builds were never affected.)
 > receivers on your current band. Plus a much larger automated test
 > suite.
 
+**v2.8.0 submission (2026-08-03; 1,262 chars):**
+
+> NEW: Click-to-call — double-click a station in QSO Predictor and it
+> is set up in WSJT-X, no window switching. A station calling CQ gets
+> a native reply: WSJT-X behaves exactly as if you double-clicked that
+> decode in its own window, honoring your auto-TX-enable setting. Any
+> other callsign is placed in the DX Call box with standard messages
+> generated, ready for you to press Enable TX — something Reply-based
+> tools cannot do. QSO Predictor never transmits on its own. (JTDX: CQ
+> replies supported; for other stations the callsign is copied to the
+> clipboard.) Also in this release: multicast reception now joins
+> every network interface — a VPN adapter could previously capture the
+> connection and leave the app deaf while other programs received
+> fine; the Network Doctor gains a "Shared unicast ports" check that
+> names which app silently starves when two programs bind one port;
+> UDP forwarding accepts host:port targets to feed apps on another
+> machine; callsign and grid changes apply without a restart; and the
+> silent-TX warning now requires two consecutive silent transmissions
+> before it appears, so one interrupted cycle no longer flashes a
+> warning. New setup guides for running WSJT-X, GridTracker, JTAlert
+> and QSO Predictor together: qsop.wu2c.net/integrations/
+
 ### Product features (up to 20 bullets, 200 chars each)
 
 Eight bullets:
@@ -330,6 +352,35 @@ after the Audio Doctor paragraph):
 > written to be pasted into a forum post or an AI assistant, with
 > findings first and your identity included only if you choose.
 > Nothing on your system is changed, opened, or transmitted.
+
+**Changed at v2.8.0 submission (2026-08-03):**
+
+Bullet 7 REVISED (144 chars — the old "Advisory only … never
+transmits for you" wording; keep the plain-truth framing, not
+over-cautious):
+
+7. `You stay in control — QSO Predictor never transmits on its own; TX only ever starts from your double-click, governed by your own WSJT-X settings`
+
+Bullet 11 ADDED (189 chars):
+
+11. `Click-to-call: double-click a station and it's set up in WSJT-X — a fresh CQ gets a native reply, anyone else lands in the DX Call box ready for your Enable TX. Same UDP link, all platforms`
+
+Description paragraph 2 REVISED (same framing rationale):
+
+> QSO Predictor integrates with WSJT-X and JTDX via UDP. It never
+> transmits on its own — the only time it touches TX is when you
+> double-click a station to call it, and even then WSJT-X applies
+> your own settings. You keep full operational responsibility.
+
+Description KEY CAPABILITIES paragraph ADDED (first position, before
+"Target-perspective band map"):
+
+> Click-to-call. Double-click a station — in the decode table or on
+> the target dashboard — and it is set up in WSJT-X over UDP. A
+> station calling CQ gets a native reply, exactly as if you had
+> double-clicked the decode in WSJT-X itself; any other callsign is
+> placed in the DX Call box with standard messages generated, ready
+> for you to press Enable TX. No window switching, no helper scripts.
 
 ### Screenshots (at least one required)
 
