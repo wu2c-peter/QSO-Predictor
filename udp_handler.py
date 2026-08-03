@@ -386,6 +386,8 @@ class UDPHandler(QObject):
         return self._send_request(packet, dest, f"configure DX call {dx_call}")
 
     def _send_request(self, packet, dest, what) -> bool:
+        if self.is_multicast:
+            return self._send_request_multicast(packet, dest, what)
         try:
             self.sock.sendto(packet, dest)
             logger.info(f"UDP: Sent {what} to {dest[0]}:{dest[1]} "
@@ -394,6 +396,42 @@ class UDPHandler(QObject):
         except OSError as e:
             logger.warning(f"UDP: Could not send {what}: {e}")
             return False
+
+    def _send_request_multicast(self, packet, dest, what) -> bool:
+        """Send a request to the multicast group out EVERY local interface.
+
+        The receive-side lesson, mirrored: a single send egresses on the
+        default multicast route, which can be an idle VPN adapter
+        (NordLynx, observed live 2026-08-02) — WSJT-X holds its group
+        membership on loopback/Ethernet and never sees the request. Send
+        once per interface via IP_MULTICAST_IF; WSJT-X may receive a
+        duplicate copy, which is harmless (setting the same DX call or
+        replying to the same decode twice is idempotent).
+        """
+        sent_on = []
+        for addr in [None] + multicast_join_addrs():  # None = default route
+            try:
+                if addr is not None:
+                    self.sock.setsockopt(socket.IPPROTO_IP,
+                                         socket.IP_MULTICAST_IF,
+                                         socket.inet_aton(addr))
+                self.sock.sendto(packet, dest)
+                sent_on.append(addr or 'default')
+            except OSError as e:
+                logger.debug(f"UDP: Request egress via {addr or 'default'} "
+                             f"failed - {e}")
+        try:
+            # Restore default egress selection for any future sends
+            self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF,
+                                 socket.inet_aton('0.0.0.0'))
+        except OSError:
+            pass
+        if sent_on:
+            logger.info(f"UDP: Sent {what} to {dest[0]}:{dest[1]} via "
+                        f"{', '.join(sent_on)} (id={self._last_client_id})")
+            return True
+        logger.warning(f"UDP: Could not send {what} on any interface")
+        return False
 
     def _forward_packet(self, data):
         """Forward packet to configured targets, handling errors gracefully.
