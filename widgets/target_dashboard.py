@@ -20,9 +20,23 @@ from local_intel.models import PathStatus
 from .clickable_labels import ClickableCopyLabel
 
 
+class _DoubleClickButton(QPushButton):
+    """Flat button that also reports double-clicks. Qt delivers the
+    single-click first, so click-to-copy still fires — harmless, the
+    clipboard copy is a no-op side effect of escalating to a call."""
+
+    double_clicked = pyqtSignal()
+
+    def mouseDoubleClickEvent(self, event):
+        self.double_clicked.emit()
+        super().mouseDoubleClickEvent(event)
+
+
 class TargetDashboard(QFrame):
     # v2.0.6: Signal when user wants to sync target to JTDX
     sync_requested = pyqtSignal()
+    # v2.8: double-click on the target callsign — "send this to WSJT-X"
+    call_requested = pyqtSignal()
     # v2.1.0: Signal for status bar messages (e.g., clipboard feedback)
     status_message = pyqtSignal(str)
     # v2.4.4: Signal when user manually enters a target callsign
@@ -86,12 +100,17 @@ class TargetDashboard(QFrame):
         layout.setSpacing(10)
 
         # v2.1.3: Target label is clickable — copies callsign to clipboard
-        self.lbl_target = QPushButton("NO TARGET")
+        # v2.8: double-click sends the target to WSJT-X (click-to-call)
+        self.lbl_target = _DoubleClickButton("NO TARGET")
         self.lbl_target.setObjectName("target")
         self.lbl_target.setFlat(True)
         self.lbl_target.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.lbl_target.setToolTip("Click to copy callsign to clipboard.\nWith auto-paste script: sends to DX Call field in WSJT-X/JTDX")
+        self.lbl_target.setToolTip(
+            "Click: copy callsign to clipboard (for paste / hotkey scripts).\n"
+            "Double-click: send to WSJT-X — replies to a fresh CQ, otherwise "
+            "sets the DX Call field.")
         self.lbl_target.clicked.connect(self._copy_target_to_clipboard)
+        self.lbl_target.double_clicked.connect(self.call_requested.emit)
         layout.addWidget(self.lbl_target)
 
         # v2.0.6: Fetch button — pulls target from WSJT-X/JTDX

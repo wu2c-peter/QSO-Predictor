@@ -29,6 +29,7 @@ import time
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from config_manager import is_local_host
+from utils import wsjtx_protocol
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,9 @@ class UDPHandler(QObject):
         
         # Track last received time for diagnostics
         self._last_packet_time = None
+        # Click-to-call request routing state
+        self._last_source_addr = None
+        self._last_client_id = "WSJT-X"
         # Last data-bearing packet (status/decode/qso_logged, not heartbeat)
         # — used for dual-source detection when FT8web is also active
         self._last_data_time = None
@@ -307,6 +311,9 @@ class UDPHandler(QObject):
             try:
                 data, addr = self.sock.recvfrom(4096)
                 self._last_packet_time = time.time()
+                # Remember the sender's socket: on a unicast link this is
+                # where requests (Reply/Configure) must go back to
+                self._last_source_addr = addr
                 self._forward_packet(data)
                 self._parse_packet(data)
                 self._periodic_stats_log()
@@ -337,6 +344,56 @@ class UDPHandler(QObject):
             logger.debug(f"UDP: Stats - {self._decodes_received} decodes, {self._status_received} status updates total"
                          + (f", {self._icmp_reset_count} ICMP resets suppressed" if self._icmp_reset_count else ""))
             self._last_stats_log_time = now
+
+    # ------------------------------------------------------------------ #
+    # Click-to-call: outgoing requests to WSJT-X/JTDX (v2.8)
+    # ------------------------------------------------------------------ #
+
+    def request_destination(self):
+        """Where requests to WSJT-X must be sent, or None if unknowable.
+
+        Multicast: WSJT-X listens on the group, every member may command
+        it. Unicast: reply to the source socket of the packets we
+        receive — which is WSJT-X itself only on a DIRECT connection.
+        Behind a forwarder the source is the forwarder, which ignores
+        requests; callers should surface that instead of failing silently.
+        """
+        if self.is_multicast:
+            return (self.ip, self.port)
+        return self._last_source_addr
+
+    def send_reply(self, decode) -> bool:
+        """Type 4 Reply — WSJT-X treats it as a double-click on this
+        decode (CQ/QRZ only, by WSJT-X's design). Echo the decode's raw
+        fields verbatim; requires 'time_ms' (UDP-sourced decodes only)."""
+        dest = self.request_destination()
+        if dest is None or 'time_ms' not in decode:
+            return False
+        packet = wsjtx_protocol.build_reply(
+            self._last_client_id, decode['time_ms'], decode['snr'],
+            decode.get('raw_dt', decode.get('dt', 0.0)), decode['freq'],
+            decode.get('mode', '~'), decode['message'])
+        return self._send_request(packet, dest, f"reply to {decode.get('call', '?')}")
+
+    def send_configure(self, dx_call, dx_grid="") -> bool:
+        """Type 15 Configure — set DX Call/Grid (any callsign) and
+        generate standard messages. Leaves Enable TX to the operator."""
+        dest = self.request_destination()
+        if dest is None or not dx_call:
+            return False
+        packet = wsjtx_protocol.build_configure(
+            self._last_client_id, dx_call, dx_grid)
+        return self._send_request(packet, dest, f"configure DX call {dx_call}")
+
+    def _send_request(self, packet, dest, what) -> bool:
+        try:
+            self.sock.sendto(packet, dest)
+            logger.info(f"UDP: Sent {what} to {dest[0]}:{dest[1]} "
+                        f"(id={self._last_client_id})")
+            return True
+        except OSError as e:
+            logger.warning(f"UDP: Could not send {what}: {e}")
+            return False
 
     def _forward_packet(self, data):
         """Forward packet to configured targets, handling errors gracefully.
@@ -411,8 +468,10 @@ class UDPHandler(QObject):
         # WSJT-X Status Packet Format (Type 1)
         idx = 12
         try:
-            # 1. ID (String)
-            _, idx = self._read_utf8(data, idx)
+            # 1. ID (String) — see _process_decode: requests echo this
+            client_id, idx = self._read_utf8(data, idx)
+            if client_id:
+                self._last_client_id = client_id
 
             # 2. Dial Freq (8 bytes - quint64)
             dial_freq = struct.unpack('>Q', data[idx:idx+8])[0]
@@ -509,8 +568,11 @@ class UDPHandler(QObject):
     def _process_decode(self, data):
         idx = 12
         try:
-            # 1. ID
-            _, idx = self._read_utf8(data, idx)
+            # 1. ID — kept: outgoing requests (Reply/Configure) must echo
+            # the WSJT-X instance id or WSJT-X ignores them
+            client_id, idx = self._read_utf8(data, idx)
+            if client_id:
+                self._last_client_id = client_id
             # 2. New
             idx += 1
             # 3. Time
@@ -546,7 +608,12 @@ class UDPHandler(QObject):
             self.new_decode.emit({
                 'time': time_str, 'snr': snr, 'dt': round(dt, 1),
                 'freq': freq, 'mode': mode, 'message': message,
-                'call': call, 'grid': grid
+                'call': call, 'grid': grid,
+                # Raw fields a Reply (click-to-call) must echo verbatim:
+                # display 'time' drops seconds, but WSJT-X matches the
+                # decode by exact ms-since-midnight
+                'time_ms': ms_midnight, 'raw_dt': dt,
+                'received_at': time.time(),
             })
         except Exception as e:
             logger.warning(f"UDP: Decode parse error: {e}")

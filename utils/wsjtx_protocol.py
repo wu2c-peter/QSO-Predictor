@@ -99,6 +99,48 @@ def build_decode(client_id, time_hhmmss, snr, freq, message, mode="FT8", dt=0.0)
     return p
 
 
+NO_CHANGE_U32 = 0xFFFFFFFF
+
+
+def build_reply(client_id, time_ms, snr, dt, freq, mode_code, message,
+                low_confidence=False):
+    """Type 4: Reply — WSJT-X acts as if the operator double-clicked this
+    decode in Band Activity (honored for CQ/QRZ messages only, by
+    WSJT-X's design). `client_id` must be the id of the target WSJT-X
+    instance, echoed from its own packets; the decode fields must be
+    echoed verbatim as received, `time_ms` being the decode's exact
+    milliseconds-since-midnight."""
+    p = _header(4, client_id)
+    p += struct.pack('>I', int(time_ms))
+    p += struct.pack('>i', int(snr))
+    p += struct.pack('>d', float(dt))
+    p += struct.pack('>I', int(freq))
+    p += _utf8(mode_code)
+    p += _utf8(message)
+    p += struct.pack('>?', bool(low_confidence))
+    p += struct.pack('>B', 0)                       # keyboard modifiers
+    return p
+
+
+def build_configure(client_id, dx_call, dx_grid="", generate_messages=True):
+    """Type 15: Configure — remotely set the DX Call/Grid fields (any
+    callsign, unlike Reply) and optionally generate standard messages.
+    Empty strings and max-u32 values mean "no change", so everything
+    except the DX fields is left untouched. Added in WSJT-X 2.3;
+    JTDX support unverified."""
+    p = _header(15, client_id)
+    p += _utf8("")                                  # mode: no change
+    p += struct.pack('>I', NO_CHANGE_U32)           # frequency tolerance
+    p += _utf8("")                                  # submode: no change
+    p += struct.pack('>?', False)                   # fast mode (mode empty → ignored)
+    p += struct.pack('>I', NO_CHANGE_U32)           # T/R period
+    p += struct.pack('>I', NO_CHANGE_U32)           # RX DF
+    p += _utf8(dx_call)
+    p += _utf8(dx_grid)
+    p += struct.pack('>?', bool(generate_messages))
+    return p
+
+
 def build_qso_logged(client_id, dx_call, dx_grid="", dial_freq=0, mode="FT8",
                      rst_sent="", rst_rcvd=""):
     """Type 5: QSO Logged."""

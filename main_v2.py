@@ -292,6 +292,7 @@ class MainWindow(QMainWindow):
         # --- TARGET TRACKING STATE ---
         self.current_target_call = ""
         self.current_target_grid = ""
+        self._recent_cq_decodes = {}  # v2.8: {call: decode dict} for click-to-call
         self.jtdx_last_dx_call = ""  # Track what JTDX last sent (separate from our selection)
         self._is_manual_target = False  # v2.4.4: True when target entered manually (not decoded)
         
@@ -643,6 +644,9 @@ class MainWindow(QMainWindow):
         self.table_view.horizontalHeader().setSortIndicatorShown(True)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.clicked.connect(self.target.on_row_click)
+        # v2.8: double-click a row = single-click (target set, above) plus
+        # click-to-call — Qt delivers the single click first
+        self.table_view.doubleClicked.connect(self._on_row_double_click)
         
         # --- v2.0.3: Restore column widths ---
         self._restore_column_widths()
@@ -671,6 +675,7 @@ class MainWindow(QMainWindow):
         self.dashboard.sync_requested.connect(self.sync_to_jtdx)  # v2.0.6
         self.dashboard.status_message.connect(self.update_status_msg)  # v2.1.0: clipboard feedback
         self.dashboard.manual_target_requested.connect(self.target.on_manual_entry)  # v2.4.4
+        self.dashboard.call_requested.connect(self._on_dashboard_call_requested)  # v2.8: click-to-call
         target_layout.addWidget(self.dashboard)
         
         # Band Map
@@ -1268,7 +1273,66 @@ class MainWindow(QMainWindow):
     
     
 
+    # ------------------------------------------------------------------ #
+    # v2.8: Click-to-call — double-click a callsign to set it up in WSJT-X
+    # ------------------------------------------------------------------ #
+
+    CQ_REPLY_WINDOW_S = 45  # ~3 FT8 cycles: how fresh a CQ must be to Reply
+
+    def _on_row_double_click(self, index):
+        row = index.row()
+        if row < len(self.model._data):
+            d = self.model._data[row]
+            if d.get('call'):
+                self.initiate_call(d['call'], d.get('grid', ''))
+
+    def _on_dashboard_call_requested(self):
+        if self.current_target_call:
+            self.initiate_call(self.current_target_call,
+                               self.current_target_grid)
+
+    def initiate_call(self, call, grid=''):
+        """Set up a call to `call` in WSJT-X over UDP.
+
+        Fresh CQ decode on file → Reply (native double-click semantics:
+        WSJT-X honors the operator's own auto-TX-enable setting).
+        Otherwise → Configure, which fills DX Call/Grid and generates
+        messages; the operator presses Enable TX. WSJT-X only accepts
+        Reply for CQ/QRZ messages, hence the split.
+        """
+        cq = self._recent_cq_decodes.get(call)
+        if cq and time.time() - cq.get('received_at', 0) <= self.CQ_REPLY_WINDOW_S:
+            if self.udp.send_reply(cq):
+                self.update_status_msg(f"{call} → WSJT-X (replied to CQ)")
+                return
+        if not grid:
+            grid = self.analyzer.call_grid_map.get(call, '')
+        if self.udp.send_configure(call, grid):
+            self.update_status_msg(
+                f"{call} → WSJT-X (DX Call set — press Enable TX)")
+        else:
+            self.update_status_msg(
+                f"Can't reach WSJT-X to call {call} — click-to-call needs "
+                f"a direct or multicast UDP connection (not a forwarded "
+                f"stream)")
+
+    def _remember_cq_decode(self, data):
+        """Cache fresh CQ decodes per caller so initiate_call() can Reply.
+        Only UDP-sourced decodes carry the raw fields a Reply must echo."""
+        if 'time_ms' not in data or not data.get('call'):
+            return
+        message = data.get('message', '')
+        if message.split()[:1] == ['CQ']:
+            self._recent_cq_decodes[data['call']] = data
+            # Lazy prune: drop stale entries so the dict can't grow unbounded
+            if len(self._recent_cq_decodes) > 500:
+                cutoff = time.time() - self.CQ_REPLY_WINDOW_S
+                self._recent_cq_decodes = {
+                    c: d for c, d in self._recent_cq_decodes.items()
+                    if d.get('received_at', 0) >= cutoff}
+
     def handle_decode(self, data):
+        self._remember_cq_decode(data)
         self.buffer.append(data)
         # Track decode rate
         if self._decode_start_time is None:
