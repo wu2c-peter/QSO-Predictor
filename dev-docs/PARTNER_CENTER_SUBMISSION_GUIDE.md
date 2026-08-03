@@ -18,6 +18,13 @@ This revision incorporates real-world discoveries from the actual submission wal
 Certification PASSED and published to the Store same day (2026-07-28). Listing changes: new what's-new text,
 feature bullet #10 (Station diagnostics), and a Station Diagnostics
 KEY CAPABILITIES paragraph — exact copy recorded in Sections 8 below.
+
+**v2.8.0 submission:** 2026-08-03, package QSOPredictor_2.8.0.0_x64.msix,
+in certification as of that date. Listing changes: new what's-new text
+(click-to-call + UDP hardening), bullet 7 revised to plain-truth
+transmit framing, bullet 11 added (click-to-call), description
+paragraph 2 revised + Click-to-call KEY CAPABILITIES paragraph added
+first — exact copy recorded below.
 Supersedes v2.6.0's never-submitted Store cycle (Store users go
 2.5.x -> 2.7.1 directly).
 
