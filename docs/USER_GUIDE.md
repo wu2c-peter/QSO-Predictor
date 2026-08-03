@@ -339,6 +339,52 @@ Click anywhere on the band map to manually set the recommended frequency:
 
 Use this to read off a specific frequency from the Rec display.
 
+### Click-to-Call (v2.8)
+
+Double-click a callsign to set up the call in WSJT-X — no window
+switching, no helper scripts, all platforms:
+
+- **Decode table row, double-click** — sets the station as your QSOP
+  target *and* sends it to WSJT-X in one gesture.
+- **Target callsign (dashboard), double-click** — sends the current
+  target to WSJT-X.
+- **Single-click keeps its old meaning everywhere**: a table row click
+  sets the QSOP target only; a dashboard callsign click copies it to
+  the clipboard (for pasting, or for auto-paste hotkey scripts).
+
+What "sends to WSJT-X" means depends on what QSOP knows:
+
+- **Station CQ'd within the last ~45 seconds** → QSOP sends a UDP
+  *Reply*, and WSJT-X behaves exactly as if you double-clicked that
+  decode in its own Band Activity window — including enabling TX if
+  your WSJT-X "double-click on call sets Tx enable" option is on.
+  (WSJT-X only accepts Reply for CQ/QRZ messages — the same limit
+  JTAlert has.)
+- **Anyone else** (working another station, stale CQ, manual target) →
+  QSOP sends a UDP *Configure*: the DX Call and grid fields fill and
+  standard messages generate, but **you** press Enable TX. QSOP never
+  transmits beyond what WSJT-X's own settings authorize.
+
+The status bar confirms which happened: *"replied to CQ"* vs *"DX Call
+set — press Enable TX"*.
+
+**Requirements:** "Accept UDP requests" checked in WSJT-X (you almost
+certainly have it — GridTracker needs it too), and QSOP must hear
+WSJT-X *directly* — multicast or direct unicast. On a forwarded stream
+(e.g. QSOP behind GridTracker's forwarder) commands can't reach
+WSJT-X; QSOP will say so in the status bar rather than fail silently.
+
+**The TX offset stays manual by design** — there is no UDP message for
+it. Click the recommended frequency in QSOP to copy it, then paste it
+into WSJT-X's Tx offset spinner (or let an auto-paste hotkey script do
+the typing; with click-to-call handling callsigns, such scripts only
+need to cover the offset).
+
+> **WSJT-X vs JTDX:** verified against WSJT-X (including the improved
+> edition). JTDX accepts Reply for CQs; its support for the Configure
+> message (any-callsign) is unverified — if it ignores it, double-click
+> still works for CQing stations.
+
 ### Manual Target Entry (v2.4.5)
 
 You can target any station by callsign, even if you haven't decoded them:

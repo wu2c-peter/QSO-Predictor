@@ -146,9 +146,11 @@ nowhere (HamApps documents this for JTAlert's resend: downstream apps
 features — if two apps both want them (say GridTracker *and* JTAlert),
 no chain ordering can satisfy both. Multicast can: every member
 exchanges packets with WSJT-X directly, so every app keeps full control.
-(Purely advisory listeners like QSO Predictor never send requests, so
-they're the one kind of app that can sit anywhere in a chain without
-losing anything.)
+(QSO Predictor's analysis is purely passive, so it works fully anywhere
+in a chain — but its click-to-call feature (v2.8+) is a request like
+any other: behind a forwarder, double-clicking a station can't reach
+WSJT-X, and QSOP says so instead of failing silently. On multicast, or
+receiving from WSJT-X directly, everything works.)
 
 One trap to avoid when splitting the stream: WSJT-X's **"Secondary UDP
 Server"** in the Reporting tab is *not* a second copy of the decode

@@ -104,10 +104,13 @@ forward to GridTracker instead: QSOP listens on `2237` and forwards via
 Settings → Network → **UDP Forwarding** → "Forward to ports: `2238`"
 (its default), with GridTracker listening on `2238`.
 
-**The one real drawback:** the middle app is a single point of failure.
-Close GridTracker in Setup B and QSO Predictor goes silent — not broken,
-just unfed — and vice versa in the reverse order. If that bites you more
-than once, switch to Setup A.
+**Two drawbacks vs Setup A:** the middle app is a single point of
+failure — close GridTracker in Setup B and QSO Predictor goes silent
+(not broken, just unfed), and vice versa in the reverse order. And the
+downstream app loses its interactive features: forwarded streams are
+one-way, so QSO Predictor's click-to-call (v2.8+) can't reach WSJT-X
+from behind GridTracker's forwarder. If either bites, switch to
+Setup A.
 
 ## Verify it's working
 
