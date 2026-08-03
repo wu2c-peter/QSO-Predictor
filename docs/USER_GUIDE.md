@@ -12,7 +12,7 @@ description: >-
 
 # QSO Predictor User Guide
 
-**Current as of Version 2.7.1**  
+**Current as of Version 2.8.0**  
 **By Peter Hirst (WU2C)**
 
 > 📋 **See [README](https://github.com/wu2c-peter/qso-predictor/blob/main/README.md) for What's New, Version History, and Installation**
@@ -1299,7 +1299,7 @@ You don't have to remember to open Audio Doctor. Whenever WSJT-X reports it has 
 
 The warning clears automatically on the next healthy transmission (or after 10 minutes). It stands down while an FT8web browser client is connected — in that setup the browser plays your TX audio, not wsjtx.exe, so a missing WSJT-X session is expected.
 
-**A brief warning that clears by itself is usually not a fault.** The probe watches a single 4-second window at the start of one transmission. If that particular cycle went quiet — you clicked Halt TX, changed bands mid-cycle, or the transmission was otherwise cut short — the probe legitimately measures silence and raises the warning, then the next normal transmission re-probes and clears it. Treat the warning as meaningful when it **persists across several TX cycles**: that's the real "RX works but TX is silently dead" failure, and Diagnostics → Audio Doctor will tell you which layer is silent.
+**One quiet cycle never raises the warning** (v2.8.0). The probe watches a single 4-second window at the start of a transmission, and a lone silent window is usually not a fault — a Halt TX click, a band change mid-cycle, a cut-short transmission. Since v2.8.0 a single silent probe is only logged; the warning appears after **two consecutive** silent probes. So if you see the banner at all, the TX path has now been silent twice in a row — and if it persists across further cycles, that's the real "RX works but TX is silently dead" failure: Diagnostics → Audio Doctor will tell you which layer is silent. (A healthy transmission still clears it automatically.)
 
 **To disable the monitor**, add this to `qso_predictor.ini` (in `%APPDATA%\QSO Predictor\`):
 
@@ -1532,8 +1532,8 @@ A: When you see few or no callers on your waterfall but PSK Reporter shows heavy
 **Q: Why does the Path column show "Not Heard" but the recommendation says "CALL NOW"?**  
 A: v2.2.0 uses "effective path status" — if Path Intelligence shows stations from your area getting through (even though YOUR specific signal hasn't been confirmed), the recommendation accounts for that evidence. The Path column still shows the factual status of your signal, while the recommendation considers the broader picture.
 
-**Q: A "⚠ TX audio: WSJT-X is not producing audio" warning flashed in the status bar, then disappeared. Is something wrong?**  
-A: Probably not. That's the automatic silent-TX monitor (Windows, [Section 13](#13-audio-doctor-windows)) — it samples the Windows audio meters for 4 seconds at the start of a transmission. If that one cycle went quiet (Halt TX, a band change mid-cycle, a cut-short transmission), it measures real silence and warns; the next healthy transmission clears it automatically. It only matters if the warning persists across several TX cycles — then run Diagnostics → Audio Doctor to find which layer of the TX path is silent.
+**Q: A "⚠ TX audio: WSJT-X is not producing audio" warning appeared in the status bar. Is something wrong?**  
+A: Worth a look — since v2.8.0 that warning means **two consecutive** transmissions measured silent, not one. (A single quiet cycle — Halt TX, a mid-cycle band change, a cut-short transmission — no longer raises it at all; it's just logged while the monitor waits for a second probe to confirm.) A healthy transmission still clears the warning automatically. If it persists across further TX cycles, run Diagnostics → Audio Doctor to find which layer of the TX path is silent.
 
 ---
 

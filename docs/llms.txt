@@ -13,7 +13,10 @@
 > behind "RX works but TX is silent" — and produces one shareable
 > markdown report designed to be pasted into a forum thread or an LLM
 > chat. Nothing is changed, opened, or transmitted by the diagnostics.
-> Advisory only — the operator keeps full control of the radio.
+> Click-to-call (v2.8): double-clicking a station sets up the call in
+> WSJT-X over UDP — a native reply for a fresh CQ, DX-Call prefill for
+> anyone else. The app never transmits on its own; the operator keeps
+> full control of the radio.
 
 QSO Predictor is written by Peter Hirst (WU2C), licensed under GPLv3.
 Built in Python with PyQt6. Distribution: free GitHub releases (Windows

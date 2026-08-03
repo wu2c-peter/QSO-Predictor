@@ -46,31 +46,35 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.7.1
+## 🆕 What's New in v2.8.0
 
-*(v2.7.1 is the v2.7.0 Doctors release plus two same-day fixes to the
-status bar's "N reporting &lt;your call&gt;" count: it now counts distinct
-receivers instead of raw reports — it overstated 3–6× while running
-frequency — and only counts receptions on the band you're operating.
-See [RELEASE_NOTES_v2.7.1.md](dev-docs/RELEASE_NOTES_v2.7.1.md).)*
+### Click-to-call — double-click a station, WSJT-X is ready
 
-### The Doctors — full station diagnostics with one shareable report
+QSO Predictor tells you who to call; now one double-click acts on it. Double-click a callsign in the decode table or on the target dashboard and it's set up in WSJT-X over UDP — no window switching, no helper scripts, all platforms. A station that CQ'd in the last ~45 seconds gets a **native reply** (WSJT-X behaves exactly as if you double-clicked its own Band Activity line, honoring your auto-TX-enable setting); anyone else lands in the **DX Call box with messages generated**, ready for you to press Enable TX — and that works for *any* callsign, not just CQers. QSO Predictor never transmits on its own. (JTDX: CQ replies work; for others the callsign is copied to the clipboard with a note — JTDX predates the protocol message involved.)
 
-Digital-mode stations are chains: configs, UDP links, serial ports, audio devices, the system clock, OS power management. When one link silently breaks, the classic outcome is an evening of guessing — or a forum thread where helpers spend twenty replies extracting basic facts about your setup. The new **Diagnostics** menu fixes the fact-gathering step: **Run Full Checkup** probes the whole station once, runs every doctor over the snapshot, and produces a single markdown report written to be **pasted** — into a forum thread or an AI assistant — findings first, passed checks listed (so "checked and fine" is distinguishable from "not examined"), evidence tables at the bottom, usernames scrubbed, callsign/grid behind an identity checkbox.
+### Bulletproof UDP, battle-tested
 
-Five new doctors join the Audio Doctor (each also runnable individually):
+A week of live multi-app migration on the author's station surfaced — and fixed — a family of real-world UDP failures:
 
-- **Clock Doctor** — measures your real offset against NTP; FT8's silent killer is a clock ~1 s off while the waterfall looks alive
-- **Config Doctor** — duplicate configs where you edit the copy the app doesn't read; stored audio devices that no longer exist (the USB-rename trap)
-- **Network Doctor** — verifies the UDP decode chain against what's actually listening and names the broken link; unusual-but-consistent chains are healthy, not suspicious
-- **Serial/CAT Doctor** — adapter chips identified (FTDI/CP210x/CH340/Prolific), configured CAT/PTT ports that don't exist, the counterfeit-Prolific "Code 10" trap, FTDI-gate-bricked cables, port contention — and it **never opens a port** (opening one can key your transmitter)
-- **System Doctor** — Fast Startup, USB selective suspend, automatic sleep vs unattended operation, macOS mic permission, Linux serial groups, autostart inventory
+- **Multicast reception now joins every interface** — a VPN adapter (even a disconnected one) could previously capture the join and leave QSOP deaf while GridTracker and JTAlert received fine
+- **New "Shared unicast ports" check** in the Network Doctor — Windows silently delivers a shared port to only one app; the Full Checkup now names which app wins and which starves
+- **Cross-machine forwarding** — the forward list accepts `host:port`, so QSOP can feed an app on another PC (multicast doesn't cross Wi-Fi reliably; unicast chains do)
+- **Callsign/grid changes apply live** — no more restart after editing your station identity
+- Corrected in-app guidance: a multicast example address WSJT-X rejects, and port-conflict advice that pointed at the logged-QSOs-only "secondary UDP server"
 
-Everything is passive: nothing is changed, opened, or transmitted. See [RELEASE_NOTES_v2.7.0.md](dev-docs/RELEASE_NOTES_v2.7.0.md) for details.
+### Integration guides
+
+New on qsop.wu2c.net: [Run WSJT-X with GridTracker, JTAlert, and your logger at the same time](https://qsop.wu2c.net/integrations/wsjtx-udp-multicast/) and [QSO Predictor + GridTracker](https://qsop.wu2c.net/integrations/gridtracker/) — exact settings verified against the live apps, and a troubleshooting table built from failures that actually happened.
+
+Also: the automatic silent-TX warning (Windows) now requires **two consecutive** silent probes before it appears — one quiet cycle no longer flashes a self-clearing warning. See [RELEASE_NOTES_v2.8.0.md](dev-docs/RELEASE_NOTES_v2.8.0.md) for the full list.
 
 ---
 
 ## Previous Releases
+
+### v2.7.1
+
+**The Doctors — full station diagnostics with one shareable report.** The **Diagnostics → Run Full Checkup** menu probes the whole station once — system clock vs NTP, app configs, the UDP decode chain, serial/CAT ports and adapter chips, OS power-management traps, and (on Windows) the TX-audio path — and produces a single markdown report written to be pasted into a forum thread or an AI assistant, findings first, usernames scrubbed. Five new doctors join the Audio Doctor, each also runnable individually. v2.7.1 added two same-day fixes to the status bar's "N reporting" count (distinct receivers, current band only). See [RELEASE_NOTES_v2.7.1.md](dev-docs/RELEASE_NOTES_v2.7.1.md).
 
 ### v2.6.0
 

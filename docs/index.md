@@ -20,6 +20,9 @@ calls on paths that aren't open.
   location, not just yours
 - **Propagation confirmation** — shows whether your signal is reaching the
   target's region before you call
+- **Click-to-call** — double-click a station and it's set up in WSJT-X:
+  a fresh CQ gets a native reply, anyone else lands in the DX Call box
+  ready for you to hit Enable TX
 - **Local intelligence** — learns behavior patterns of stations you observe
   and predicts their calling style
 - **Station diagnostics ("the Doctors")** — one Full Checkup passively
@@ -31,7 +34,8 @@ calls on paths that aren't open.
 
 Works alongside WSJT-X or JTDX via UDP integration, or with the
 [FT8web](https://ft8web.ok1cdj.com/) browser-based client via its External
-Data Stream. Advisory only — you keep full control of your radio.
+Data Stream. You keep full control of your radio — QSO Predictor never
+transmits on its own.
 
 ## Install
 
