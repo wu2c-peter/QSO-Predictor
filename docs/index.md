@@ -15,7 +15,7 @@ calls on paths that aren't open.
 ## See it work — 69 seconds, real QSOs, unscripted
 
 <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;">
-  <iframe src="https://www.youtube-nocookie.com/embed/tAS6QrmjHLs" title="See the FT8 pileup you can't hear — QSO Predictor demo" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" allowfullscreen loading="lazy"></iframe>
+  <iframe src="https://www.youtube-nocookie.com/embed/0ohPW29enrs" title="See the FT8 pileup you can't hear — QSO Predictor demo" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" allowfullscreen loading="lazy"></iframe>
 </div>
 
 *A live session on 40m: calling Nigeria into a hidden pileup, then working
