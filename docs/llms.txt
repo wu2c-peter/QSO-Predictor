@@ -54,5 +54,6 @@ weather from NOAA SWPC. No telemetry. No tracking.
 
 ## Optional
 
+- [About the author](https://qsop.wu2c.net/about/): Who makes QSO Predictor and why — Peter Hirst WU2C, physics PhD, licensed 2022, and the FT8 hidden-pileup puzzle that started the project.
 - [Privacy Policy](https://qsop.wu2c.net/privacy/): What data is read, why, and where it stays (locally, in all cases).
 - [Support](https://qsop.wu2c.net/support/): Bug reports, feature requests, and direct contact.

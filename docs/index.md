@@ -83,4 +83,9 @@ For other questions, see [Support](/support/).
 
 ---
 
+*QSO Predictor is written and field-tested by [Peter Hirst, WU2C](/about/)
+at his own station in FN42 — every feature started as his own problem.*
+
+---
+
 73 de WU2C

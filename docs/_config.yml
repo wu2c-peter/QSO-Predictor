@@ -36,6 +36,7 @@ minima:
 header_pages:
   - USER_GUIDE.md
   - integrations/index.md
+  - about.md
   - privacy.md
   - support.md
 
