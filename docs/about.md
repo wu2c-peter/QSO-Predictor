@@ -12,9 +12,10 @@ description: >-
 
 QSO Predictor is written by me — Peter Hirst, **WU2C**, in grid FN42
 (northeastern Massachusetts). First licensed in 2022, Amateur Extra,
-modest station: wire antenna and a 600-watt tube amplifier. Everything
+modest station: wire antenna and a 600-watt tube amplifier. Nearly everything
 the app does exists because something puzzled or bit me at my own
-station, and everything ships only after it has worked on the air here.
+station — the rest came from sharp-eyed early users — and everything
+ships only after it has worked on the air here.
 
 ## The longer version
 
@@ -62,7 +63,15 @@ those first neural-net experiments.
 Every feature is specified, reviewed, and field-tested by me at this
 station before it ships — usually because I needed it the night
 before. The hidden-pileup display, the Audio Doctor, the station
-checkup, click-to-call: each one started as my own problem.
+checkup, click-to-call: most of them started as my own problems.
+
+But not all of them, and not only mine. A small group of early users
+has shaped this app more than its size suggests — reporting the bugs I
+couldn't reproduce, suggesting the fixes I wouldn't have found, and
+testing on stations and setups I don't have. Brian KB1OPD, Warren
+KC0GU, W6IX, and others are credited by name in the release notes and
+commit history where their reports and ideas landed. A one-human code
+factory still runs better with good field reports.
 
 QSO Predictor is free, open source (GPLv3), and collects no data of
 any kind. It never transmits on its own. It exists because I wanted
