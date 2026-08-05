@@ -413,3 +413,43 @@ def test_shared_port_nobody_sends_to_stays_quiet():
     r = _result(NetworkDoctor(), _contention_snap(apps, ports),
                 'network/port-contention')
     assert r.severity == Severity.OK
+
+
+def test_stale_multicast_config_must_not_suppress_contention():
+    """2026-08-04, found during video filming: JTDX's config still said
+    239.255.0.0:2237 from an earlier experiment (JTDX not running), and
+    that stale config exempted port 2237 from the shared-port check —
+    silencing the warning while JTAlert's 127.0.0.1 binding captured
+    WSJT-X's live unicast stream from GridTracker. A ghost config must
+    never vouch for a port a RUNNING sender targets via unicast."""
+    apps = [
+        _app('WSJT-X', udp_ip='127.0.0.1', udp_port=2237, is_running=True),
+        _app('JTDX', udp_ip='239.255.0.0', udp_port=2237, is_running=False),
+    ]
+    ports = [
+        PortInfo(port=2237, ip='0.0.0.0',
+                 process_name='GridTracker2.exe', pid=15044),
+        PortInfo(port=2237, ip='0.0.0.0',
+                 process_name='JTAlertV2.Manager.exe', pid=18756),
+        PortInfo(port=2237, ip='127.0.0.1',
+                 process_name='JTAlertV2.Manager.exe', pid=18756),
+    ]
+    r = _result(NetworkDoctor(), _snap(apps=apps, udp_ports=ports),
+                'network/port-contention')
+    assert r.severity == Severity.WARNING
+    assert 'JTAlertV2.Manager.exe' in r.detail
+    assert 'GridTracker2.exe' in r.detail
+
+
+def test_stopped_sender_contention_stays_quiet():
+    """A sender that isn't running has no stream to steal — bindings on
+    its configured port are not a live conflict."""
+    apps = [_app('JTDX', udp_ip='127.0.0.1', udp_port=2237,
+                 is_running=False)]
+    ports = [
+        PortInfo(port=2237, ip='0.0.0.0', process_name='a.exe', pid=1),
+        PortInfo(port=2237, ip='0.0.0.0', process_name='b.exe', pid=2),
+    ]
+    r = _result(NetworkDoctor(), _snap(apps=apps, udp_ports=ports),
+                'network/port-contention')
+    assert r.severity == Severity.OK

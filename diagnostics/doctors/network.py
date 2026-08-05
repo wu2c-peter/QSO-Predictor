@@ -169,14 +169,20 @@ def _check_port_contention(apps: List[DetectedApp],
     def _identity(row: PortInfo):
         return row.pid if row.pid else (row.process_name or id(row))
 
-    multicast_ports = {a.udp_port for a in apps
-                       if a.udp_ip and a.udp_port
-                       and _is_multicast(a.udp_ip)}
+    # 2026-08-04 regression: do NOT exempt ports that some OTHER app's
+    # config calls a multicast group. A stale JTDX config saying
+    # 239.255.0.0:2237 (app not even running) suppressed the warning
+    # about WSJT-X's LIVE unicast stream being captured on 2237. And a
+    # mixed port (one sender unicast, listeners grouped) is contended
+    # anyway — someone still silently wins the unicast. Multicast
+    # SENDERS are already skipped by the loopback gate below; the only
+    # extra gate needed is that the sender is actually running (a
+    # stopped sender has no stream to steal).
     findings = []
     for app in apps:
         if (not app.udp_ip or not app.udp_port
                 or not _is_loopback(app.udp_ip)
-                or app.udp_port in multicast_ports):
+                or not app.is_running):
             continue
         rows = [p for p in udp_ports
                 if p.port == app.udp_port and not _is_multicast(p.ip)]
