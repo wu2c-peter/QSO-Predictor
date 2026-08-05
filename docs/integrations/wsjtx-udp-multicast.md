@@ -23,6 +23,13 @@ interface). It is useful whether or not you run
 [QSO Predictor](https://qsop.wu2c.net/) — QSOP is simply one more listener,
 configured the same way as the rest.
 
+**Prefer to watch?** The whole thing in six minutes — including the
+theft happening live on a real station:
+
+<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;">
+  <iframe src="https://www.youtube-nocookie.com/embed/Oj_iBwy-kWw" title="Run WSJT-X with GridTracker, JTAlert and your logger at the same time" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" allowfullscreen loading="lazy"></iframe>
+</div>
+
 ## Why only one app gets the decodes
 
 By default WSJT-X sends its UDP stream to a single address and port
