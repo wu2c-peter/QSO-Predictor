@@ -226,6 +226,7 @@ pasted into a forum thread or an AI chat if you want help.
 | "Address already in use" on startup | Two apps unicast-bound to one port | That's the original problem — use one of the two topologies above |
 | WSJT-X: "MAC-ambiguous multicast groups addresses not supported" | Group address collides with the reserved `224.0.0.0/24` MAC mapping (any `x.0.0.y` / `x.128.0.y` form, e.g. `239.0.0.2`) | Pick a different group, e.g. `239.255.0.0` |
 | New app works, but an *existing* app (or everything downstream of it) silently went stale | Windows lets several apps bind one unicast port (`SO_REUSEADDR`), but each packet is delivered to only **one** of them — a `127.0.0.1`-specific binding beats a `0.0.0.0` binding, so the newcomer can capture the whole stream without any error appearing anywhere | Don't share a unicast port; move to multicast (Option 1) or give each app its own port in a chain (Option 2) |
+| An app is starving and **nothing visible** holds the port — you closed the other apps | Some apps leave a background helper running after their window closes (JTAlert's `JTAlertV2.Manager.exe` is one), and it keeps its port bindings — an invisible process can be capturing the whole stream | `netstat -ano -p UDP \| findstr <port>` names the PID; check Task Manager, or run QSO Predictor's Full Checkup — the shared-port check names the process. Then close it properly or move to multicast |
 
 ## Where QSO Predictor fits
 
