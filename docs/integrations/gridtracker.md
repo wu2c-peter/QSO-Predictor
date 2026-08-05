@@ -139,6 +139,7 @@ as healthy, not flagged.
 | GridTracker fine, QSOP shows "No data from WSJT-X/JTDX" warning | QSOP listening on the wrong port/IP for your topology | Match QSOP's Listen IP/Port to the stream (2237 group in Setup A, forward port in Setup B) |
 | Everything dies when a VPN connects | VPN routing/multicast interference | Keep the chain on `127.0.0.1` (Setup B), or exclude 239.x from the VPN |
 | First-run Windows firewall prompt was dismissed | App blocked for private networks | Re-allow in Windows Defender Firewall |
+| GridTracker's map is alive (roster updates, grids color) but the station-to-station decode lines are gone — and survive restarts, updates, and path-color settings | An **Award layer** is active (Map View Filters → Award, title bar shows "Layer: …"), and by default the award view *replaces* the live view — paths included | Set Award off, or tick **"Merge Award Overlay"** in GridTracker's Map settings to blend award grids with live paths |
 
 Logged-QSO housekeeping: when a QSO is logged, both apps hear the same
 UDP logging message — GridTracker records it, and QSO Predictor can
