@@ -131,6 +131,12 @@ WSJT-X ──► 2237 GridTracker ──► 2238 QSO Predictor ──► 2239 Lo
   Port (default `2334`). The "(received only)" in the label is JTAlert
   telling you the same thing this guide does: downstream apps receive
   the stream but cannot send requests back.
+- **JTAlert can only ever be the FIRST hop.** It auto-configures from
+  WSJT-X's own settings and binds that port directly — there is no
+  "listen on a different port" option to aim at another app's
+  forwarder. In a unicast chain, JTAlert takes the direct seat or it
+  doesn't play; on multicast, the same auto-follow behavior joins the
+  group harmlessly.
 - **QSO Predictor:** Settings → Network → **UDP Forwarding** → "Forward to
   ports" (comma-separated; default `2238`). QSOP can sit anywhere in the
   chain, including the middle.
