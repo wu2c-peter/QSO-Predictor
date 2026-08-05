@@ -105,6 +105,13 @@ macOS note: multiple apps sharing one multicast group on the same Mac
 requires `SO_REUSEPORT` co-binding. QSO Predictor sets this automatically
 (since v2.5.5.1); most other companion apps do too.
 
+One subtlety worth knowing: on Windows, a multicast listener still
+occupies its port for **unicast** too (multicast reception requires
+binding the wildcard address). So a *half-migrated* station — sender
+still on unicast, some listeners already on the group — is still a
+contended port, and one app silently wins the unicast. Migrate the
+sender and all listeners together, and the ambiguity disappears.
+
 ## Option 2: Daisy-chain (forwarding)
 
 Each app listens on its own port and re-emits the stream to the next port.
