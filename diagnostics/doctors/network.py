@@ -194,12 +194,13 @@ def _check_port_contention(apps: List[DetectedApp],
         winner = specific[0] if specific else rows[0]
         losers = sorted({_who(p) or 'an unnamed process' for p in rows
                          if _identity(p) != _identity(winner)})
+        verb = "gets" if len(losers) == 1 else "get"
         findings.append(
             f"port {app.udp_port} ({_label(app)}'s decode target) is "
             f"bound by multiple processes; {_who(winner) or 'a process'}"
             f"'s {winner.ip or '0.0.0.0'} binding is the most specific, "
             f"so it receives the stream while "
-            f"{', '.join(losers)} silently get(s) nothing — and so does "
+            f"{', '.join(losers)} silently {verb} nothing — and so does "
             f"anything fed by their forwarding")
     if findings:
         return CheckResult(
