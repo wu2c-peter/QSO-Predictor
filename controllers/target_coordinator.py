@@ -190,6 +190,16 @@ class TargetCoordinator(QObject):
                         freq = row.get('freq', 0)
                     break
 
+        # Pileup picks arrive gridless — report messages carry a signal
+        # report where a CQ carries the locator. The station's earlier CQ
+        # usually put the real grid in the analyzer's call→grid map; use it
+        # so IONIS, the band map, and the outcome recorder aren't blind for
+        # exactly the rare-DX targets worked out of a pileup.
+        if call and not grid:
+            grid = mw.analyzer.call_grid_map.get(call.upper(), '')
+            if grid:
+                logger.info(f"Target grid from earlier decode: {call} → {grid}")
+
         prev_target = mw.current_target_call
         logger.info(f"Target: '{prev_target}' → '{call or '(cleared)'}'")
 

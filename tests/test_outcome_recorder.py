@@ -328,6 +328,62 @@ def test_session_end_never_predates_session_start(outcome_recorder_home):
     assert end['ts'] >= starts[-1]['ts']
 
 
+def test_pileup_pick_grid_backfill_restores_distance(outcome_recorder_home):
+    """Regression (2026-08-06, OH0ERF): targeting a station from its pileup
+    decodes — report messages carry no locator — left the recorder's grid
+    empty, so QSO_LOGGED persisted distance_km: null / target_continent: ""
+    even though the grid was known elsewhere (an earlier CQ decode, WSJT-X's
+    DX Grid field). update_target_grid() backfills the active target."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    make_attempt(rec, call='OH0ERF', grid='')
+    rec.update_target_grid('OH0ERF', 'KP00')
+    rec.record_outcome('QSO_LOGGED', SNAPSHOT)
+
+    ev = [e for e in read_events(outcome_recorder_home)
+          if e['type'] == 'outcome'][0]
+    assert ev['distance_km'] is not None
+    assert 5500 < ev['distance_km'] < 7500   # FN30 (NY) -> KP00 (Åland)
+    assert ev['target_continent'] != ''
+
+
+def test_grid_backfill_requires_matching_call(outcome_recorder_home):
+    """A late grid for some OTHER call (stale lookup finishing after a
+    target change) must not attach to the active target."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    make_attempt(rec, call='OH0ERF', grid='')
+    rec.update_target_grid('DL1ABC', 'JO62')
+    rec.record_outcome('QSO_LOGGED', SNAPSHOT)
+
+    ev = [e for e in read_events(outcome_recorder_home)
+          if e['type'] == 'outcome'][0]
+    assert ev['distance_km'] is None
+    assert ev['target_continent'] == ''
+
+
+def test_grid_backfill_never_overwrites_select_grid(outcome_recorder_home):
+    """A grid captured at selection is authoritative — a conflicting late
+    source (e.g. an approximate DXCC-prefix centroid) must not replace it."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    make_attempt(rec, call='JA1XYZ', grid='PM95')
+    rec.update_target_grid('JA1XYZ', 'KP00')
+    rec.record_outcome('QSO_LOGGED', SNAPSHOT)
+
+    ev = [e for e in read_events(outcome_recorder_home)
+          if e['type'] == 'outcome'][0]
+    assert 9000 < ev['distance_km'] < 12000   # still FN30 -> PM95
+
+
+def test_grid_backfill_empty_and_inactive_are_noops(outcome_recorder_home):
+    """An empty backfill grid changes nothing, and calling with no active
+    target (e.g. right after an outcome recorded) must not raise."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    make_attempt(rec, call='OH0ERF', grid='')
+    rec.update_target_grid('OH0ERF', '')
+    assert rec._current_target_grid == ''
+    rec.record_outcome('CLEARED', SNAPSHOT)
+    rec.update_target_grid('OH0ERF', 'KP00')   # no active target: no-op
+
+
 def test_junk_grid_yields_no_distance():
     """_grid_to_latlon range-checks characters; _haversine_km maps the
     rejection to its -1 sentinel (persisted as distance_km: null)."""
