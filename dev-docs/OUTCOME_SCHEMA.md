@@ -9,6 +9,19 @@ trace entry); the 50 MB rotation cap ≈ 40k events.
 cycle**, not at select — at select the insights panel still displays the
 previous target and `_target_activity_state` was just reset. First
 non-null value wins; later cycles never overwrite.
+**Grid-provenance note (2026-08-06):** `distance_km` / `target_continent`
+derive from a target grid that may be **backfilled after selection** —
+targets picked from pileup decodes (report messages, no locator) start
+gridless, and the recorder now accepts the first grid that surfaces:
+analyzer call→grid map at select, a later gridded decode row, WSJT-X's
+status DX Grid field, the QSO Logged packet, or (last resort, via the
+perspective-refresh lookup cascade) a **DXCC-prefix centroid**. A grid
+captured at selection is never overwritten. No provenance field is
+recorded, so prefix-centroid distances (typically off by a few hundred
+km) are indistinguishable from exact ones — treat `distance_km` as
+band-scale, not precise. Before this fix, such records persisted
+`distance_km: null` / `target_continent: ""` (~20% of the April sample;
+see BACKLOG.md, resolved).
 **Drafted:** 2026-07-01, WU2C + Claude
 **Motivation:** `OUTCOME_ANALYSIS_2026-07.md`. v1 logs the scoring engine's view of each attempt but discards the tactical picture the operator actually saw — competition, rank, behavioral assessment, the tool's own predictions. v2 captures the *inputs to the decision*, plus a compact per-cycle trace enabling survival/hazard analysis.
 
