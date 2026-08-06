@@ -17,11 +17,19 @@ from PyQt6.QtWidgets import QWidget, QApplication, QToolTip
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRectF
 
+from analyzer.geometry import sweep_bias_multiplier, SWEEP_BIAS_MAX_TILT
+
 logger = logging.getLogger(__name__)
 
 class BandMapWidget(QWidget):
     recommendation_changed = pyqtSignal(int)
     status_message = pyqtSignal(str)  # v2.1.0: For copy feedback
+
+    # Sweep bias (v2.8.1): live picking-pattern confidence must clear this
+    # before the tilt applies. The session tracker only classifies a
+    # methodical sweep at |Spearman| > 0.5, so this keeps borderline
+    # patterns from steering recommendations.
+    SWEEP_BIAS_MIN_CONFIDENCE = 0.55
 
     def __init__(self):
         super().__init__()
@@ -71,6 +79,11 @@ class BandMapWidget(QWidget):
         # v2.3.0: Fox/Hound mode — clamp recommendations to 1000+ Hz
         self.hound_mode = False
         self.fox_qso_active = False  # Fox controlling our TX — disable click-to-set
+
+        # Sweep bias from the live picking-pattern tracker: +1 = target
+        # sweeps high-to-low (favor high offsets), -1 = low-to-high, 0 = off.
+        self._sweep_direction = 0
+        self._sweep_confidence = 0.0
         
         # === PERFORMANCE FIX: Cache all paint objects ===
         self._init_paint_cache()
@@ -202,8 +215,24 @@ class BandMapWidget(QWidget):
             return self._pens['score_solid_red'] if has_tier1_data else self._pens['score_dot_red']
 
     def set_target_call(self, call):
-        self.target_call = call.strip().upper()
+        new_call = call.strip().upper()
+        if new_call != self.target_call:
+            # Pattern belongs to the previous target's session
+            self._sweep_direction = 0
+            self._sweep_confidence = 0.0
+        self.target_call = new_call
         self.update()  # PERFORMANCE FIX: was repaint()
+
+    def set_sweep_bias(self, direction: int, confidence: float):
+        """Tilt scoring toward one passband end per the target's observed sweep.
+
+        Args:
+            direction: +1 favor high offsets, -1 favor low, 0 clear the bias
+            confidence: live pattern confidence 0-1; applied only at or above
+                SWEEP_BIAS_MIN_CONFIDENCE
+        """
+        self._sweep_direction = direction
+        self._sweep_confidence = confidence
 
     def set_target_grid(self, grid):
         self.target_grid = (grid or "").strip().upper()
@@ -214,6 +243,8 @@ class BandMapWidget(QWidget):
         self.active_signals = []
         self.perspective_data = {'tier1': [], 'tier2': [], 'tier3': [], 'global': []}
         self.score_map = np.zeros(self.bandwidth, dtype=float)
+        self._sweep_direction = 0
+        self._sweep_confidence = 0.0
         self.update()
 
     def update_signals(self, signals):
@@ -463,6 +494,19 @@ class BandMapWidget(QWidget):
         # Reset score map and reason codes
         self.score_map = np.full(self.bandwidth, 50.0)  # Default: unproven = 50
         self.score_reason = np.zeros(self.bandwidth, dtype=np.int8)  # 0 = unscored
+
+        # Sweep bias: when the live pattern tracker sees the target working
+        # its pileup methodically toward one end of the passband, tilt
+        # scoring gently toward where the sweep starts. A weight, not an
+        # override — see analyzer.geometry.sweep_bias_multiplier.
+        sweep_active = (self._sweep_direction != 0 and
+                        self._sweep_confidence >= self.SWEEP_BIAS_MIN_CONFIDENCE)
+
+        def _sweep_m(freq):
+            if not sweep_active:
+                return 1.0
+            return sweep_bias_multiplier(freq, self._sweep_direction,
+                                         self._sweep_confidence)
         
         # === STEP 1: Build local busy map (things WE hear - avoid our own QRM) ===
         local_busy = np.zeros(self.bandwidth, dtype=bool)
@@ -529,8 +573,11 @@ class BandMapWidget(QWidget):
                 self.score_map[i] = max(self.score_map[i], score)
                 self.score_reason[i] = reason
             
-            proven_candidates.append((bucket, score, count))
-        
+            # Candidate ordering (and the Step 7 hysteresis comparison) uses
+            # the sweep-tilted score; the raw score already went into the
+            # score_map above, which is tilted as a whole after Step 5c.
+            proven_candidates.append((bucket, score * _sweep_m(bucket), count))
+
         # Sort by score
         proven_candidates.sort(key=lambda x: x[1], reverse=True)
         
@@ -668,6 +715,18 @@ class BandMapWidget(QWidget):
                 self.score_map[i] *= dampen
                 self.score_reason[i] = 11  # suspicious_gap
 
+        # 5d: Apply the sweep-bias tilt to the whole map (same curve as
+        # sweep_bias_multiplier, vectorized), then clamp back to the 0-100
+        # scale so display and the persisted rec_score keep their contract.
+        # This is what Step 7b's argmax and the recorded score read.
+        if sweep_active:
+            positions = np.clip(
+                (np.arange(self.bandwidth) - 1500.0) / 1300.0, -1.0, 1.0)
+            sign = 1.0 if self._sweep_direction > 0 else -1.0
+            conf = min(1.0, self._sweep_confidence)
+            self.score_map *= 1.0 + sign * conf * SWEEP_BIAS_MAX_TILT * positions
+            np.clip(self.score_map, 0.0, 100.0, out=self.score_map)
+
         # Save context for tooltip display
         self._scoring_context = {
             'tier1_buckets': tier1_buckets,
@@ -701,7 +760,8 @@ class BandMapWidget(QWidget):
             best_candidate = proven_candidates[0]
             best_freq, best_score, best_count = best_candidate
             
-            # Calculate current score for comparison
+            # Calculate current score for comparison (sweep-tilted, matching
+            # the candidate scores so the hysteresis compares like-for-like)
             if current_is_proven and current_locally_clear:
                 if 1 <= current_count <= 3:
                     current_score = 100 - (current_count - 1) * 5
@@ -709,6 +769,7 @@ class BandMapWidget(QWidget):
                     current_score = max(30, 70 - (current_count - 4) * 10)
             else:
                 current_score = 50 if current_locally_clear else 0  # Unproven or blocked
+            current_score *= _sweep_m(current_idx)
             
             # Hysteresis: only move if significantly better
             should_move = False
@@ -811,7 +872,10 @@ class BandMapWidget(QWidget):
         if not gaps:
             return
         
-        gaps.sort(key=lambda x: x[1] - x[0], reverse=True)
+        # Widest gap wins; the sweep tilt (±8% max) breaks near-ties toward
+        # the end of the passband the target sweeps first.
+        gaps.sort(key=lambda x: (x[1] - x[0]) * _sweep_m((x[0] + x[1]) // 2),
+                  reverse=True)
         best_gap = gaps[0]
         best_gap_width = best_gap[1] - best_gap[0]
         best_center = (best_gap[0] + best_gap[1]) // 2

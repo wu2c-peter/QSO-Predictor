@@ -25,6 +25,19 @@ class PickingStyle(Enum):
     GEOGRAPHIC = "geographic"
     RANDOM = "random"
 
+    def sweep_direction(self) -> int:
+        """Passband end this style favors for calling: +1 high, -1 low, 0 none.
+
+        A high-to-low sweeper reaches high offsets early in its pass, so
+        callers positioned high get picked sooner (and vice versa). Feeds
+        the band map's sweep-bias tilt (analyzer.geometry.sweep_bias_multiplier).
+        """
+        if self is PickingStyle.METHODICAL_HIGH_LOW:
+            return 1
+        if self is PickingStyle.METHODICAL_LOW_HIGH:
+            return -1
+        return 0
+
 
 class PathStatus(Enum):
     """Your signal path status to a target.

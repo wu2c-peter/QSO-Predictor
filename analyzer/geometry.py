@@ -96,3 +96,43 @@ def is_callsign(s: str) -> bool:
         return False
     s = s.strip('<>')
     return any(c.isdigit() for c in s) and all(c.isalnum() or c == '/' for c in s)
+
+
+# Maximum score tilt at a passband edge at full pattern confidence (±8%).
+# Chosen so the tilt can flip near-ties (two 82-point quiet slots) but never
+# a proven-ideal 100 against a regional-quiet 82 across the full band.
+SWEEP_BIAS_MAX_TILT = 0.08
+
+
+def sweep_bias_multiplier(freq_hz: float, direction: int, confidence: float,
+                          max_tilt: float = SWEEP_BIAS_MAX_TILT,
+                          center: float = 1500.0,
+                          half_span: float = 1300.0) -> float:
+    """Gentle score tilt toward one end of the passband.
+
+    When the session tracker sees a target sweeping its pileup methodically
+    (METHODICAL_HIGH_LOW / METHODICAL_LOW_HIGH), the best place to call is
+    early in the sweep — but the band-map recommender scores frequencies
+    only on clarity and propagation evidence. This multiplier lets that
+    behavioral read break near-ties without overriding strong evidence:
+    at full confidence the favored band edge gains at most `max_tilt`
+    (+8%) and the far edge loses the same, so a proven-ideal slot (100)
+    at the wrong end still outranks a regionally-quiet slot (82) at the
+    favored end.
+
+    Args:
+        freq_hz: audio offset being scored (positions clamp to the
+            200–2800 usable span implied by center ± half_span)
+        direction: +1 favors high offsets (high-to-low sweeper),
+            -1 favors low, 0 disables (returns 1.0); only the sign is used
+        confidence: pattern confidence 0–1 (clamped); scales the tilt
+
+    Returns:
+        Multiplier in [1 - max_tilt, 1 + max_tilt].
+    """
+    if direction == 0 or confidence <= 0:
+        return 1.0
+    sign = 1 if direction > 0 else -1
+    conf = min(1.0, confidence)
+    pos = max(-1.0, min(1.0, (freq_hz - center) / half_span))
+    return 1.0 + sign * conf * max_tilt * pos

@@ -142,6 +142,10 @@ class LocalIntelligence(QObject):
             True if setup successful
         """
         try:
+            # Keep a back-reference for UI wiring (band map sweep bias,
+            # dialog parenting). Matches the controllers' main_window pattern.
+            self._main_window = main_window
+
             # Load ML models
             self.model_manager.load_models()
             
@@ -565,6 +569,19 @@ class LocalIntelligence(QObject):
         """Handle picking pattern detection."""
         logger.info(f"Pattern detected: {pattern.style.value} "
                    f"(confidence: {pattern.confidence:.0%})")
+
+        # Feed the band map's frequency recommender: a methodical sweep
+        # (high-to-low / low-to-high) tilts scoring toward the end of the
+        # passband the target reaches first. Non-directional patterns
+        # (loudest-first, random) clear any previous tilt — direction 0.
+        band_map = getattr(getattr(self, '_main_window', None), 'band_map', None)
+        if band_map is not None and hasattr(band_map, 'set_sweep_bias'):
+            direction = pattern.style.sweep_direction()
+            band_map.set_sweep_bias(direction, pattern.confidence)
+            if direction:
+                logger.info(f"Sweep bias → band map: direction="
+                           f"{'high' if direction > 0 else 'low'}, "
+                           f"confidence {pattern.confidence:.0%}")
     
     def _on_training_finished(self, success: bool, message: str):
         """Handle training completion."""
