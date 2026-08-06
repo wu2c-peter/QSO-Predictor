@@ -26,6 +26,9 @@ twitter:
 
 theme: minima
 
+# Blog posts live in _posts/; clean URLs under /blog/ to match the index page.
+permalink: /blog/:title/
+
 minima:
   skin: auto
   social_links:
@@ -36,6 +39,7 @@ minima:
 header_pages:
   - USER_GUIDE.md
   - integrations/index.md
+  - blog/index.md
   - about.md
   - privacy.md
   - support.md

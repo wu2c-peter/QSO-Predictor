@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 660" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" role="img" aria-label="Timeline of the OH0ERF QSO: pileup callers per 30 minutes, then WU2C's transmit-frequency hops ending in a QSO at 2508 Hz">
+<style>
+  svg { --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+        --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+        --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; }
+  @media (prefers-color-scheme: dark) {
+    svg { --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+          --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+          --s1:#3987e5; --s2:#d95926; --s3:#199e70; }
+  }
+  text { fill: var(--ink2); font-size: 11px; }
+  .ttl { fill: var(--ink); font-size: 17px; font-weight: 600; }
+  .sub { fill: var(--ink2); font-size: 12px; }
+  .panel { fill: var(--ink); font-size: 12.5px; font-weight: 600; }
+  .tick { fill: var(--muted); font-size: 10.5px; }
+  .anno { fill: var(--ink2); font-size: 11.5px; }
+  .annob { fill: var(--ink); font-size: 11.5px; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; }
+</style>
+<rect x="0.5" y="0.5" width="879" height="659" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+<text x="28" y="34" class="ttl">One night on 20 m: working OH0ERF from FN42</text>
+<text x="28" y="54" class="sub">&#197;land Islands DXpedition, FT8 &#183; Aug 5&#8211;6, 2026 &#183; reconstructed from ALL.TXT + QSO Predictor's outcome log</text>
+<text x="28" y="86" class="panel">Stations heard calling OH0ERF <tspan class="sub" font-weight="400">(decodes per 30 min at WU2C)</tspan></text>
+<line x1="56" y1="180.0" x2="856" y2="180.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="48" y="183.5" text-anchor="end" class="tick num">100</text>
+<line x1="56" y1="124.0" x2="856" y2="124.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="48" y="127.5" text-anchor="end" class="tick num">200</text>
+<line x1="56" y1="236" x2="856" y2="236" stroke="var(--axis)" stroke-width="1"/>
+<path d="M106.5 236 V208.1 Q106.5 204.1 110.5 204.1 H124.5 Q128.5 204.1 128.5 208.1 V236 Z" fill="var(--s1)"/>
+<path d="M147.6 236 V226.6 Q147.6 222.6 151.6 222.6 H165.6 Q169.6 222.6 169.6 226.6 V236 Z" fill="var(--s1)"/>
+<path d="M188.6 236 V227.7 Q188.6 223.7 192.6 223.7 H206.6 Q210.6 223.7 210.6 227.7 V236 Z" fill="var(--s1)"/>
+<path d="M229.6 236 V199.7 Q229.6 195.7 233.6 195.7 H247.6 Q251.6 195.7 251.6 199.7 V236 Z" fill="var(--s1)"/>
+<path d="M270.6 236 V236.0 Q270.6 235.4 271.2 235.4 H292.1 Q292.6 235.4 292.6 236.0 V236 Z" fill="var(--s1)"/>
+<path d="M393.7 236 V236.0 Q393.7 235.4 394.3 235.4 H415.2 Q415.7 235.4 415.7 236.0 V236 Z" fill="var(--s1)"/>
+<path d="M434.7 236 V177.8 Q434.7 173.8 438.7 173.8 H452.7 Q456.7 173.8 456.7 177.8 V236 Z" fill="var(--s1)"/>
+<path d="M557.8 236 V233.3 Q557.8 229.3 561.8 229.3 H575.8 Q579.8 229.3 579.8 233.3 V236 Z" fill="var(--s1)"/>
+<path d="M598.8 236 V106.7 Q598.8 102.7 602.8 102.7 H616.8 Q620.8 102.7 620.8 106.7 V236 Z" fill="var(--s1)"/>
+<path d="M639.9 236 V124.1 Q639.9 120.1 643.9 120.1 H657.9 Q661.9 120.1 661.9 124.1 V236 Z" fill="var(--s1)"/>
+<path d="M680.9 236 V193.0 Q680.9 189.0 684.9 189.0 H698.9 Q702.9 189.0 702.9 193.0 V236 Z" fill="var(--s1)"/>
+<path d="M721.9 236 V135.3 Q721.9 131.3 725.9 131.3 H739.9 Q743.9 131.3 743.9 135.3 V236 Z" fill="var(--s1)"/>
+<path d="M762.9 236 V200.8 Q762.9 196.8 766.9 196.8 H780.9 Q784.9 196.8 784.9 200.8 V236 Z" fill="var(--s1)"/>
+<path d="M804.0 236 V187.9 Q804.0 183.9 808.0 183.9 H822.0 Q826.0 183.9 826.0 187.9 V236 Z" fill="var(--s1)"/>
+<path d="M845.0 236 V224.9 Q845.0 220.9 849.0 220.9 H863.0 Q867.0 220.9 867.0 224.9 V236 Z" fill="var(--s1)"/>
+<line x1="56.0" y1="236" x2="56.0" y2="240" stroke="var(--axis)"/>
+<text x="56.0" y="253" text-anchor="middle" class="tick num">15:00</text>
+<line x1="138.1" y1="236" x2="138.1" y2="240" stroke="var(--axis)"/>
+<text x="138.1" y="253" text-anchor="middle" class="tick num">16:00</text>
+<line x1="220.1" y1="236" x2="220.1" y2="240" stroke="var(--axis)"/>
+<text x="220.1" y="253" text-anchor="middle" class="tick num">17:00</text>
+<line x1="302.2" y1="236" x2="302.2" y2="240" stroke="var(--axis)"/>
+<text x="302.2" y="253" text-anchor="middle" class="tick num">18:00</text>
+<line x1="384.2" y1="236" x2="384.2" y2="240" stroke="var(--axis)"/>
+<text x="384.2" y="253" text-anchor="middle" class="tick num">19:00</text>
+<line x1="466.3" y1="236" x2="466.3" y2="240" stroke="var(--axis)"/>
+<text x="466.3" y="253" text-anchor="middle" class="tick num">20:00</text>
+<line x1="548.3" y1="236" x2="548.3" y2="240" stroke="var(--axis)"/>
+<text x="548.3" y="253" text-anchor="middle" class="tick num">21:00</text>
+<line x1="630.4" y1="236" x2="630.4" y2="240" stroke="var(--axis)"/>
+<text x="630.4" y="253" text-anchor="middle" class="tick num">22:00</text>
+<line x1="712.4" y1="236" x2="712.4" y2="240" stroke="var(--axis)"/>
+<text x="712.4" y="253" text-anchor="middle" class="tick num">23:00</text>
+<line x1="794.5" y1="236" x2="794.5" y2="240" stroke="var(--axis)"/>
+<text x="794.5" y="253" text-anchor="middle" class="tick num">00:00</text>
+<text x="856" y="267" text-anchor="end" class="tick">UTC</text>
+<path d="M114.1 124 V118 H578.5 V124" fill="none" stroke="var(--muted)" stroke-width="1"/>
+<text x="349.3" y="110" text-anchor="middle" class="anno">the hidden pileup &#8212; 5 h 44 m of callers, not one decode of the DX</text>
+<line x1="584.5" y1="130" x2="584.5" y2="236" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="576.5" y="140" text-anchor="end" class="annob" fill="var(--s2)">21:26 &#8212; &#8220;CQ OH0ERF KP00&#8221;</text>
+<text x="576.5" y="155" text-anchor="end" class="anno">first decode, &#8722;13 dB</text>
+<text x="322.7" y="224.0" text-anchor="middle" class="anno" fill="var(--muted)">band fades&#8230;</text>
+<text x="486.8" y="224.0" text-anchor="middle" class="anno" fill="var(--muted)">&#8230;and returns</text>
+<rect x="746.6" y="130" width="88.9" height="106" fill="var(--s3)" opacity="0.10"/>
+<line x1="746.6" y1="258" x2="56" y2="304" stroke="var(--grid)" stroke-width="1"/>
+<line x1="835.5" y1="258" x2="856" y2="304" stroke="var(--grid)" stroke-width="1"/>
+<text x="28" y="296" class="panel">The endgame, 23:25&#8211;00:30 <tspan class="sub" font-weight="400">(audio offset in OH0ERF's 3 kHz passband)</tspan></text>
+<line x1="56" y1="503.3" x2="856" y2="503.3" stroke="var(--grid)" stroke-width="1"/>
+<text x="48" y="506.8" text-anchor="end" class="tick num">1000</text>
+<line x1="56" y1="416.7" x2="856" y2="416.7" stroke="var(--grid)" stroke-width="1"/>
+<text x="48" y="420.2" text-anchor="end" class="tick num">2000</text>
+<line x1="56" y1="330.0" x2="856" y2="330.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="48" y="333.5" text-anchor="end" class="tick num">3000</text>
+<text x="48" y="593.5" text-anchor="end" class="tick num">0 Hz</text>
+<line x1="56" y1="590" x2="856" y2="590" stroke="var(--axis)" stroke-width="1"/>
+<line x1="56.0" y1="590" x2="56.0" y2="594" stroke="var(--axis)"/>
+<text x="56.0" y="607" text-anchor="middle" class="tick num">23:25</text>
+<line x1="179.1" y1="590" x2="179.1" y2="594" stroke="var(--axis)"/>
+<text x="179.1" y="607" text-anchor="middle" class="tick num">23:35</text>
+<line x1="302.2" y1="590" x2="302.2" y2="594" stroke="var(--axis)"/>
+<text x="302.2" y="607" text-anchor="middle" class="tick num">23:45</text>
+<line x1="425.2" y1="590" x2="425.2" y2="594" stroke="var(--axis)"/>
+<text x="425.2" y="607" text-anchor="middle" class="tick num">23:55</text>
+<line x1="548.3" y1="590" x2="548.3" y2="594" stroke="var(--axis)"/>
+<text x="548.3" y="607" text-anchor="middle" class="tick num">00:05</text>
+<line x1="671.4" y1="590" x2="671.4" y2="594" stroke="var(--axis)"/>
+<text x="671.4" y="607" text-anchor="middle" class="tick num">00:15</text>
+<line x1="794.5" y1="590" x2="794.5" y2="594" stroke="var(--axis)"/>
+<text x="794.5" y="607" text-anchor="middle" class="tick num">00:25</text>
+<text x="856" y="621" text-anchor="end" class="tick">UTC</text>
+<line x1="56" y1="511.6" x2="856" y2="511.6" stroke="var(--s2)" stroke-width="2.5" stroke-linecap="round"/>
+<text x="60" y="529.6" class="annob" fill="var(--s2)">OH0ERF &#8212; parked at 905 Hz, one QSO every ~80 s</text>
+<line x1="671.4" y1="495.8" x2="785.2" y2="495.8" stroke="var(--s3)" stroke-width="1.5" stroke-dasharray="2 3"/>
+<text x="785.2" y="487.8" text-anchor="end" class="anno">freq recommender: 1087 Hz (scored 100)</text>
+<line x1="151.4" y1="562.1" x2="157.5" y2="562.1" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
+<line x1="151.4" y1="562.1" x2="157.5" y2="562.1" stroke="var(--s3)" stroke-width="7" stroke-linecap="round"/>
+<line x1="163.7" y1="378.0" x2="188.3" y2="378.0" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
+<line x1="163.7" y1="378.0" x2="188.3" y2="378.0" stroke="var(--s3)" stroke-width="7" stroke-linecap="round"/>
+<line x1="194.5" y1="442.7" x2="206.8" y2="442.7" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
+<line x1="194.5" y1="442.7" x2="206.8" y2="442.7" stroke="var(--s3)" stroke-width="7" stroke-linecap="round"/>
+<line x1="212.9" y1="420.6" x2="243.7" y2="420.6" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
+<line x1="212.9" y1="420.6" x2="243.7" y2="420.6" stroke="var(--s3)" stroke-width="7" stroke-linecap="round"/>
+<line x1="249.8" y1="446.1" x2="317.5" y2="446.1" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
+<line x1="249.8" y1="446.1" x2="317.5" y2="446.1" stroke="var(--s3)" stroke-width="7" stroke-linecap="round"/>
+<line x1="657.4" y1="409.5" x2="663.4" y2="409.5" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
+<line x1="657.4" y1="409.5" x2="663.4" y2="409.5" stroke="var(--s3)" stroke-width="7" stroke-linecap="round"/>
+<line x1="699.1" y1="403.9" x2="736.0" y2="403.9" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
+<line x1="699.1" y1="403.9" x2="736.0" y2="403.9" stroke="var(--s3)" stroke-width="7" stroke-linecap="round"/>
+<line x1="742.2" y1="372.6" x2="772.9" y2="372.6" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
+<line x1="742.2" y1="372.6" x2="772.9" y2="372.6" stroke="var(--s3)" stroke-width="7" stroke-linecap="round"/>
+<text x="228.3" y="390.6" text-anchor="middle" class="annob" fill="var(--s3)">WU2C &#8212; 43 unanswered calls</text>
+<text x="228.3" y="405.6" text-anchor="middle" class="anno">hunting: 322 &#8594; 2446 &#8594; 1700 &#8594; 1955 &#8594; 1660 Hz</text>
+<text x="462.2" y="455.7" text-anchor="middle" class="anno" fill="var(--muted)">&#8212; regrouping &#8212;</text>
+<text x="708.3" y="338.7" text-anchor="middle" class="annob">Insights panel: &#8220;High &#8594; Low &#8212;</text>
+<text x="708.3" y="353.7" text-anchor="middle" class="annob">position at higher frequencies&#8221;</text>
+<circle cx="776.0" cy="372.6" r="9" fill="none" stroke="var(--s2)" stroke-width="2"/>
+<circle cx="776.0" cy="372.6" r="4" fill="var(--s2)"/>
+<text x="856" y="394.6" text-anchor="end" class="annob" fill="var(--s2)">00:23 &#8212; &#8220;WU2C OH0ERF +00&#8221; <tspan class="anno" font-weight="400">&#183; RR73 &#183; logged 00:24</tspan></text>
+<text x="28" y="644" class="tick">Source: WSJT-X ALL.TXT and QSO Predictor outcome_history.jsonl &#183; 14.074 MHz &#183; SFI 108, K 0&#8211;1 &#183; 6,106 km at 37&#176;</text>
+</svg>
