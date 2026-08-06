@@ -100,6 +100,39 @@ declines to guess).
 
 ---
 
+### Log-hygiene doctor: flag oversized ALL.TXT, recommend monthly rotation
+
+WSJT-X never rotates ALL.TXT (JTDX splits monthly out of the box). Found
+live 2026-08-05: a 1.13 GB / 17.8M-line ALL.TXT. QSOP pays for this
+directly — `parse_file()` regex-parses every line before date filters
+apply, and the behavior-lookup skip optimization
+(`behavior_predictor.py` — skip files whose last decode predates the
+14-day cutoff) can never skip a monolithic file that always spans to
+now. Historic scar: "UI freeze when clicking stations with large
+ALL.TXT files".
+
+**Proposed doctor** (Doctors framework, `diagnostics/`): pure-stdlib
+check that flags ALL.TXT above a threshold (~100 MB) and recommends
+splitting into dated archives; the probe layer already knows whether
+WSJT-X/JTDX are running, so it can gate "safe to rotate now" advice.
+Rotation guidance, learned from doing it by hand on the shack PC:
+
+- **Never rewrite the live file while a logger runs**; only when closed.
+- **Truncate in place (`r+b` + `truncate(0)`), don't delete** — users may
+  hard/soft-link ALL.TXT between the WSJT-X and JTDX dirs so either app
+  appends to one shared file (WU2C's setup); delete-and-recreate severs
+  the link silently.
+- **Archive naming**: `YYYYMMW_ALL.TXT` ("W" for WSJT-X) passes
+  discovery's dated-file rule (6 leading digits + `_ALL.TXT`) without
+  colliding with JTDX's own `YYYYMM_ALL.TXT`; per-line format detection
+  makes the content parse regardless of filename. Dated archives become
+  skippable by the 14-day cutoff — the whole point.
+- Verify byte+line totals of the split against the source before
+  truncating anything.
+- Consider `st_ino`/`st_dev` dedup in `log_discovery.py` while here:
+  `resolve()` catches symlinked duplicates but not hardlinked ones
+  (a hardlinked pair would be parsed twice).
+
 ## Features (from project context, tracked here for consolidation)
 
 These are documented in the main project context as active backlog — listed here so BACKLOG.md is a single reference:
