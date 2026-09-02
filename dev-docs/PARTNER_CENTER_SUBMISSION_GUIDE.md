@@ -28,6 +28,30 @@ first — exact copy recorded below.
 Supersedes v2.6.0's never-submitted Store cycle (Store users go
 2.5.x -> 2.7.1 directly).
 
+**v2.8.1 submission:** 2026-09-02, package QSOPredictor_2.8.1.0_x64.msix
+(104.03 MB, built on the shack PC from `main` @ 3a753d6; manifest
+2.8.1.0). Bug-fix release — submitted despite the checklist's
+"batch bug fixes" rule because it makes the sweep-aware recommender
+work in packaged builds for the first time. Listing changes: new
+what's-new text only (below); description, bullets, screenshots,
+runFullTrust justification reused unchanged from 2.8.0. Certification
+result: pending at time of writing — update this line when it lands.
+
+What's-new text submitted:
+
+> v2.8.1 — the audit release. A systematic code review fixed forty
+> defects, each now covered by a regression test. What you'll notice:
+> sweep-aware frequency recommendations now work in the packaged app
+> (when a station works its pileup high-to-low or low-to-high, the
+> recommendation follows); the green line is no longer stuck at the
+> bottom of the passband when the target has no direct spots; PSK
+> Reporter and solar-data outages are reported honestly instead of
+> showing stale or zero values; "Not Transmitting" only appears when
+> you really are off the air; FT4 is handled as FT4; right-click "Set
+> as Target" and the Insights manual-target entry work again; Settings
+> → Appearance takes effect; behavior bootstrap no longer freezes the
+> window. No changes to how you operate the app.
+
 **Values submitted:**
 - Product name: QSO Predictor
 - Package: QSOPredictor_2.5.4.0_x64.msix (102.53 MB)
