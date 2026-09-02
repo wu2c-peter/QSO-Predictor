@@ -78,15 +78,60 @@ Analysis of real outcome history shows ~9% of records have `elapsed_s > 1 hour`,
 
 **Recommendation:** Option 3 preserves the raw data while making filtering trivial. Decision needed before Phase 2 dashboard work starts.
 
-### ~20% of outcome records have blank `target_continent` and `distance_km=null`
+### ~~20% of outcome records have blank `target_continent` and `distance_km=null`~~ — RESOLVED 2026-08-06
 
-Affects roughly 13 of 65 records in the April sample. Likely manual-entry targets where the grid lookup cascade (receiver cache → call_grid_map → decode table → DXCC prefix) returned no result, or a bug in the continent resolver.
+Affected roughly 13 of 65 records in the April sample. The original guess
+(manual-entry targets) was wrong — root-caused live via the 2026-08-06
+OH0ERF records: **targets picked from pileup decodes**. Report messages
+("OH0ERF WU2C -12") carry no locator, so `set_target()` received an empty
+grid, and `OutcomeRecorder` froze it at `on_target_selected()` — every
+later grid-resolution path updated only `MainWindow.current_target_grid`,
+never the recorder's copy. Ironically these are the rare-DX attempts where
+distance stratification matters most.
 
-**Why it matters:** Phase 2 stratification by continent/distance won't work for a fifth of records.
-
-**Investigation needed before fix:** Reproduce with a manual-entry callsign and trace where the resolver returns empty. May be a legitimate "no grid available" case that should be handled gracefully rather than a bug.
+**Fixed** on `main` (`fix(outcomes): backfill target grid so pileup-picked
+DX keeps distance_km`): select-time fallback to the analyzer's call→grid
+map, plus a fill-only-if-empty `OutcomeRecorder.update_target_grid()`
+backfill wired from the perspective-refresh grid resolutions, the status
+DX Grid field, and the QSO Logged packet. See the grid-provenance note in
+`OUTCOME_SCHEMA.md`. Residual nulls are now genuine "no grid available
+anywhere" cases (e.g. US calls, where the prefix heuristic deliberately
+declines to guess).
 
 ---
+
+### Log-hygiene doctor: flag oversized ALL.TXT, recommend monthly rotation
+
+WSJT-X never rotates ALL.TXT (JTDX splits monthly out of the box). Found
+live 2026-08-05: a 1.13 GB / 17.8M-line ALL.TXT. QSOP pays for this
+directly — `parse_file()` regex-parses every line before date filters
+apply, and the behavior-lookup skip optimization
+(`behavior_predictor.py` — skip files whose last decode predates the
+14-day cutoff) can never skip a monolithic file that always spans to
+now. Historic scar: "UI freeze when clicking stations with large
+ALL.TXT files".
+
+**Proposed doctor** (Doctors framework, `diagnostics/`): pure-stdlib
+check that flags ALL.TXT above a threshold (~100 MB) and recommends
+splitting into dated archives; the probe layer already knows whether
+WSJT-X/JTDX are running, so it can gate "safe to rotate now" advice.
+Rotation guidance, learned from doing it by hand on the shack PC:
+
+- **Never rewrite the live file while a logger runs**; only when closed.
+- **Truncate in place (`r+b` + `truncate(0)`), don't delete** — users may
+  hard/soft-link ALL.TXT between the WSJT-X and JTDX dirs so either app
+  appends to one shared file (WU2C's setup); delete-and-recreate severs
+  the link silently.
+- **Archive naming**: `YYYYMMW_ALL.TXT` ("W" for WSJT-X) passes
+  discovery's dated-file rule (6 leading digits + `_ALL.TXT`) without
+  colliding with JTDX's own `YYYYMM_ALL.TXT`; per-line format detection
+  makes the content parse regardless of filename. Dated archives become
+  skippable by the 14-day cutoff — the whole point.
+- Verify byte+line totals of the split against the source before
+  truncating anything.
+- Consider `st_ino`/`st_dev` dedup in `log_discovery.py` while here:
+  `resolve()` catches symlinked duplicates but not hardlinked ones
+  (a hardlinked pair would be parsed twice).
 
 ## Features (from project context, tracked here for consolidation)
 

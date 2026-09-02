@@ -1271,6 +1271,12 @@ class MainWindow(QMainWindow):
         # OUTCOME RECORDER: Record QSO_LOGGED BEFORE auto-clear resets state.
         # This must fire first so the snapshot captures scoring context.
         if logged_call and logged_call == current_upper:
+            # The Type 5 packet carries the grid WSJT-X itself logged —
+            # last-chance backfill for targets whose locator never surfaced
+            # in a decode (picked from pileup report messages).
+            if self.outcome_recorder:
+                self.outcome_recorder.update_target_grid(
+                    logged_call, data.get('dx_grid', ''))
             self._record_outcome_for_current_target('QSO_LOGGED')
         
         # Check if auto-clear is enabled
@@ -1484,7 +1490,22 @@ class MainWindow(QMainWindow):
                 self.target.set_target(dx_call, grid=dx_grid)
             # Note: If JTDX clears dx_call, we don't clear our target
             # (user may have manually selected something in the table)
-        
+
+        # Late grid backfill from the status DX Grid field: a target picked
+        # from pileup decodes (report messages, no locator) starts gridless,
+        # but WSJT-X's DX Grid box usually knows it. Cheap guard — two string
+        # compares on the (rare) gridless-target case, nothing otherwise.
+        if (dx_call and dx_call == self.current_target_call
+                and not self.current_target_grid):
+            dx_grid = status.get('dx_grid', '')
+            if dx_grid:
+                self.current_target_grid = dx_grid
+                self.analyzer.current_target_grid = dx_grid
+                self.band_map.set_target_grid(dx_grid)
+                if self.outcome_recorder:
+                    self.outcome_recorder.update_target_grid(dx_call, dx_grid)
+                logger.info(f"Target grid backfilled from status DX Grid: {dx_grid}")
+
         # --- OUTCOME RECORDER: Track TX cycle edges (before throttle) ---
         # Must run on every status update for reliable rising-edge detection.
         # Single boolean comparison — zero cost. The context lambda is only
@@ -1623,6 +1644,9 @@ class MainWindow(QMainWindow):
                     if not self.current_target_grid and row.get('grid'):
                         self.current_target_grid = row['grid']
                         self.analyzer.current_target_grid = row['grid']
+                        if self.outcome_recorder:
+                            self.outcome_recorder.update_target_grid(
+                                self.current_target_call, row['grid'])
                         logger.debug(f"Backfilled target grid: {row['grid']}")
                     
                     self.analyzer.analyze_decode(row, use_perspective=True)
@@ -1681,6 +1705,9 @@ class MainWindow(QMainWindow):
                     self.current_target_grid = grid
                     self.analyzer.current_target_grid = grid
                     self.band_map.set_target_grid(grid)
+                    if self.outcome_recorder:
+                        self.outcome_recorder.update_target_grid(
+                            self.current_target_call, grid)
                     logger.info(f"Manual target grid resolved: {self.current_target_call} → {grid} via {source}")
             
             # v2.4.0: Re-attempt IONIS prediction if not yet shown

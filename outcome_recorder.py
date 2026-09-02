@@ -296,6 +296,29 @@ class OutcomeRecorder:
         self._trace = []
         self._competition_max = self._at_select.get('competition_at_select') or 0
 
+    def update_target_grid(self, call: str, grid: str):
+        """Backfill the active target's grid after selection.
+
+        Targets picked from pileup decodes start with no grid — FT8 report
+        messages carry a signal report where a CQ carries the locator. The
+        grid usually IS known somewhere (an earlier CQ decode in the
+        analyzer's call→grid map, WSJT-X's DX Grid field, the QSO Logged
+        packet), just not at select time. Callers feed those sources here
+        so distance_km / target_continent survive in the outcome record.
+
+        Fill-only-if-empty: a grid captured at selection is authoritative,
+        and a backfill for a call other than the active target (a stale
+        lookup finishing after a target change) is ignored.
+        """
+        if not self._current_target or self._current_target_grid:
+            return
+        if not call or call.upper() != self._current_target:
+            return
+        if grid:
+            self._current_target_grid = grid.upper()
+            logger.debug(f"OutcomeRecorder: grid backfilled for "
+                         f"{self._current_target}: {self._current_target_grid}")
+
     def on_status_update(self, transmitting: bool, cycle_context_fn=None):
         """Called on each UDP status update — detects TX cycle edges.
 
