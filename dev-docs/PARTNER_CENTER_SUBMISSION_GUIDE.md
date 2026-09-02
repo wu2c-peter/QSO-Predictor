@@ -34,8 +34,8 @@ Supersedes v2.6.0's never-submitted Store cycle (Store users go
 "batch bug fixes" rule because it makes the sweep-aware recommender
 work in packaged builds for the first time. Listing changes: new
 what's-new text only (below); description, bullets, screenshots,
-runFullTrust justification reused unchanged from 2.8.0. Certification
-result: pending at time of writing — update this line when it lands.
+runFullTrust justification reused unchanged from 2.8.0.
+Certification PASSED and published to the Store same day (2026-09-02).
 
 What's-new text submitted:
 
