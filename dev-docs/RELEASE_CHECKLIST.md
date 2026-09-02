@@ -20,6 +20,9 @@ release-time doc and metadata touches, including the easy-to-miss ones.
 ## Code + metadata
 
 - [ ] Update `VERSION` (e.g. `2.5.5.1` → `2.5.6`).
+- [ ] Update the **README.md shields.io version badge** (line 3,
+      `badge/version-X.Y.Z-blue`). It's not in the "What's New" section, so
+      it went stale for a whole release once (2.7.1 shown on 2.8.0).
 - [ ] Update `packaging/AppxManifest.xml` `Version="X.Y.Z.0"` to match — even
       when not submitting to the Store this cycle. Keeps the build
       self-consistent for whenever the next Store submission happens.
@@ -94,4 +97,4 @@ For releases that *do* warrant a Store push:
 
 ---
 
-*Last reviewed: July 2026 (v2.5.8 release prep)*
+*Last reviewed: September 2026 (v2.8.1 release prep)*

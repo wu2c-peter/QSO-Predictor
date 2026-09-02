@@ -12,7 +12,7 @@ description: >-
 
 # QSO Predictor User Guide
 
-**Current as of Version 2.8.0**  
+**Current as of Version 2.8.1**  
 **By Peter Hirst (WU2C)**
 
 > 📋 **See [README](https://github.com/wu2c-peter/qso-predictor/blob/main/README.md) for What's New, Version History, and Installation**

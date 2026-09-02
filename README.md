@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.8.0-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.8.1-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9MWCW2FTB866)
@@ -46,31 +46,26 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.8.0
+## 🆕 What's New in v2.8.1
 
-### Click-to-call — double-click a station, WSJT-X is ready
+**The audit release.** A systematic code audit of 2.8.0 found a family of defects with a common shape — a subsystem failed quietly and kept showing confident output — and fixed forty of them, each with a regression test (the suite grew from 688 to 798 tests). Nothing changes in how you operate the app; a few things will look different:
 
-QSO Predictor tells you who to call; now one double-click acts on it. Double-click a callsign in the decode table or on the target dashboard and it's set up in WSJT-X over UDP — no window switching, no helper scripts, all platforms. A station that CQ'd in the last ~45 seconds gets a **native reply** (WSJT-X behaves exactly as if you double-clicked its own Band Activity line, honoring your auto-TX-enable setting); anyone else lands in the **DX Call box with messages generated**, ready for you to press Enable TX — and that works for *any* callsign, not just CQers. QSO Predictor never transmits on its own. (JTDX: CQ replies work; for others the callsign is copied to the clipboard with a note — JTDX predates the protocol message involved.)
+- **Sweep-aware recommendations now work in the packaged builds.** When the Insights panel sees a target working its pileup high-to-low (or low-to-high), the band map's green line tilts toward the end of the passband the target reaches first. The correlation behind it needed scipy, which the exe/DMG never carried, so packaged users always got "Random".
+- **The green line is no longer pinned to 300 Hz** when the target has no tier-1 spots — a tie-break now picks the middle of the widest quiet stretch (the real mechanism behind the OH0ERF 1087 Hz pick).
+- **Warnings you were never getting**: a PSK Reporter outage, a broker that never connected, or an FT8web listener that can't bind its port now reach the status bar. The solar header shows the last good reading with its age, or "unavailable", instead of "SFI 0 (Poor)".
+- **"Not Transmitting" only when you aren't** — the first minutes after a band change no longer mislabel every row while you're calling.
+- **Two dead controls work again**: right-click → "Set as Target" in the decode table, and the Insights panel's "+" manual-target entry. **Settings → Appearance** now does something (decode-table font, Prob colours).
+- **FT4 is handled as FT4** (PSK Reporter topic, 7.5 s cycle clock). **Clear Target really clears.** **Behavior bootstrap runs in the background** instead of freezing the window.
 
-### Bulletproof UDP, battle-tested
-
-A week of live multi-app migration on the author's station surfaced — and fixed — a family of real-world UDP failures:
-
-- **Multicast reception now joins every interface** — a VPN adapter (even a disconnected one) could previously capture the join and leave QSOP deaf while GridTracker and JTAlert received fine
-- **New "Shared unicast ports" check** in the Network Doctor — Windows silently delivers a shared port to only one app; the Full Checkup now names which app wins and which starves
-- **Cross-machine forwarding** — the forward list accepts `host:port`, so QSOP can feed an app on another PC (multicast doesn't cross Wi-Fi reliably; unicast chains do)
-- **Callsign/grid changes apply live** — no more restart after editing your station identity
-- Corrected in-app guidance: a multicast example address WSJT-X rejects, and port-conflict advice that pointed at the logged-QSOs-only "secondary UDP server"
-
-### Integration guides
-
-New on qsop.wu2c.net: [Run WSJT-X with GridTracker, JTAlert, and your logger at the same time](https://qsop.wu2c.net/integrations/wsjtx-udp-multicast/) and [QSO Predictor + GridTracker](https://qsop.wu2c.net/integrations/gridtracker/) — exact settings verified against the live apps, and a troubleshooting table built from failures that actually happened.
-
-Also: the automatic silent-TX warning (Windows) now requires **two consecutive** silent probes before it appears — one quiet cycle no longer flashes a self-clearing warning. See [RELEASE_NOTES_v2.8.0.md](dev-docs/RELEASE_NOTES_v2.8.0.md) for the full list.
+One compatibility note: FT8web connections now check the browser's `Origin` header (any page could previously inject decodes into your logger). Self-hosted FT8web users add their host to a new `FT8WEB/allowed_origins` setting. See [RELEASE_NOTES_v2.8.1.md](dev-docs/RELEASE_NOTES_v2.8.1.md) for the full list.
 
 ---
 
 ## Previous Releases
+
+### v2.8.0
+
+**Click-to-call, bulletproof UDP, and the integration guides.** Double-click a callsign in the decode table or on the target dashboard and it's set up in WSJT-X over UDP — a native Reply for fresh CQs, DX Call + generated messages for anyone else; QSO Predictor never transmits on its own. Underneath, a week of live multi-app migration hardened the UDP layer: multicast joins every interface (VPN adapters could capture the join), a Network Doctor "shared unicast ports" check, cross-machine `host:port` forwarding, live callsign/grid changes, and corrected multicast/port-conflict guidance. New integration guides on qsop.wu2c.net. See [RELEASE_NOTES_v2.8.0.md](dev-docs/RELEASE_NOTES_v2.8.0.md).
 
 ### v2.7.1
 
