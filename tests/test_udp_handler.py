@@ -269,3 +269,62 @@ def test_multicast_handler_joins_multiple_interfaces():
     finally:
         handler.stop()
     assert handler._joined_memberships == []
+
+
+# ---------------------------------------------------------------------------
+# 2026-09 audit: stray datagrams must not hijack click-to-call routing
+# or make the health check believe WSJT-X is talking
+# ---------------------------------------------------------------------------
+
+def test_non_wsjtx_datagram_is_ignored_for_routing_and_health(udp_handler):
+    handler, received = udp_handler
+    handler._parse_packet(b'\x00' * 40, ('192.168.1.99', 51000))
+    assert handler.request_destination() is None
+    assert handler.messages_received == 0
+    assert handler._last_packet_time is None
+    assert received['decode'] == []
+
+
+def test_wsjtx_datagram_sets_routing_and_health(udp_handler):
+    handler, received = udp_handler
+    handler._parse_packet(pkt.status(dx_call='JA1XYZ'), ('127.0.0.1', 61234))
+    assert handler.request_destination() == ('127.0.0.1', 61234)
+    assert handler.messages_received == 1
+    assert handler._last_packet_time is not None
+    # A later stray packet does not repoint the destination
+    handler._parse_packet(b'JUNK' * 10, ('10.0.0.5', 2237))
+    assert handler.request_destination() == ('127.0.0.1', 61234)
+
+
+def test_status_carries_mode(udp_handler):
+    handler, received = udp_handler
+    handler._parse_packet(pkt.status(mode='FT4'))
+    assert received['status'][0]['mode'] == 'FT4'
+
+
+def test_get_diagnostics_does_not_raise(udp_handler):
+    """Referenced a renamed attribute (forward_ports) for two releases."""
+    handler, _ = udp_handler
+    diag = handler.get_diagnostics()
+    assert diag['forward_targets'] == []
+    assert diag['loop_packets_dropped'] == 0
+
+
+def test_own_forward_loop_is_detected(udp_handler):
+    handler, _ = udp_handler
+    assert handler._is_own_forward(('127.0.0.1', handler.port))
+    assert not handler._is_own_forward(('127.0.0.1', handler.port + 1))
+    assert not handler._is_own_forward(('192.0.2.1', handler.port))
+    assert not handler._is_own_forward(None)
+
+
+def test_udp_port_missing_from_config_does_not_crash():
+    """int(None) used to kill the app inside MainWindow.__init__."""
+    from tests.conftest import StubConfig
+    cfg = StubConfig()
+    del cfg.values[('NETWORK', 'udp_port')]
+    handler = udp_mod.UDPHandler(cfg)
+    try:
+        assert handler.port == 2237
+    finally:
+        handler.sock.close()

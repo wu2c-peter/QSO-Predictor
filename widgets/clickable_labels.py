@@ -23,6 +23,11 @@ class ClickableLabel(QLabel):
         self.update_url = None
 
     def mousePressEvent(self, event):
+        # Left button only — a right/middle click on the info bar used to
+        # launch the browser too.
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
         if self.update_url:
             webbrowser.open(self.update_url)
         self.clicked.emit()

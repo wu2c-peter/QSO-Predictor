@@ -44,6 +44,17 @@ class DecodeTableModel(QAbstractTableModel):
         self.config = config
         self.target_call = None
         self.hunt_manager = None  # v2.1.0: Set by MainWindow after init
+        # Settings → Appearance colours for the Prob column. These were
+        # saved and displayed by the dialog but never read anywhere.
+        self._hi_color = QColor(self._cfg('high_prob_color', '#00FF00'))
+        self._lo_color = QColor(self._cfg('low_prob_color', '#FF5555'))
+
+    def _cfg(self, key, default):
+        try:
+            value = self.config.get('APPEARANCE', key, fallback=default) if self.config else default
+        except Exception:
+            value = default
+        return value if value and QColor(value).isValid() else default
 
     def set_target_call(self, callsign):
         self.target_call = callsign
@@ -96,8 +107,8 @@ class DecodeTableModel(QAbstractTableModel):
             if key == "prob":
                 try:
                     val = int(row_item.get('prob', '0'))
-                    if val > 75: return QColor("#00FF00")
-                    elif val < 30: return QColor("#FF5555")
+                    if val > 75: return self._hi_color
+                    elif val < 30: return self._lo_color
                 except: pass
             if key == "path":
                 status = PathStatus.from_display(str(row_item.get('path', '')))

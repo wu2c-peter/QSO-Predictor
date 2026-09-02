@@ -39,6 +39,35 @@ import time
 import pytest
 
 from tests.conftest import StubConfig
+from ft8web_handler import origin_allowed, parse_allowed_origins, DEFAULT_ALLOWED_ORIGINS
+
+
+class TestOriginCheck:
+    """2026-09 audit: the handshake accepted any Origin, so any page open
+    in the browser could connect to ws://localhost:2442 and inject
+    decodes that QSOP re-broadcasts to the logger."""
+
+    allowed = parse_allowed_origins(DEFAULT_ALLOWED_ORIGINS)
+
+    def test_ft8web_and_local_pages_allowed(self):
+        assert origin_allowed('https://ft8web.ok1cdj.com', self.allowed)
+        assert origin_allowed('HTTPS://FT8WEB.OK1CDJ.COM/', self.allowed)
+        assert origin_allowed('http://localhost:8080', self.allowed)
+        assert origin_allowed('http://127.0.0.1', self.allowed)
+
+    def test_no_origin_header_allowed(self):
+        # Non-browser clients (and this test file's MiniWSClient)
+        assert origin_allowed(None, self.allowed)
+        assert origin_allowed('', self.allowed)
+
+    def test_foreign_page_rejected(self):
+        assert not origin_allowed('https://evil.example.com', self.allowed)
+        assert not origin_allowed('https://ft8web.ok1cdj.com.evil.example', self.allowed)
+        assert not origin_allowed('null', self.allowed)
+
+    def test_user_can_extend_list(self):
+        extra = parse_allowed_origins("ft8web.ok1cdj.com, my-ft8web.lan ")
+        assert origin_allowed('http://my-ft8web.lan:3000', extra)
 
 
 def _free_port():
@@ -215,7 +244,8 @@ def test_status_payload_matches_udp_shape(stream_scenario):
     st = stream_scenario["received"]["status"][0]
     assert st == {'dial_freq': 14074000, 'dx_call': 'JA1XYZ', 'dx_grid': '',
                   'tx_df': 1512, 'tx_enabled': True, 'transmitting': False,
-                  'de_call': 'WU2C', 'de_grid': 'FN30', 'special_mode': 0}
+                  'de_call': 'WU2C', 'de_grid': 'FN30', 'special_mode': 0,
+                  'mode': 'FT8'}
 
 
 def test_decode_payload_matches_udp_shape(stream_scenario):

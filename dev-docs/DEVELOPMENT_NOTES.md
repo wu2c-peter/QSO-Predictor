@@ -223,9 +223,14 @@ When predicting a station's behavior, sources are checked in order:
 1. **Session cache** — live observations from current session
 2. **Historical record** — direct picking observations from logs (≥3 observations)
 3. **Persona match** — activity traits match a known persona type
-4. **Default** — "Observing..." with neutral priors
+4. **Prefix aggregate** — other stations sharing the call prefix
+   (`BehaviorPredictor._get_prefix_prior`, ≥5 stations before it counts)
+5. **Default** — "Observing..." with neutral priors
 
-Prefix aggregation (by country) was explored and abandoned as too coarse.
+Levels 3 and 4 both report `source='ml_model'` to the UI, which tells them
+apart via `metadata['persona']` / `metadata['prefix']`; the outcome recorder
+resolves that into `behavior_source` = live / historical / persona / prefix
+/ default before persisting.
 
 ---
 
@@ -356,12 +361,16 @@ makes it reusable and testable without the QObject machinery.
 ### Known follow-up: `freq_to_band` duplication
 
 The function `freq_to_band(freq_hz) → "20m"` exists as a private method on
-four separate classes (`analyzer/core.py`, `mqtt_client.py`, `hunt_manager.py`,
+four separate classes (`main_v2.py`, `mqtt_client.py`, `hunt_manager.py`,
 `local_intel/log_parser.py`) plus a slightly-different `ionis/features.py`
-version. The canonical version is now `analyzer.geometry.freq_to_band` and
-the other copies should eventually import from there. Not done as part of
-the refactor because it touches multiple packages — saved for a focused
-follow-up PR.
+version. The canonical version is `analyzer.geometry.freq_to_band`
+(`analyzer/core.py` already imports it) and the other copies should
+eventually import from there. Their out-of-band fallbacks are deliberately
+different today — `mqtt_client` returns `None` so no band topic is
+subscribed (it used to return "20m" and subscribe to the wrong band's
+firehose), `main_v2` returns `"?"` — so consolidating means picking one
+contract. Not done as part of the refactor because it touches multiple
+packages — saved for a focused follow-up PR.
 
 ---
 

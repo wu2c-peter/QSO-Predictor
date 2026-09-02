@@ -344,9 +344,10 @@ class TargetCoordinator(QObject):
                     conf = behavior.get('bayesian_confidence')
                     t['behavior_confidence'] = (int(round(conf * 100))
                                                 if isinstance(conf, (int, float)) else None)
-                    t['behavior_source'] = behavior.get('bayesian_source')
                     meta = behavior.get('bayesian_metadata')
-                    t['persona'] = meta.get('persona') if isinstance(meta, dict) else None
+                    meta = meta if isinstance(meta, dict) else {}
+                    t['behavior_source'] = self._behavior_source_label(behavior, meta)
+                    t['persona'] = meta.get('persona')
 
             panel = getattr(intel, 'insights_panel', None) if intel else None
             if panel is not None:
@@ -354,6 +355,25 @@ class TargetCoordinator(QObject):
         except Exception as e:
             logger.debug(f"Tactical snapshot capture failed: {e}")
         return t
+
+    @staticmethod
+    def _behavior_source_label(behavior, meta):
+        """Resolve the persisted `behavior_source` to the domain the
+        outcome schema documents: live / historical / persona / prefix /
+        default (dev-docs/OUTCOME_SCHEMA.md). The predictor reports both
+        persona- and prefix-derived priors as 'ml_model' (the UI badge
+        tells them apart via metadata), which made them indistinguishable
+        in the JSONL and left the "does live observation outpredict
+        persona inference?" question unanswerable from the data."""
+        if behavior.get('pattern'):
+            return 'live'
+        source = behavior.get('bayesian_source')
+        if source == 'ml_model':
+            if 'persona' in meta:
+                return 'persona'
+            if 'prefix' in meta:
+                return 'prefix'
+        return source
 
     def clear(self):
         """Clear the current target selection.

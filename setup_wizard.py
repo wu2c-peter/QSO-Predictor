@@ -169,6 +169,22 @@ class SetupWizardDialog(QDialog):
     def _on_progress(self, message: str):
         self.progress_label.setText(message)
 
+    def done(self, result):
+        # Every exit (Apply → accept, Configure Manually → reject, window
+        # close → reject) funnels through done(). The scan thread must not
+        # outlive the dialog ("QThread: Destroyed while thread is still
+        # running"), and its completion slot must not rebuild widgets in
+        # a dialog that's gone.
+        worker = getattr(self, 'worker', None)
+        if worker is not None and worker.isRunning():
+            try:
+                worker.scan_complete.disconnect(self._on_scan_complete)
+                worker.progress.disconnect(self._on_progress)
+            except (TypeError, RuntimeError):
+                pass
+            worker.wait(10000)
+        super().done(result)
+
     def _on_scan_complete(self, apps, ports, running, recommendation):
         self.detected_apps = apps
         self.recommendation = recommendation
@@ -362,9 +378,14 @@ def show_setup_wizard(parent=None, first_run=False) -> Optional[dict]:
         Dict with config values if accepted, None if cancelled
     """
     dialog = SetupWizardDialog(parent=parent, first_run=first_run)
-    if dialog.exec() == QDialog.DialogCode.Accepted:
-        return dialog.get_config()
-    return None
+    try:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return dialog.get_config()
+        return None
+    finally:
+        # Parented dialogs survive close — release explicitly or each
+        # open/close leaks a full widget tree on the parent.
+        dialog.deleteLater()
 
 
 def is_first_run(config) -> bool:
@@ -374,6 +395,7 @@ def is_first_run(config) -> bool:
     Args:
         config: ConfigManager instance
     """
+    from config_manager import station_needs_setup
     callsign = config.get('ANALYSIS', 'my_callsign', fallback='N0CALL')
     grid = config.get('ANALYSIS', 'my_grid', fallback='FN00aa')
-    return callsign == 'N0CALL' or grid == 'FN00aa'
+    return station_needs_setup(callsign, grid)

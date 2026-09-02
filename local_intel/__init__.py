@@ -53,8 +53,13 @@ try:
     from .model_manager import ModelManager, PredictionCache
     from .predictor import BayesianPredictor, HeuristicPredictor
     from .background_scanner import BackgroundScanner
-except ImportError:
-    pass
+except ImportError as e:
+    # Say which dependency is missing: a bare pass here surfaced later
+    # as a confusing "cannot import name 'SessionTracker'" elsewhere.
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        f"local_intel: optional components unavailable ({e}); "
+        f"running without Local Intelligence")
 
 __all__ = [
     # Enums

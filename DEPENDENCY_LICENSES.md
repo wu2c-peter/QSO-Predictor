@@ -34,14 +34,15 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md#ionis-propagation-model) for
 
 ---
 
-## Runtime Dependencies (not bundled; installed separately)
+## Runtime Dependencies
 
-QSO Predictor depends on these packages at runtime. They are installed via `pip install -r requirements.txt` and are not included in this repository. Each is used under its own license, listed below.
+QSO Predictor depends on these packages at runtime. They are not included in this repository: source installs get them via `pip install -r requirements.txt`, while the frozen builds (Windows exe/MSIX, macOS DMG) compile a subset of them in — see the tables in THIRD_PARTY_NOTICES.md for which. Each is used under its own license, listed below.
 
 | License | Packages | Compatibility with GPL-3.0 |
 |---------|----------|---------------------------|
 | GPL-3.0 | PyQt6 (under its GPL license option) | Matching license |
-| BSD-3-Clause | numpy, scipy, pandas, scikit-learn, joblib | Permissive, compatible |
+| BSD-3-Clause | numpy, scipy, pandas, scikit-learn, joblib, psutil | Permissive, compatible |
+| MIT License | pycaw, comtypes (Windows only) | Permissive, compatible |
 | Apache License 2.0 | requests, safetensors | Compatible with GPL-3.0 |
 | Eclipse Public License 2.0 | paho-mqtt | Compatible with GPL-3.0 (via EPL-2.0 secondary license terms) |
 
@@ -69,6 +70,7 @@ Canonical copies of each license used anywhere in QSO Predictor's code, models, 
 |---------|-----------------|
 | GPL-3.0 | https://www.gnu.org/licenses/gpl-3.0.txt |
 | BSD-3-Clause | https://opensource.org/licenses/BSD-3-Clause |
+| MIT License | https://opensource.org/licenses/MIT |
 | Apache License 2.0 | https://www.apache.org/licenses/LICENSE-2.0 |
 | Eclipse Public License 2.0 | https://www.eclipse.org/legal/epl-2.0/ |
 | PSF License | https://docs.python.org/3/license.html |

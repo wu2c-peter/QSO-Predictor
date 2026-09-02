@@ -14,12 +14,41 @@ from PyQt6.QtWidgets import (
     QProgressBar, QPushButton, QTextEdit, QGroupBox,
     QCheckBox, QFrame, QScrollArea, QWidget
 )
-from PyQt6.QtCore import Qt, pyqtSlot
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont
 
 from training_manager import TrainingManager
 
 logger = logging.getLogger(__name__)
+
+
+class BootstrapWorker(QThread):
+    """Runs BehaviorPredictor.fast_bootstrap off the GUI thread.
+
+    The bootstrap walks every log file (a 168 MB ALL.TXT is normal) and
+    used to run synchronously in the button's slot, freezing the window
+    for 30-60 s — the exact class of hang DEVELOPMENT_NOTES records as
+    already fixed once.
+    """
+
+    finished_ok = pyqtSignal(int, float, dict)   # stations, seconds, stats
+    failed = pyqtSignal(str)
+
+    def __init__(self, predictor, parent=None):
+        super().__init__(parent)
+        self._predictor = predictor
+
+    def run(self):
+        import time
+        import traceback
+        start = time.time()
+        try:
+            count = self._predictor.fast_bootstrap(
+                max_days=14, max_decodes=500000, timeout_seconds=30.0)
+            stats = self._predictor.get_history_stats()
+            self.finished_ok.emit(count, time.time() - start, stats)
+        except Exception as e:
+            self.failed.emit(f"{e}\n{traceback.format_exc()}")
 
 
 class TrainingDialog(QDialog):
@@ -33,19 +62,26 @@ class TrainingDialog(QDialog):
     - Results/metrics
     """
     
-    def __init__(self, 
+    def __init__(self,
                  training_manager: TrainingManager,
-                 parent=None):
+                 parent=None,
+                 behavior_predictor=None):
         """
         Initialize training dialog.
-        
+
         Args:
             training_manager: TrainingManager instance
             parent: Parent widget
+            behavior_predictor: the app's LIVE BehaviorPredictor. Bootstrap
+                writes into it directly. (A throwaway instance used to be
+                created here; its file was then overwritten by the
+                background scanner's periodic save of the live, stale dict.)
         """
         super().__init__(parent)
-        
+
         self.training_manager = training_manager
+        self._behavior_predictor = behavior_predictor
+        self._bootstrap_worker = None
         self._connect_signals()
         
         self.setWindowTitle("Train ML Models")
@@ -411,78 +447,101 @@ class TrainingDialog(QDialog):
             self.status_label.setStyleSheet("color: #ff6666;")
     
     def _bootstrap_behavior(self):
-        """Bootstrap behavior history - fast version with time limits."""
-        from PyQt6.QtWidgets import QApplication
-        from local_intel.behavior_predictor import BehaviorPredictor
-        import time
-        
+        """Bootstrap behavior history on a worker thread (14 days, 30 s cap)."""
+        if self._bootstrap_worker is not None and self._bootstrap_worker.isRunning():
+            return
+
+        predictor = self._behavior_predictor
+        if predictor is None:
+            # No live predictor handed in (Local Intelligence off): fall
+            # back to a standalone one that only writes the file.
+            from local_intel.behavior_predictor import BehaviorPredictor
+            predictor = BehaviorPredictor(self.training_manager.model_manager)
+
         # Disable buttons during bootstrap
         self.train_button.setEnabled(False)
         self.bootstrap_button.setEnabled(False)
         self.cancel_button.setEnabled(False)
-        
+        self.close_button.setEnabled(False)
+
         self.stage_label.setText("Bootstrapping Behavior History")
-        self.status_label.setText("Processing recent logs...")
+        self.status_label.setText("Processing recent logs…")
         self.status_label.setStyleSheet("color: #88ff88;")
-        self.progress_bar.setValue(0)
+        self.progress_bar.setRange(0, 0)  # busy indicator
         self.results_text.clear()
-        QApplication.processEvents()
-        
-        try:
-            start_time = time.time()
-            
-            # Use fast bootstrap (14 days, 30 second limit)
-            predictor = BehaviorPredictor(self.training_manager.model_manager)
-            
-            self.results_text.append("Fast bootstrap: last 14 days, max 500K decodes, 30s limit")
-            self.progress_bar.setValue(20)
-            QApplication.processEvents()
-            
-            stations_count = predictor.fast_bootstrap(
-                max_days=14,
-                max_decodes=500000,
-                timeout_seconds=30.0
-            )
-            
-            elapsed = time.time() - start_time
-            self.progress_bar.setValue(100)
-            
-            # Show results
-            stats = predictor.get_history_stats()
-            
-            self.results_text.append(f"\n✓ Bootstrap Complete in {elapsed:.1f}s!")
-            self.results_text.append(f"  Stations analyzed: {stats['stations']:,}")
-            self.results_text.append(f"  Total observations: {stats['total_observations']:,}")
-            self.results_text.append(f"  With persona data: {stats.get('with_persona', 0):,}")
-            
-            if stats.get('style_distribution'):
-                self.results_text.append(f"\n  Picking style distribution:")
-                for style, count in stats['style_distribution'].items():
-                    self.results_text.append(f"    {style}: {count}")
-            
-            if stats.get('persona_distribution'):
-                self.results_text.append(f"\n  Persona distribution:")
-                for persona, count in sorted(stats['persona_distribution'].items(), 
-                                             key=lambda x: -x[1]):
-                    persona_display = persona.replace('_', ' ').title()
-                    self.results_text.append(f"    {persona_display}: {count}")
-            
-            self.results_text.append(f"\nNote: Additional stations are looked up on-demand")
-            self.results_text.append(f"when you click them in the table.")
-            
-            self.stage_label.setText("Bootstrap Complete")
-            self.status_label.setText(f"Analyzed {stations_count} stations in {elapsed:.1f}s")
-            self.status_label.setStyleSheet("color: #88ff88;")
-            
-        except Exception as e:
-            import traceback
-            self.results_text.append(f"\n⚠ Error: {e}")
-            self.results_text.append(traceback.format_exc())
-            self.status_label.setText(f"Bootstrap failed: {e}")
-            self.status_label.setStyleSheet("color: #ff6666;")
-        
-        finally:
-            self._reset_ui()
+        self.results_text.append("Fast bootstrap: last 14 days, max 500K decodes, 30s limit")
+
+        self._bootstrap_worker = BootstrapWorker(predictor, parent=self)
+        self._bootstrap_worker.finished_ok.connect(self._on_bootstrap_done)
+        self._bootstrap_worker.failed.connect(self._on_bootstrap_failed)
+        self._bootstrap_worker.start()
+
+    @pyqtSlot(int, float, dict)
+    def _on_bootstrap_done(self, stations_count: int, elapsed: float, stats: dict):
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
+
+        self.results_text.append(f"\n✓ Bootstrap Complete in {elapsed:.1f}s!")
+        self.results_text.append(f"  Stations analyzed: {stats.get('stations', 0):,}")
+        self.results_text.append(f"  Total observations: {stats.get('total_observations', 0):,}")
+        self.results_text.append(f"  With persona data: {stats.get('with_persona', 0):,}")
+
+        if stats.get('style_distribution'):
+            self.results_text.append("\n  Picking style distribution:")
+            for style, count in stats['style_distribution'].items():
+                self.results_text.append(f"    {style}: {count}")
+
+        if stats.get('persona_distribution'):
+            self.results_text.append("\n  Persona distribution:")
+            for persona, count in sorted(stats['persona_distribution'].items(),
+                                         key=lambda x: -x[1]):
+                persona_display = persona.replace('_', ' ').title()
+                self.results_text.append(f"    {persona_display}: {count}")
+
+        if stations_count == 0:
+            self.results_text.append("\nNothing new since the last bootstrap — "
+                                     "the background scanner keeps history current.")
+        self.results_text.append("\nNote: Additional stations are looked up on-demand")
+        self.results_text.append("when you click them in the table.")
+
+        self.stage_label.setText("Bootstrap Complete")
+        self.status_label.setText(f"Analyzed {stations_count} stations in {elapsed:.1f}s")
+        self.status_label.setStyleSheet("color: #88ff88;")
+        self._finish_bootstrap()
+
+    @pyqtSlot(str)
+    def _on_bootstrap_failed(self, message: str):
+        self.progress_bar.setRange(0, 100)
+        self.results_text.append(f"\n⚠ Error: {message}")
+        self.status_label.setText("Bootstrap failed — see details above")
+        self.status_label.setStyleSheet("color: #ff6666;")
+        self._finish_bootstrap()
+
+    def _finish_bootstrap(self):
+        self.close_button.setEnabled(True)
+        self._reset_ui()
+        if self._bootstrap_worker is not None:
+            self._bootstrap_worker.deleteLater()
+            self._bootstrap_worker = None
+
+    def done(self, result):
+        """Every way out (Close button → accept, Esc → reject, window
+        close → reject) funnels through done(): never let a running
+        worker outlive the dialog, and release the TrainingManager
+        connections so a re-opened dialog doesn't get double slots."""
+        worker = self._bootstrap_worker
+        if worker is not None and worker.isRunning():
+            worker.wait(5000)
+        for signal, slot in ((self.training_manager.progress_updated, self._on_progress),
+                             (self.training_manager.model_complete, self._on_model_complete),
+                             (self.training_manager.stats_calculated, self._on_stats),
+                             (self.training_manager.training_finished, self._on_finished),
+                             (self.training_manager.training_error, self._on_error)):
+            try:
+                signal.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass  # already disconnected
+        super().done(result)
 
 
 class ModelStatusWidget(QWidget):

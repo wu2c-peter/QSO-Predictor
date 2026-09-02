@@ -138,9 +138,15 @@ class UDPHandler(QObject):
 
     def __init__(self, config):
         super().__init__()
-        self.port = int(config.get('NETWORK', 'udp_port'))
+        # Never int(None): a config missing this key used to kill the app
+        # inside MainWindow.__init__, before Settings was reachable.
+        try:
+            self.port = int(config.get('NETWORK', 'udp_port', fallback='2237'))
+        except (TypeError, ValueError):
+            logger.warning("UDP: invalid NETWORK/udp_port in config; using 2237")
+            self.port = 2237
         # Support multicast address configuration
-        self.ip = config.get('NETWORK', 'udp_ip', fallback='0.0.0.0')
+        self.ip = config.get('NETWORK', 'udp_ip', fallback='0.0.0.0') or '0.0.0.0'
         # (host, port) tuples; bare ports in config mean 127.0.0.1
         self.forward_targets = strip_local_self_forwards(
             config.get_forward_targets(), self.port)
@@ -175,6 +181,12 @@ class UDPHandler(QObject):
         
         # Track forward errors to avoid log spam
         self._forward_errors_logged = set()
+        # Runtime loop guard: a datagram whose source is one of OUR
+        # addresses on OUR listen port is our own forward coming back
+        # (the config-time filter only catches spellings it recognises).
+        # Such packets are parsed once but never re-forwarded.
+        self._own_addrs = frozenset(multicast_join_addrs())
+        self._loop_packets_dropped = 0
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -310,12 +322,22 @@ class UDPHandler(QObject):
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(4096)
-                self._last_packet_time = time.time()
-                # Remember the sender's socket: on a unicast link this is
-                # where requests (Reply/Configure) must go back to
-                self._last_source_addr = addr
+                if self._is_own_forward(addr):
+                    # Our own rebroadcast looped back: consume, don't
+                    # re-forward, or this spins forever.
+                    self._loop_packets_dropped += 1
+                    if self._loop_packets_dropped == 1:
+                        logger.warning(
+                            f"UDP: Received our own forwarded packet back from "
+                            f"{addr[0]}:{addr[1]} — a forward target points at "
+                            f"this listener. Check Settings → Network → Forwarding.")
+                    continue
                 self._forward_packet(data)
-                self._parse_packet(data)
+                # Source address / packet time / counters are recorded
+                # inside _parse_packet, AFTER the WSJT-X magic check —
+                # a stray datagram must never repoint click-to-call or
+                # make the health check believe WSJT-X is talking.
+                self._parse_packet(data, addr)
                 self._periodic_stats_log()
             except OSError as e:
                 if self.running:
@@ -335,6 +357,13 @@ class UDPHandler(QObject):
             except Exception as e:
                 logger.debug(f"UDP: Exception in listen loop: {e}")
     
+    def _is_own_forward(self, addr):
+        """True if `addr` is this socket's own (address, listen port)."""
+        try:
+            return addr[1] == self.port and addr[0] in self._own_addrs
+        except (TypeError, IndexError):
+            return False
+
     def _periodic_stats_log(self):
         """Log periodic stats summary instead of per-packet logging."""
         now = time.time()
@@ -429,17 +458,27 @@ class UDPHandler(QObject):
                     logger.debug(f"UDP: Forward to {label} failed: {e}")
                     self._forward_errors_logged.add(target)
 
-    def _parse_packet(self, data):
-        if len(data) < 12: 
-            return
-        
-        # Count all valid packets for health check
-        self.messages_received += 1
+    def _parse_packet(self, data, addr=None):
+        """Parse one datagram. `addr` is the sender's (host, port); it is
+        adopted as the click-to-call destination only once the packet has
+        proven to be WSJT-X/JTDX (magic number), so a logger replying to
+        our forwards, or any other stray traffic on the port, can't
+        hijack where Reply/Configure requests go."""
+        if len(data) < 12:
+            return False
 
         # Check Magic Number
         magic = struct.unpack('>I', data[0:4])[0]
-        if magic != 2914763738 and magic != 2914831322: 
-            return
+        if magic != 2914763738 and magic != 2914831322:
+            return False
+
+        # Count only valid WSJT-X packets for the health check
+        self.messages_received += 1
+        self._last_packet_time = time.time()
+        if addr is not None:
+            # Remember the sender's socket: on a unicast link this is
+            # where requests (Reply/Configure) must go back to
+            self._last_source_addr = addr
 
         try:
             # Message Type
@@ -458,6 +497,7 @@ class UDPHandler(QObject):
                 self._process_qso_logged(data)
         except Exception as e:
             logger.warning(f"UDP: Header parse error: {e}")
+        return True
 
     def _read_utf8(self, data, idx):
         """Reads a WSJT-X style UTF-8 string (Length + Bytes)"""
@@ -486,8 +526,9 @@ class UDPHandler(QObject):
             dial_freq = struct.unpack('>Q', data[idx:idx+8])[0]
             idx += 8
 
-            # 3. Mode (String)
-            _, idx = self._read_utf8(data, idx)
+            # 3. Mode (String) — "FT8", "FT4", … Drives the MQTT topic
+            # and the session tracker's cycle length downstream.
+            mode, idx = self._read_utf8(data, idx)
 
             # 4. DX Call (String)
             dx_call, idx = self._read_utf8(data, idx)
@@ -570,6 +611,7 @@ class UDPHandler(QObject):
                     'de_call': de_call,          # v2.3.0: our callsign from JTDX
                     'de_grid': de_grid,          # v2.3.0: our grid from JTDX
                     'special_mode': special_mode, # v2.3.0: 0=None, 6=Fox, 7=Hound
+                    'mode': mode or 'FT8',        # "FT8" / "FT4" / …
                 })
         except Exception as e:
             logger.debug(f"UDP: Status parse error: {e}")
@@ -695,8 +737,9 @@ class UDPHandler(QObject):
             'decodes_received': self._decodes_received,
             'status_received': self._status_received,
             'last_packet_age': (time.time() - self._last_packet_time) if self._last_packet_time else None,
-            'forward_ports': self.forward_ports,
+            'forward_targets': [f"{h}:{p}" for h, p in self.forward_targets],
             'forward_errors': list(self._forward_errors_logged),
+            'loop_packets_dropped': self._loop_packets_dropped,
         }
     
     def has_recent_data(self, window_seconds: float = 60.0) -> bool:

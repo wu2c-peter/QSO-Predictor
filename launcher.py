@@ -12,18 +12,34 @@ import traceback
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
-# --- ADDED: paho (for MQTT) ---
+# (pip distribution, import name). The install step itself uses
+# requirements.txt so this list can't drift behind it again — it went
+# four dependencies stale (safetensors, psutil, scipy, pandas), which
+# silently disabled IONIS for launcher users.
 REQUIRED_PACKAGES = [
     ("PyQt6", "PyQt6"),
     ("requests", "requests"),
     ("numpy", "numpy"),
-    ("paho-mqtt", "paho") 
+    ("paho-mqtt", "paho"),
+    ("safetensors", "safetensors"),
+    ("psutil", "psutil"),
 ]
 
 def check_and_install():
     logger.info("--- QSO Predictor Launcher ---")
     logger.info("Checking system dependencies...")
-    
+
+    missing = [p for p, name in REQUIRED_PACKAGES
+               if importlib.util.find_spec(name) is None]
+    if missing and os.path.exists("requirements.txt"):
+        logger.info(f" [ MISSING ] {', '.join(missing)} — installing requirements.txt...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install",
+                                   "-r", "requirements.txt"])
+        except subprocess.CalledProcessError as e:
+            logger.error(f" [ ERROR ] pip install -r requirements.txt failed: {e}")
+            return False
+
     for package, import_name in REQUIRED_PACKAGES:
         # Check if installed
         try:

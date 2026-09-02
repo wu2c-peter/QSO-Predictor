@@ -66,21 +66,12 @@ hiddenimports = [
     'certifi',
     'idna',
     
-    # ML dependencies (for trained models)
-    'sklearn',
-    'sklearn.ensemble',
-    'sklearn.ensemble._forest',
-    'sklearn.ensemble._gb',
-    'sklearn.tree',
-    'sklearn.tree._tree',
-    'sklearn.utils._cython_blas',
-    'sklearn.neighbors._typedefs',
-    'sklearn.utils._typedefs',
-    'sklearn.utils._heap',
-    'sklearn.utils._sorting',
-    'sklearn.utils._vector_sentinel',
-    'joblib',
-    
+    # NOTE: sklearn/joblib hiddenimports deliberately omitted — same
+    # decision as qso_predictor.spec (2026-07): frozen builds can't train
+    # and local_intel falls back to the heuristic predictor. Keeping them
+    # here made the two specs disagree, and whether they resolved depended
+    # on the developer's machine (build_msix.ps1 has no install step).
+
     # Local intel modules
     'local_intel',
     'local_intel.models',

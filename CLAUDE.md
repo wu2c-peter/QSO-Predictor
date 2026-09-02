@@ -113,11 +113,13 @@ abandoned. See `DEVELOPMENT_NOTES.md` § "Qt Dock Widget Layout".
 
 ## Known follow-ups (not done)
 
-- `freq_to_band(freq_hz)` is duplicated as a private method in `analyzer/core.py`,
+- `freq_to_band(freq_hz)` is duplicated as a private method in `main_v2.py`,
   `mqtt_client.py`, `hunt_manager.py`, and `local_intel/log_parser.py`
   (plus a different signature in `ionis/features.py`). The canonical version
-  is now `analyzer.geometry.freq_to_band` — the other copies could eventually
-  import from there.
+  is `analyzer.geometry.freq_to_band` (`analyzer/core.py` already uses it) —
+  the other copies could eventually import from there. Note the fallbacks
+  differ on purpose: `mqtt_client` returns `None` (no band topic) for an
+  unknown dial, `main_v2` returns `"?"`.
 - `insights_panel.py` (~1,700 lines) holds 7 sub-widgets in one file. Splitting
   them per file would improve navigation but is cosmetic; not currently planned.
 

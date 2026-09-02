@@ -27,24 +27,26 @@ import numpy as np
 
 # ── Grid Utilities ───────────────────────────────────────────────────────────
 
-_GRID_RE = re.compile(r'[A-Ra-r]{2}[0-9]{2}')
+_GRID_RE = re.compile(r'^[A-R]{2}[0-9]{2}')
 
 
-def grid4_to_latlon(grid: str) -> tuple[float, float]:
-    """Convert a 4-char Maidenhead grid to (lat, lon) centroid.
+def grid4_to_latlon(grid: str) -> tuple[float, float] | None:
+    """Convert a Maidenhead grid (4+ chars) to the (lat, lon) centroid
+    of its 4-character square.
 
-    Returns the center of the grid square. Falls back to JJ00 (equator)
-    if the grid is invalid.
+    Returns None when the input is not a grid. It used to substitute
+    JJ00 (the Gulf of Guinea) for anything unparseable and `search` for
+    a grid anywhere in the string — 'Ohio' predicted from the equator
+    and 'RR73' from Arctic Siberia.
 
     Args:
-        grid: 4-character Maidenhead grid (e.g. 'FN42', 'JN48')
-
-    Returns:
-        (latitude, longitude) in degrees
+        grid: Maidenhead grid, e.g. 'FN42', 'jn48', 'FN42ab'
     """
-    s = str(grid).strip().rstrip('\x00').upper()
-    m = _GRID_RE.search(s)
-    g4 = m.group(0) if m else 'JJ00'
+    s = str(grid or '').strip().rstrip('\x00').upper()
+    m = _GRID_RE.match(s)
+    if not m:
+        return None
+    g4 = m.group(0)
     lon = (ord(g4[0]) - ord('A')) * 20.0 - 180.0 + int(g4[2]) * 2.0 + 1.0
     lat = (ord(g4[1]) - ord('A')) * 10.0 - 90.0 + int(g4[3]) * 1.0 + 0.5
     return lat, lon

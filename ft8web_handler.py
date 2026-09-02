@@ -47,6 +47,31 @@ logger = logging.getLogger(__name__)
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 CLIENT_ID = "FT8web"
 HEARTBEAT_INTERVAL = 15  # seconds, matches WSJT-X
+MAX_MESSAGE_BYTES = 1 << 20  # per frame AND per reassembled message
+
+# Browser pages allowed to open the stream. Any page in the user's
+# browser could otherwise connect to ws://localhost:<port> and inject
+# decodes that QSOP then re-broadcasts to the logger. A request with no
+# Origin header (non-browser client, tests) is accepted — the check is
+# about cross-site pages, which browsers always stamp.
+DEFAULT_ALLOWED_ORIGINS = "ft8web.ok1cdj.com, localhost, 127.0.0.1"
+
+
+def origin_allowed(origin_header, allowed_hosts):
+    """True if the Origin header's host (case-insensitive, port ignored)
+    is in `allowed_hosts`, or if there is no Origin header at all."""
+    if not origin_header:
+        return True
+    try:
+        from urllib.parse import urlsplit
+        host = (urlsplit(origin_header.strip()).hostname or '').casefold()
+    except ValueError:
+        return False
+    return bool(host) and host in {h.casefold() for h in allowed_hosts}
+
+
+def parse_allowed_origins(spec):
+    return [h.strip() for h in (spec or '').split(',') if h.strip()]
 
 
 class FT8WebHandler(QObject):
@@ -74,8 +99,14 @@ class FT8WebHandler(QObject):
             _listen_port = 2237
         self.forward_targets = strip_local_self_forwards(
             config.get_forward_targets(), _listen_port)
+        self.allowed_origins = parse_allowed_origins(
+            config.get('FT8WEB', 'allowed_origins',
+                       fallback=DEFAULT_ALLOWED_ORIGINS))
 
         self.running = False
+        # Set when the listener stopped for a reason other than stop():
+        # bind failure or an accept() error. Surfaced by check_data_health.
+        self._fault = ""
         self._server_sock = None
         self._thread = None
         self._client_connected = False
@@ -96,6 +127,7 @@ class FT8WebHandler(QObject):
         if self.running:
             return
         self.running = True
+        self._fault = ""
         self._thread = threading.Thread(target=self._serve_loop, daemon=True,
                                         name="FT8WebListener")
         self._thread.start()
@@ -120,6 +152,7 @@ class FT8WebHandler(QObject):
             'enabled': self.enabled,
             'port': self.port,
             'running': self.running,
+            'fault': self._fault,
             'client_connected': self._client_connected,
             'messages_received': self.messages_received,
             'decodes_received': self._decodes_received,
@@ -143,6 +176,8 @@ class FT8WebHandler(QObject):
             logger.info(f"FT8web: listening on ws://localhost:{self.port}")
         except OSError as e:
             logger.error(f"FT8web: could not bind port {self.port}: {e}")
+            self._fault = (f"⚠ FT8web listener could not bind port {self.port} "
+                           f"— is another program (or a second QSOP) using it?")
             self.running = False
             return
 
@@ -151,8 +186,14 @@ class FT8WebHandler(QObject):
                 conn, addr = srv.accept()
             except socket.timeout:
                 continue
-            except OSError:
-                break  # socket closed by stop()
+            except OSError as e:
+                if self.running:
+                    # Not stop() — the listener died. Say so instead of
+                    # exiting silently with running still True.
+                    logger.error(f"FT8web: accept() failed, listener stopped: {e}")
+                    self._fault = f"⚠ FT8web listener stopped: {e}"
+                    self.running = False
+                break
             try:
                 self._handle_connection(conn, addr)
             except Exception as e:
@@ -198,6 +239,11 @@ class FT8WebHandler(QObject):
                 continue
             if opcode in (0x1, 0x0):  # text / continuation
                 fragments.extend(payload)
+                if len(fragments) > MAX_MESSAGE_BYTES:
+                    # A client that never sets FIN could otherwise grow
+                    # this buffer without bound.
+                    raise ConnectionError(
+                        f"fragmented message too large ({len(fragments)} bytes)")
                 if not fin:
                     continue
                 text = fragments.decode('utf-8', errors='replace')
@@ -224,12 +270,21 @@ class FT8WebHandler(QObject):
             request.extend(chunk)
 
         key = None
+        origin = None
         for line in request.split(b'\r\n'):
-            if line.lower().startswith(b'sec-websocket-key:'):
-                key = line.split(b':', 1)[1].strip().decode('ascii')
-                break
+            lower = line.lower()
+            if lower.startswith(b'sec-websocket-key:'):
+                key = line.split(b':', 1)[1].strip().decode('ascii', 'replace')
+            elif lower.startswith(b'origin:'):
+                origin = line.split(b':', 1)[1].strip().decode('ascii', 'replace')
         if not key:
             conn.sendall(b'HTTP/1.1 400 Bad Request\r\n\r\n')
+            return False
+        if not origin_allowed(origin, self.allowed_origins):
+            logger.warning(f"FT8web: rejected connection from origin {origin!r} "
+                           f"(allowed: {', '.join(self.allowed_origins)}; "
+                           f"set FT8WEB/allowed_origins to extend)")
+            conn.sendall(b'HTTP/1.1 403 Forbidden\r\n\r\n')
             return False
 
         accept = base64.b64encode(
@@ -292,7 +347,7 @@ class FT8WebHandler(QObject):
             if ext is None:
                 return None
             length = struct.unpack('>Q', ext)[0]
-        if length > 1 << 20:
+        if length > MAX_MESSAGE_BYTES:
             raise ConnectionError(f"frame too large ({length} bytes)")
 
         mask = b''
@@ -382,6 +437,7 @@ class FT8WebHandler(QObject):
             'de_call': (msg.get('myCall') or '').upper(),
             'de_grid': msg.get('myGrid') or '',
             'special_mode': 0,
+            'mode': msg.get('mode') or 'FT8',
         })
         self._forward(wsjtx_protocol.build_status(
             CLIENT_ID, msg.get('dialFreqHz', 0), msg.get('mode', 'FT8'),
@@ -419,5 +475,10 @@ class FT8WebHandler(QObject):
                                    f"{target[0]}:{target[1]} failed: {e}")
 
     def check_data_health(self) -> tuple:
-        """FT8web is an optional source — its absence is never a warning."""
+        """FT8web is an optional source — a browser that isn't connected
+        is never a warning. A listener the user ENABLED that could not
+        bind, or that died, is: the browser just fails to connect and
+        nothing else would say why."""
+        if self.enabled and self._fault:
+            return (False, self._fault)
         return (True, "")

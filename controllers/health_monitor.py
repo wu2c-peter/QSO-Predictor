@@ -55,6 +55,27 @@ class HealthMonitor(QObject):
         Called every 10 seconds. Shows/clears status bar warnings when data
         sources go silent, without blocking the main thread.
         """
+        # A raise inside a QTimer slot aborts the whole process under
+        # PyQt6 (qFatal) — never let a single source's check take the
+        # app down.
+        try:
+            warnings = self._collect_warnings()
+        except Exception:
+            logger.exception("HealthMonitor: check failed")
+            return
+        mw = self.main_window
+
+        # MainWindow.update_status_msg is sticky for warnings — a single
+        # call holds until clear_health_warning() runs, so we only need to
+        # act on transitions: warning_text changed text, or warning lifted.
+        warning_text = "   |   ".join(warnings) if warnings else ""
+        if warning_text and warning_text != self._last_health_warning:
+            mw.update_status_msg(warning_text)
+        elif not warning_text and self._last_health_warning:
+            mw.clear_health_warning()
+        self._last_health_warning = warning_text
+
+    def _collect_warnings(self):
         mw = self.main_window
         warnings = []
 
@@ -75,8 +96,17 @@ class HealthMonitor(QObject):
                 "⚠ Two data sources active (WSJT-X/JTDX + FT8web) — "
                 "close one to avoid conflicting data")
 
-        # Check MQTT health
-        mqtt = getattr(mw, 'mqtt', None)
+        # FT8web only complains when the user enabled it and the
+        # listener itself is broken (port taken, thread died).
+        if ft8web:
+            ft8web_ok, ft8web_msg = ft8web.check_data_health()
+            if not ft8web_ok and ft8web_msg:
+                warnings.append(ft8web_msg)
+
+        # Check MQTT health. The client lives on the analyzer (there is
+        # no MainWindow.mqtt — this lookup was dead for two releases, so
+        # a PSK Reporter outage never reached the status bar).
+        mqtt = getattr(getattr(mw, 'analyzer', None), 'mqtt', None)
         if mqtt:
             mqtt_ok, mqtt_msg = mqtt.check_data_health()
             if not mqtt_ok and mqtt_msg:
@@ -90,16 +120,7 @@ class HealthMonitor(QObject):
             audio_ok, audio_msg = audio.check_tx_health()
             if not audio_ok and audio_msg:
                 warnings.append(audio_msg)
-
-        # MainWindow.update_status_msg is sticky for warnings — a single
-        # call holds until clear_health_warning() runs, so we only need to
-        # act on transitions: warning_text changed text, or warning lifted.
-        warning_text = "   |   ".join(warnings) if warnings else ""
-        if warning_text and warning_text != self._last_health_warning:
-            mw.update_status_msg(warning_text)
-        elif not warning_text and self._last_health_warning:
-            mw.clear_health_warning()
-        self._last_health_warning = warning_text
+        return warnings
 
     def show_connection_help(self):
         """Manually show the connection help dialog (from Help menu)."""
@@ -141,7 +162,10 @@ class HealthMonitor(QObject):
             )
             return
 
-        configured_port = int(mw.config.get('NETWORK', 'udp_port', fallback='2237'))
+        try:
+            configured_port = int(mw.config.get('NETWORK', 'udp_port', fallback='2237'))
+        except (TypeError, ValueError):
+            configured_port = 2237
 
         dialog = StartupHealthDialog(
             parent=mw,
@@ -151,9 +175,9 @@ class HealthMonitor(QObject):
         )
 
         result = dialog.exec()
-
-        if dialog.dont_show_again:
-            mw.config.save_setting('UI', 'skip_startup_health_check', 'true')
+        # Parented dialogs survive close — release explicitly or each
+        # open/close leaks a full widget tree on MainWindow.
+        dialog.deleteLater()
 
         # "Open Settings" button returns custom code 2
         if result == 2:

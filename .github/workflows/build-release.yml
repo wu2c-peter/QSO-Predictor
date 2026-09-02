@@ -116,6 +116,11 @@ jobs:
           security list-keychain -d user -s $KEYCHAIN_PATH
       
       - name: Build macOS app
+        # No shell fallback here: the old one re-ran PyInstaller WITHOUT
+        # the icon and bundle identifier and still reported success, so a
+        # broken build shipped with the wrong identifier instead of
+        # failing the job. tests/test_conventions.py checks that every
+        # hidden import below is pip-installed above.
         run: |
           pyinstaller --windowed --name "QSO Predictor" \
             --icon icon.icns \
@@ -124,7 +129,8 @@ jobs:
             --add-data "ionis/data:ionis/data" \
             --hidden-import=requests \
             --hidden-import=safetensors.numpy \
-            main_v2.py || pyinstaller --windowed --name "QSO Predictor" --add-data "VERSION:." --add-data "ionis/data:ionis/data" --hidden-import=requests --hidden-import=safetensors.numpy main_v2.py
+            --hidden-import=psutil \
+            main_v2.py
       
       - name: Sign the app
         env:

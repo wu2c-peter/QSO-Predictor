@@ -39,6 +39,17 @@ QSO Predictor depends on the following Python packages, listed in `requirements.
 |---------|----------------|---------|-------------|
 | **safetensors** | 0.4.0 | Apache License 2.0 | https://github.com/huggingface/safetensors |
 
+### Diagnostics and Windows Audio Doctor
+
+These are compiled into the Windows executable (and psutil into the macOS
+app) by the release workflow, so they are redistributed with the frozen builds.
+
+| Package | Minimum Version | License | Project URL |
+|---------|----------------|---------|-------------|
+| **psutil** | 5.9.0 | BSD-3-Clause | https://github.com/giampaolo/psutil |
+| **pycaw** (Windows only) | 20251023 | MIT License | https://github.com/AndreMiras/pycaw |
+| **comtypes** (Windows only, via pycaw) | 1.4.0 | MIT License | https://github.com/enthought/comtypes |
+
 ---
 
 ## Embedded Models and Weights

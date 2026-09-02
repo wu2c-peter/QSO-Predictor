@@ -22,6 +22,48 @@ from .behavior_predictor import BehaviorPredictor
 logger = logging.getLogger(__name__)
 
 
+def _ranks(values: List[float]) -> List[float]:
+    """Fractional ranks (ties share the mean rank), 1-based."""
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        mean_rank = (i + j) / 2.0 + 1.0
+        for k in range(i, j + 1):
+            ranks[order[k]] = mean_rank
+        i = j + 1
+    return ranks
+
+
+def spearman_correlation(sequence: List[float]) -> float:
+    """Spearman's rho between position in `sequence` and its values.
+
+    Pure stdlib: this used to import scipy, which the frozen builds
+    deliberately exclude, so the ImportError fallback (0.0) meant no
+    packaged build could ever detect a methodical sweep — the whole
+    sweep-bias feature was inert for every exe/DMG/MSIX user.
+
+    Returns 0.0 for fewer than 3 points or a constant sequence.
+    """
+    n = len(sequence)
+    if n < 3:
+        return 0.0
+    x = _ranks(list(range(n)))          # 1..n
+    y = _ranks([float(v) for v in sequence])
+    mx = sum(x) / n
+    my = sum(y) / n
+    sxy = sum((a - mx) * (b - my) for a, b in zip(x, y))
+    sxx = sum((a - mx) ** 2 for a in x)
+    syy = sum((b - my) ** 2 for b in y)
+    if sxx == 0 or syy == 0:
+        return 0.0
+    rho = sxy / (sxx * syy) ** 0.5
+    return max(-1.0, min(1.0, rho))
+
+
 class SessionTracker:
     """
     Track real-time pileup activity and target behavior.
@@ -84,14 +126,26 @@ class SessionTracker:
         """
         callsign = callsign.upper()
         logger.debug(f"SessionTracker: set_target called: {callsign}")
-        
+
         # Reset TX tracking when target changes
         if not self.target_session or self.target_session.callsign != callsign:
             self._tx_count = 0
             self._tx_first_time = None
-        
+            # Persist what we learned about the outgoing target (live
+            # Bayesian beliefs with ≥3 observations). Nothing else calls
+            # end_session at runtime, so live sessions never reached
+            # behavior_history.json before.
+            if self.target_session:
+                self._behavior_predictor.end_session(self.target_session.callsign)
+
+        self._evict_idle_sessions(keep=callsign)
+
         if callsign in self.active_sessions:
             self.target_session = self.active_sessions[callsign]
+            # Resuming a station worked earlier: only answers from the
+            # recent past may feed pattern analysis, or an hour-old sweep
+            # would re-arm the band map tilt on the very next answer.
+            self._drop_stale_answers(self.target_session)
         else:
             self.target_session = TargetSession(
                 callsign=callsign,
@@ -109,7 +163,46 @@ class SessionTracker:
             logger.debug(f"SessionTracker: {callsign}: not in cache, will observe live")
         
         logger.info(f"Target set: {callsign}")
-    
+
+    def clear_target(self):
+        """Stop tracking the current target (Clear Target / QSY).
+
+        Ends its behavior session (persisting live beliefs) and drops the
+        reference so incoming decodes are no longer attributed to it —
+        the old code path left `target_session` intact, so the cleared
+        station's pileup and pattern kept updating in the background.
+        """
+        if self.target_session:
+            self._behavior_predictor.end_session(self.target_session.callsign)
+            logger.debug(f"SessionTracker: cleared target {self.target_session.callsign}")
+        self.target_session = None
+        self._tx_count = 0
+        self._tx_first_time = None
+        self._evict_idle_sessions()
+
+    def _session_ttl(self) -> timedelta:
+        return timedelta(minutes=self.config.session_timeout_minutes)
+
+    def _evict_idle_sessions(self, keep: str = None):
+        """Forget sessions idle longer than the configured timeout
+        (except `keep`, the target being selected). `active_sessions`
+        grew for the process lifetime before this."""
+        now = datetime.now()
+        ttl = self._session_ttl()
+        stale = [call for call, s in self.active_sessions.items()
+                 if call != keep
+                 and now - (s.last_activity or s.started) > ttl]
+        for call in stale:
+            self._behavior_predictor.end_session(call)
+            del self.active_sessions[call]
+        if stale:
+            logger.debug(f"SessionTracker: evicted {len(stale)} idle session(s)")
+
+    def _drop_stale_answers(self, session: TargetSession):
+        cutoff = datetime.now() - self._session_ttl()
+        session.answered_calls = [a for a in session.answered_calls
+                                  if a.answered_at >= cutoff]
+
     def set_tx_status(self, enabled: bool, calling: str = ""):
         """
         Set TX status from JTDX/WSJT-X.
@@ -175,7 +268,7 @@ class SessionTracker:
             return
         
         # Update cycle tracking
-        self._update_cycle(decode.timestamp)
+        self._update_cycle(decode.timestamp, decode.mode)
         
         # Parse message for richer info
         parsed = MessageParser.parse(decode.message)
@@ -314,20 +407,26 @@ class SessionTracker:
         # This is a significant event - we got through!
         # Could trigger UI notification, etc.
     
-    def _update_cycle(self, timestamp: datetime):
-        """Update FT8 cycle tracking."""
+    # TX/RX period per mode (seconds). Anything unknown is treated as FT8.
+    CYCLE_SECONDS = {'FT8': 15.0, 'FT4': 7.5, 'FST4': 15.0, 'MSK144': 15.0}
+
+    def _update_cycle(self, timestamp: datetime, mode: str = 'FT8'):
+        """Update cycle tracking. FT4 runs 7.5 s cycles, not FT8's 15 s."""
+        period = self.CYCLE_SECONDS.get((mode or 'FT8').upper(), 15.0)
         if self.last_cycle_time is None:
             self.last_cycle_time = timestamp
             self.current_cycle = 0
             return
-        
-        # FT8 cycles are 15 seconds
+
         elapsed = (timestamp - self.last_cycle_time).total_seconds()
-        if elapsed >= 15:
-            cycles_passed = int(elapsed / 15)
+        if elapsed >= period:
+            cycles_passed = int(elapsed / period)
             self.current_cycle += cycles_passed
-            self.last_cycle_time = timestamp
-            
+            # Advance by whole periods, not to `timestamp`: snapping to
+            # the decode time let sub-period jitter between bursts skip
+            # a boundary, then fold it into the next (int(29.8/15) == 1).
+            self.last_cycle_time += timedelta(seconds=cycles_passed * period)
+
             # Prune stale callers on cycle boundary
             if self.target_session:
                 self.target_session.prune_stale_callers(
@@ -382,24 +481,12 @@ class SessionTracker:
     
     def _calculate_freq_correlation(self, answers: List[AnsweredCall]) -> float:
         """
-        Calculate Spearman correlation between answer order and frequency.
-        
+        Spearman rank correlation between answer order and frequency.
+
         Returns:
             -1 to 1: positive = low-to-high, negative = high-to-low
         """
-        try:
-            from scipy.stats import spearmanr
-            import numpy as np
-            
-            order = list(range(len(answers)))
-            freqs = [a.frequency for a in answers]
-            
-            correlation, _ = spearmanr(order, freqs)
-            return correlation if not np.isnan(correlation) else 0.0
-            
-        except ImportError:
-            # Fallback: simple correlation estimate
-            return 0.0
+        return spearman_correlation([a.frequency for a in answers])
     
     # =========================================================================
     # Public API

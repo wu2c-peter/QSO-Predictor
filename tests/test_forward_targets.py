@@ -59,6 +59,22 @@ def test_is_local_host():
     assert is_local_host('LocalHost')
     assert not is_local_host('192.168.1.50')
     assert not is_local_host('shackpc.local')
+    assert not is_local_host('')
+
+
+def test_is_local_host_recognises_this_machine():
+    """2026-09 audit: `my-mac.local:2237` with the listener on 2237 is a
+    packet loop exactly like 127.0.0.1:2237, but sailed past the filter
+    because only loopback spellings were recognised."""
+    import socket
+    from config_manager import local_host_identities
+    hostname = socket.gethostname()
+    short = hostname.split('.')[0]
+    assert is_local_host(hostname)
+    assert is_local_host(hostname.upper())
+    assert is_local_host(f"{short}.local")
+    for ip in local_host_identities():
+        assert is_local_host(ip)
 
 
 def test_self_forward_filter_strips_local_loop_keeps_remote():

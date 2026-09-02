@@ -126,7 +126,7 @@ from utils.version import compare_versions, get_version, is_packaged_install
 
 
 try:
-    from config_manager import ConfigManager
+    from config_manager import ConfigManager, station_needs_setup
     from udp_handler import UDPHandler
     from ft8web_handler import FT8WebHandler
     from analyzer import QSOAnalyzer
@@ -419,8 +419,8 @@ class MainWindow(QMainWindow):
         """Warn user if callsign/grid haven't been configured."""
         my_call = self.config.get('ANALYSIS', 'my_callsign', fallback='N0CALL')
         my_grid = self.config.get('ANALYSIS', 'my_grid', fallback='FN00aa')
-        
-        if my_call == 'N0CALL' or my_grid == 'FN00aa':
+
+        if station_needs_setup(my_call, my_grid):
             QMessageBox.information(
                 self,
                 "Welcome to QSO Predictor!",
@@ -676,6 +676,7 @@ class MainWindow(QMainWindow):
         self.dashboard.status_message.connect(self.update_status_msg)  # v2.1.0: clipboard feedback
         self.dashboard.manual_target_requested.connect(self.target.on_manual_entry)  # v2.4.4
         self.dashboard.call_requested.connect(self._on_dashboard_call_requested)  # v2.8: click-to-call
+        self._apply_appearance_settings()
         target_layout.addWidget(self.dashboard)
         
         # Band Map
@@ -867,7 +868,11 @@ class MainWindow(QMainWindow):
         help_menu.addAction(about_action)
 
         # --- ICON SETUP ---
-        app_icon = QIcon("icon.ico")
+        # Resolve next to the sources / inside the PyInstaller bundle —
+        # a bare "icon.ico" is CWD-relative and blank when launched from
+        # a shortcut whose "Start in" isn't the install folder.
+        icon_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        app_icon = QIcon(os.path.join(icon_dir, "icon.ico"))
         self.setWindowIcon(app_icon) # Top-left of window & Taskbar
 
         # --- SYSTEM TRAY ---
@@ -904,20 +909,48 @@ class MainWindow(QMainWindow):
                     actions = self._view_menu.actions()
                     if len(actions) >= 2:
                         self._view_menu.insertAction(actions[2], self.local_intel.insights_dock.toggleViewAction())
-                
-                # --- v2.1.0: Restore dock widget positions (must be after all docks are created) ---
-                dock_state = self.config.get('WINDOW', 'dock_state')
-                if dock_state:
-                    self.restoreState(QByteArray.fromHex(dock_state.encode()))
-                    
-                    # v2.1.0: Re-apply corner ownership AFTER restoreState
-                    # On Windows, restoreState can override setCorner, causing bottom dock 
-                    # to span full width instead of right dock spanning full height
-                    self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
-                    self.setCorner(Qt.Corner.TopRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
             except Exception as e:
                 logger.error(f"Failed to setup Local Intelligence panel: {e}")
+
+        # --- v2.1.0: Restore dock widget positions (after ALL docks exist) ---
+        # Deliberately outside the Local Intelligence branch: when that
+        # stack is unavailable or fails to set up, the Target View dock
+        # still has to come back where the user left it.
+        try:
+            dock_state = self.config.get('WINDOW', 'dock_state')
+            if dock_state:
+                self.restoreState(QByteArray.fromHex(dock_state.encode()))
+
+                # v2.1.0: Re-apply corner ownership AFTER restoreState
+                # On Windows, restoreState can override setCorner, causing bottom dock
+                # to span full width instead of right dock spanning full height
+                self.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+                self.setCorner(Qt.Corner.TopRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+        except Exception as e:
+            logger.error(f"Failed to restore dock layout: {e}")
     
+    def _apply_appearance_settings(self):
+        """Settings → Appearance. The tab was write-only for several
+        releases: saved, read back into the dialog, and read by nothing
+        else. Font applies to the decode table (the app's fixed-height
+        widgets are laid out for the default font); the two colours
+        drive the Prob column and the dashboard's probability."""
+        family = self.config.get('APPEARANCE', 'font_family', fallback='') or ''
+        try:
+            size = int(self.config.get('APPEARANCE', 'font_size', fallback='0') or 0)
+        except ValueError:
+            size = 0
+        if family or size:
+            font = self.table_view.font()
+            if family:
+                font.setFamily(family)
+            if 6 <= size <= 24:
+                font.setPointSize(size)
+            self.table_view.setFont(font)
+        self.dashboard.set_prob_colors(
+            self.config.get('APPEARANCE', 'high_prob_color', fallback=''),
+            self.config.get('APPEARANCE', 'low_prob_color', fallback=''))
+
     # --- v2.0.3: Column width persistence ---
     def _restore_column_widths(self):
         """Restore saved column widths from config."""
@@ -1370,7 +1403,9 @@ class MainWindow(QMainWindow):
                     'frequency': item.get('freq'),
                     'message': item.get('message'),
                     'dt': item.get('dt', 0.0),
-                    'mode': 'FT8',
+                    # Decodes carry the WSJT-X one-char code ('~' FT8,
+                    # '+' FT4); the status stream carries the name.
+                    'mode': self._decode_mode_name(item.get('mode')),
                 })
             
             # --- v2.3.0: TARGET ACTIVITY STATE ---
@@ -1404,6 +1439,17 @@ class MainWindow(QMainWindow):
         # Auto-scroll to bottom if user was already there
         if at_bottom:
             self.table_view.scrollToBottom()
+
+    _MODE_CODE_NAMES = {'~': 'FT8', '+': 'FT4'}
+
+    def _decode_mode_name(self, code):
+        """Map a decode's WSJT-X mode code to a mode name, falling back
+        to the mode last seen in the status stream, then FT8."""
+        if code in self._MODE_CODE_NAMES:
+            return self._MODE_CODE_NAMES[code]
+        if code and len(code) > 1:
+            return code.upper()  # FT8web already sends the name
+        return getattr(self, '_current_mode', None) or 'FT8'
 
     def refresh_paths(self):
         """Lightweight refresh - just update path status for all rows."""
@@ -1454,6 +1500,13 @@ class MainWindow(QMainWindow):
         # runs on a daemon worker thread (Windows only).
         self.audio_health.on_status_update(status.get('transmitting', False))
 
+        # The analyzer needs to know whether we are on the air to tell
+        # "Not Transmitting" from "transmitting but nobody near the
+        # target hears us" (the reception cache is per-band since v2.7.0,
+        # so "no spots of me" alone no longer proves we're silent).
+        self.analyzer.set_tx_state(
+            bool(status.get('transmitting', False) or status.get('tx_enabled', False)))
+
         # Throttle remaining UI updates: JTDX sends status many times per second
         if hasattr(self, '_last_status_time') and (now - self._last_status_time) < 0.5:
             return
@@ -1478,7 +1531,7 @@ class MainWindow(QMainWindow):
                         self.target.clear()  # Clear target selection
                 
                 self._current_band = new_band
-                
+
                 # v2.4.0: Re-predict IONIS on band change (if target still set)
                 if (self.current_target_call and self._ionis_engine and
                         old_band and new_band != old_band):
@@ -1486,8 +1539,15 @@ class MainWindow(QMainWindow):
                     
             except Exception as e:
                 logger.error(f"Error in band change detection: {e}")
-            
-            self.analyzer.set_dial_freq(dial)
+
+            # Mode ("FT8"/"FT4") rides along: the PSK Reporter topic and
+            # the session tracker's cycle clock both depend on it. FT4
+            # used to be treated as FT8 end to end.
+            mode = status.get('mode') or 'FT8'
+            if mode != getattr(self, '_current_mode', None):
+                logger.info(f"Mode: {mode}")
+                self._current_mode = mode
+            self.analyzer.set_dial_freq(dial, mode)
         
         # Update Band Map (Yellow Line)
         cur_tx = status.get('tx_df', 0)
@@ -1710,9 +1770,11 @@ class MainWindow(QMainWindow):
         is_warning = bool(msg) and msg.startswith("⚠")
         current = getattr(self, 'str_status', '')
 
-        if msg and not is_warning:
-            self._normal_status = msg
-            # Don't clobber a visible warning with a normal message.
+        if not is_warning:
+            if msg:
+                self._normal_status = msg
+            # Don't clobber a visible warning with a normal (or empty)
+            # message — only clear_health_warning() may lift it.
             if current.startswith("⚠"):
                 return
 
@@ -1750,9 +1812,10 @@ class MainWindow(QMainWindow):
             # Solar-based coloring
             bg_color = "#2A2A2A"
             # Check K index from stored data
-            if hasattr(self, '_solar_data'):
-                k = self._solar_data.get('k', 0)
-                sfi = self._solar_data.get('sfi', 0)
+            solar = getattr(self, '_solar_data', None)
+            if solar and solar.get('valid'):
+                k = solar.get('k') or 0
+                sfi = solar.get('sfi') or 0
                 if k >= 5: bg_color = "#880000"
                 elif k >= 4: bg_color = "#884400"
                 elif sfi >= 100: bg_color = "#004400"
@@ -1765,8 +1828,21 @@ class MainWindow(QMainWindow):
             )
 
     def update_solar_ui(self, data):
-        self._solar_data = data  # Store for header styling
-        self.str_solar = f"Solar: SFI {data['sfi']} | K {data['k']} ({data['condx']})"
+        if data and data.get('valid'):
+            self._solar_data = data  # Store for header styling / IONIS
+            self._solar_fetched_at = time.time()
+            self.str_solar = f"Solar: SFI {data['sfi']} | K {data['k']} ({data['condx']})"
+        else:
+            # Failed fetch: keep the last good reading (flagged stale)
+            # rather than displaying SFI 0 / K 0 as if it were real.
+            previous = getattr(self, '_solar_data', None)
+            if previous and previous.get('valid'):
+                age_min = int((time.time() - getattr(self, '_solar_fetched_at', 0)) / 60)
+                self.str_solar = (f"Solar: SFI {previous['sfi']} | K {previous['k']} "
+                                  f"({previous['condx']}, {age_min} min old)")
+            else:
+                self._solar_data = None
+                self.str_solar = "Solar: unavailable"
         self.update_header()
         
         # v2.4.0: Re-predict IONIS when solar conditions change
@@ -1935,10 +2011,31 @@ class MainWindow(QMainWindow):
             self.local_intel.insights_panel.update_path_analysis_results(results)
     
 
+    def _stop_timers(self):
+        """Stop every periodic timer before tearing the data sources down.
+        Otherwise the 500 ms buffer / 3 s perspective / band-map ticks keep
+        firing into a stopped analyzer during shutdown."""
+        for name in ('buffer_timer', 'perspective_timer', 'solar_timer'):
+            t = getattr(self, name, None)
+            if t is not None:
+                try:
+                    t.stop()
+                except RuntimeError:
+                    pass
+        for owner, attr in ((getattr(self, 'health_monitor', None), '_timer'),
+                            (getattr(self, 'band_map', None), 'timer')):
+            t = getattr(owner, attr, None) if owner is not None else None
+            if t is not None:
+                try:
+                    t.stop()
+                except RuntimeError:
+                    pass
+
     def closeEvent(self, event):
         # --- v2.1.0: Flag to prevent notifications during shutdown ---
         self._closing = True
-        
+        self._stop_timers()
+
         # --- OUTCOME RECORDER: Flush pending outcome and end session ---
         # Must happen BEFORE analyzer/UDP shutdown — snapshot needs live state.
         if self.outcome_recorder:

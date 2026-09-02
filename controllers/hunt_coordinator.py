@@ -88,8 +88,11 @@ class HuntCoordinator(QObject):
             menu.addSeparator()
 
         # Set as Target action
+        # Row clicks are handled by the TargetCoordinator (on_row_click
+        # moved off MainWindow in the controller split — this action
+        # raised AttributeError for two releases).
         target_action = menu.addAction(f"Set {callsign} as Target")
-        target_action.triggered.connect(lambda: mw.on_row_click(index))
+        target_action.triggered.connect(lambda: mw.target.on_row_click(index))
 
         menu.exec(mw.table_view.viewport().mapToGlobal(pos))
 

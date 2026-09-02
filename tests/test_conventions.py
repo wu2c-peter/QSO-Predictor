@@ -14,8 +14,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# .claude holds tool worktrees (a full second copy of the tree) — never
+# attribute their contents to this checkout.
 EXCLUDED_DIRS = {'venv', '.git', '__pycache__', 'build', 'dist',
-                 '.pytest_cache'}
+                 '.pytest_cache', '.claude'}
 
 
 def repo_python_files():
@@ -59,16 +61,8 @@ def test_utils_stays_free_of_qt_and_app_imports():
     assert not offenders, f"utils/ must stay stdlib-only: {offenders}"
 
 
-def test_release_workflow_installs_every_spec_hiddenimport():
-    """v2.4.0–v2.5.8 Windows exes silently shipped WITHOUT IONIS: the
-    spec listed safetensors in hiddenimports but the release workflow
-    never pip-installed it, and PyInstaller drops missing hidden imports
-    with a non-fatal warning. Freeze the invariant: every external
-    top-level package named in qso_predictor.spec's hiddenimports must
-    be installed by the build-windows job, directly or as a known
-    transitive of an installed distribution."""
-    spec_tree = ast.parse(
-        (REPO_ROOT / 'qso_predictor.spec').read_text(encoding='utf-8'))
+def _spec_hiddenimports(spec_path):
+    spec_tree = ast.parse(spec_path.read_text(encoding='utf-8'))
     hidden = set()
     for node in ast.walk(spec_tree):
         targets = []
@@ -82,41 +76,180 @@ def test_release_workflow_installs_every_spec_hiddenimport():
         for const in ast.walk(node.value):
             if isinstance(const, ast.Constant) and isinstance(const.value, str):
                 hidden.add(const.value.split('.')[0])
-    assert hidden, "failed to parse hiddenimports out of qso_predictor.spec"
+    assert hidden, f"failed to parse hiddenimports out of {spec_path.name}"
+    return hidden
 
+
+def _workflow_jobs():
+    """Split build-release.yml into its top-level jobs by name."""
     workflow = (REPO_ROOT / '.github/workflows/build-release.yml').read_text(
         encoding='utf-8')
-    windows_job = workflow.split('build-macos:')[0]
+    jobs = {}
+    name = None
+    for line in workflow.splitlines():
+        m = re.match(r'^  ([a-z][a-z0-9-]*):\s*$', line)
+        if m:
+            name = m.group(1)
+            jobs[name] = []
+        elif name:
+            jobs[name].append(line)
+    return {k: '\n'.join(v) for k, v in jobs.items()}
+
+
+def _pip_installed(job_text):
     installed = set()
-    for line in windows_job.splitlines():
+    for line in job_text.splitlines():
         line = line.strip()
         if line.startswith('pip install'):
             for token in line[len('pip install'):].split():
                 token = token.strip('"\'')
+                if token.startswith('-'):
+                    continue
                 installed.add(re.split(r'[><=!~;]', token)[0].lower())
+    return installed
 
-    # import-name -> PyPI distribution when they differ
-    dist_of = {'paho': 'paho-mqtt'}
-    # packages pulled in transitively by an installed distribution
-    transitive_of = {
-        'comtypes': 'pycaw', 'psutil': 'pycaw',
-        'urllib3': 'requests', 'charset_normalizer': 'requests',
-        'certifi': 'requests', 'idna': 'requests',
-    }
 
+# import-name -> PyPI distribution when they differ
+_DIST_OF = {'paho': 'paho-mqtt'}
+# packages pulled in transitively by an installed distribution
+_TRANSITIVE_OF = {
+    'comtypes': 'pycaw', 'psutil': 'pycaw',
+    'urllib3': 'requests', 'charset_normalizer': 'requests',
+    'certifi': 'requests', 'idna': 'requests',
+}
+
+
+def _missing_from(hidden, installed):
     missing = []
     for pkg in sorted(hidden):
         if (REPO_ROOT / pkg).is_dir():
             continue    # local package, always bundled from the repo
-        dist = dist_of.get(pkg, pkg).lower()
-        via = transitive_of.get(pkg, '').lower()
+        dist = _DIST_OF.get(pkg, pkg).lower()
+        via = _TRANSITIVE_OF.get(pkg, '').lower()
         if dist not in installed and via not in installed:
             missing.append(pkg)
-    assert not missing, (
-        f"qso_predictor.spec hiddenimports name packages the release "
-        f"workflow never installs — PyInstaller will silently drop them "
-        f"from the exe (the v2.4.0 IONIS bug): {missing}"
-    )
+    return missing
+
+
+def test_release_workflow_installs_every_spec_hiddenimport():
+    """v2.4.0–v2.5.8 Windows exes silently shipped WITHOUT IONIS: the
+    spec listed safetensors in hiddenimports but the release workflow
+    never pip-installed it, and PyInstaller drops missing hidden imports
+    with a non-fatal warning. Freeze the invariant: every external
+    top-level package named in the Windows specs' hiddenimports must be
+    installed by the build-windows job, directly or as a known transitive
+    of an installed distribution. Both specs (release exe and MSIX) are
+    checked so they can't drift apart again."""
+    installed = _pip_installed(_workflow_jobs()['build-windows'])
+    for spec in sorted(REPO_ROOT.glob('qso_predictor*.spec')):
+        missing = _missing_from(_spec_hiddenimports(spec), installed)
+        assert not missing, (
+            f"{spec.name} hiddenimports name packages the release workflow "
+            f"never installs — PyInstaller will silently drop them from the "
+            f"exe (the v2.4.0 IONIS bug): {missing}"
+        )
+
+
+def test_macos_release_build_installs_its_hidden_imports_and_bundles_ionis():
+    """The macOS job hand-rolls its PyInstaller command instead of using
+    the spec, so the Windows guard above never covered it. Same
+    invariant for the DMG: every --hidden-import must be installed in
+    that job, the IONIS model data must be bundled, and there must be no
+    `|| fallback` that re-runs the build without the icon / bundle id
+    and still reports success."""
+    job = _workflow_jobs()['build-macos']
+    installed = _pip_installed(job)
+    hidden = {m.group(1).split('.')[0]
+              for m in re.finditer(r'--hidden-import=([\w.]+)', job)}
+    assert hidden, "no --hidden-import flags found in the build-macos job"
+    missing = _missing_from(hidden, installed)
+    assert not missing, f"build-macos --hidden-import not pip-installed: {missing}"
+    assert 'ionis/data:ionis/data' in job, "macOS build no longer bundles ionis/data"
+    build_step = job.split('Build macOS app', 1)[1].split('- name:', 1)[0]
+    assert '||' not in build_step, (
+        "build-macos has a `||` fallback that masks PyInstaller failures")
+
+
+def _mainwindow_attributes():
+    """Every attribute MainWindow exposes: methods, class attributes, and
+    `self.X = ...` assignments anywhere in the class — plus attributes
+    other modules assign ONTO MainWindow (`mw.X = ...`)."""
+    tree = ast.parse((REPO_ROOT / 'main_v2.py').read_text(encoding='utf-8'))
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == 'MainWindow':
+            for child in ast.walk(node):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    names.add(child.name)
+                elif isinstance(child, ast.Assign):
+                    for t in child.targets:
+                        if isinstance(t, ast.Name):
+                            names.add(t.id)          # class attribute
+                        elif (isinstance(t, ast.Attribute)
+                              and isinstance(t.value, ast.Name)
+                              and t.value.id == 'self'):
+                            names.add(t.attr)
+                elif isinstance(child, ast.AnnAssign):
+                    t = child.target
+                    if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) \
+                            and t.value.id == 'self':
+                        names.add(t.attr)
+    # QMainWindow API used through the back-reference
+    names |= {'setWindowTitle', 'statusBar', 'close', 'show', 'hide',
+              'isVisible', 'raise_', 'activateWindow', 'width', 'height',
+              'geometry', 'config', 'update', 'findChild', 'centralWidget',
+              'addDockWidget', 'menuBar', 'setCursor', 'unsetCursor',
+              'cursor', 'windowTitle', 'setWindowIcon', 'windowIcon',
+              'isMinimized', 'showNormal', 'setEnabled', 'signalsBlocked'}
+    return names
+
+
+_MW_ALIASES = re.compile(r'^(mw|main_window|self\.main_window|self\._main_window)$')
+
+
+def test_controllers_only_reference_attributes_mainwindow_has():
+    """2026-09 audit: three separate features died the same way — a
+    `main_window.X` / `getattr(mw, 'X')` / `hasattr(mw, 'X')` reference
+    to something the controller split had moved off MainWindow
+    (on_row_click → TargetCoordinator, mqtt → analyzer,
+    _on_manual_target never existed). Plain attribute access raised
+    AttributeError; the guarded forms turned the bug into silence. Parse
+    every controller for attribute reads through the MainWindow
+    back-reference and require each to exist on MainWindow (or be
+    assigned onto it by a controller)."""
+    known = _mainwindow_attributes()
+    sources = list((REPO_ROOT / 'controllers').glob('*.py'))
+    sources.append(REPO_ROOT / 'local_intel_integration.py')
+
+    # Attributes controllers assign ONTO MainWindow are legitimate
+    for path in sources:
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if isinstance(t, ast.Attribute) and _MW_ALIASES.match(
+                            ast.unparse(t.value)):
+                        known.add(t.attr)
+
+    offenders = []
+    for path in sources:
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+        rel = path.relative_to(REPO_ROOT)
+        for node in ast.walk(tree):
+            attr = None
+            if isinstance(node, ast.Attribute) and _MW_ALIASES.match(
+                    ast.unparse(node.value)):
+                attr = node.attr
+            elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                  and node.func.id in ('getattr', 'hasattr') and len(node.args) >= 2
+                  and _MW_ALIASES.match(ast.unparse(node.args[0]))
+                  and isinstance(node.args[1], ast.Constant)):
+                attr = node.args[1].value
+            if attr and attr not in known:
+                offenders.append(f"{rel}:{node.lineno} main_window.{attr}")
+    assert not offenders, (
+        "controllers reference attributes MainWindow does not define "
+        "(moved in a refactor?): " + ", ".join(sorted(set(offenders))))
 
 
 def test_diagnostics_stays_free_of_qt_and_app_imports():

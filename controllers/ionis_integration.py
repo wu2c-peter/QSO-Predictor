@@ -17,6 +17,8 @@ import logging
 
 from PyQt6.QtCore import QObject
 
+from config_manager import is_placeholder_grid
+
 try:
     from ionis import IonisEngine
     IONIS_AVAILABLE = True
@@ -80,15 +82,20 @@ class IonisIntegration(QObject):
 
         # Need our own grid
         my_grid = mw.config.get('ANALYSIS', 'my_grid', fallback='')
-        if not my_grid or my_grid == 'FN00aa':
+        if is_placeholder_grid(my_grid):
+            self._show_waiting("Set your grid in Settings for propagation…")
             return
 
-        # Get solar conditions (default to safe values if not yet fetched)
+        # Solar conditions. `_solar_data` is None until a VALID NOAA
+        # fetch succeeds (SolarClient never returns zeros any more), so
+        # these typical-conditions defaults genuinely take over when the
+        # feed is down instead of SFI 0 / Kp 0 reaching the model.
         sfi = 100
         kp = 2
-        if hasattr(mw, '_solar_data') and mw._solar_data:
-            sfi = mw._solar_data.get('sfi', 100)
-            kp = mw._solar_data.get('k', 2)
+        solar = getattr(mw, '_solar_data', None)
+        if solar and solar.get('valid') and solar.get('sfi') is not None:
+            sfi = solar['sfi']
+            kp = solar.get('k', kp)
 
         try:
             # Single prediction for current conditions
@@ -96,9 +103,14 @@ class IonisIntegration(QObject):
                 my_grid, mw.current_target_grid, band, sfi, kp
             )
 
-            if prediction:
-                prediction['tx_grid'] = my_grid[:4].upper()
-                prediction['rx_grid'] = mw.current_target_grid[:4].upper()
+            if not prediction:
+                # Engine refused: unresolvable grid (2-char target grid
+                # from a prefix guess, say) or bad inputs. Say so rather
+                # than leaving the previous target's forecast on screen.
+                self._show_waiting("Propagation needs a 4-character grid…")
+                return
+            prediction['tx_grid'] = my_grid[:4].upper()
+            prediction['rx_grid'] = mw.current_target_grid[:4].upper()
 
             # 12-hour forecast
             forecast = mw._ionis_engine.predict_range(

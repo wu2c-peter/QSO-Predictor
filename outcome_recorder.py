@@ -474,8 +474,11 @@ class OutcomeRecorder:
         else:
             followed = None
         
-        # Continuous score difference for Phase 2 nuanced analysis
-        score_delta = round(rec_score - tx_score, 1) if rec_score else None
+        # Continuous score difference for Phase 2 nuanced analysis.
+        # Keyed on a real recommendation existing (rec_freq), not on the
+        # score's truthiness — a recommended slot scoring exactly 0.0 is
+        # still a recommendation, and its delta is real data.
+        score_delta = round(rec_score - tx_score, 1) if rec_freq else None
         
         # Calculate distance
         distance_km = _haversine_km(self._my_grid, self._current_target_grid)
@@ -669,12 +672,17 @@ class OutcomeRecorder:
             logger.warning(f"OutcomeRecorder: write failed: {e}")
 
     def _rotate(self):
-        """Rename current file to .bak, start fresh."""
+        """Archive the current file with a timestamp suffix, start fresh.
+
+        Earlier releases kept a single `.bak`, so the SECOND rotation
+        permanently destroyed the first ~40K research events. Archives
+        are never deleted here — at 50 MB each they accumulate slowly,
+        and they are the whole point of recording.
+        """
         try:
-            bak = self.filepath + '.bak'
-            if os.path.exists(bak):
-                os.remove(bak)
-            os.rename(self.filepath, bak)
-            logger.info(f"OutcomeRecorder: rotated {self.filepath} → .bak")
+            stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+            archive = f"{self.filepath}.{stamp}.bak"
+            os.replace(self.filepath, archive)
+            logger.info(f"OutcomeRecorder: rotated {self.filepath} → {archive}")
         except Exception as e:
             logger.warning(f"OutcomeRecorder: rotation failed: {e}")

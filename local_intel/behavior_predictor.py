@@ -11,6 +11,8 @@ Copyright (C) 2025 Peter Hirst (WU2C)
 
 import json
 import logging
+import os
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Callable
@@ -328,16 +330,29 @@ class BehaviorPredictor:
         self._cached_log_sources = None
         self._log_sources_cache_time = None
         
+        # Threading contract: `_history` is written by the background
+        # scanner thread (update_observations / _save_history), by the
+        # bootstrap worker, and by the Qt main thread (end_session,
+        # reload_history). Every mutation and every whole-dict walk
+        # (save, prefix stats) takes `_lock`; otherwise a main-thread
+        # insert during the scanner's save comprehension raised
+        # "dictionary changed size during iteration" and history
+        # silently stopped persisting.
+        self._lock = threading.RLock()
+
         # In-memory history cache
         self._history: Dict[str, HistoricalRecord] = {}
-        
+
         # Current session beliefs (reset per session)
         self._session_beliefs: Dict[str, BehaviorPrior] = {}
-        
+
         # Prefix statistics cache (built from history)
         self._prefix_stats: Dict[str, Dict] = {}
         self._prefix_stats_dirty = True  # Rebuild when history changes
-        
+
+        # Live-session updates since the last save (drives periodic saves)
+        self._unsaved_updates = 0
+
         # Load historical data
         self._load_history()
         
@@ -395,10 +410,14 @@ class BehaviorPredictor:
         """Build aggregate statistics by call prefix from history."""
         if not self._prefix_stats_dirty:
             return
-        
+
+        with self._lock:
+            self._build_prefix_stats_locked()
+
+    def _build_prefix_stats_locked(self):
         self._prefix_stats = {}
-        
-        for callsign, record in self._history.items():
+
+        for callsign, record in list(self._history.items()):
             if record.observations < 2:
                 continue
                 
@@ -782,60 +801,87 @@ class BehaviorPredictor:
             return
         
         try:
-            with open(self.history_path, 'r') as f:
+            with open(self.history_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
+        except Exception as e:
+            # Most likely a truncated file from a crash mid-write (now
+            # prevented by the atomic save). Keep the corpse for the
+            # user; start from empty rather than silently pretending
+            # there was never any history.
+            logger.error(f"Failed to load behavior history: {e}")
+            try:
+                bad = self.history_path.with_suffix('.json.corrupt')
+                os.replace(self.history_path, bad)
+                logger.error(f"Behavior history moved to {bad}")
+            except OSError:
+                pass
+            return
+
+        with self._lock:
             for call, record_dict in data.get('records', {}).items():
                 self._history[call] = HistoricalRecord.from_dict(record_dict)
-            
-            logger.info(f"Loaded behavior history for {len(self._history)} stations")
-            
-        except Exception as e:
-            logger.error(f"Failed to load behavior history: {e}")
-    
+            self._prefix_stats_dirty = True
+
+        logger.info(f"Loaded behavior history for {len(self._history)} stations")
+
     def _save_history(self):
-        """Save historical behavior records."""
+        """Save historical behavior records (atomic: temp file + rename)."""
         try:
             self.history_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
+            with self._lock:
+                records = {call: rec.to_dict() for call, rec in self._history.items()}
+                self._unsaved_updates = 0
             data = {
                 'version': '1.0',
                 'updated': datetime.now().isoformat(),
-                'records': {call: rec.to_dict() for call, rec in self._history.items()}
+                'records': records,
             }
-            
-            with open(self.history_path, 'w') as f:
+
+            tmp = self.history_path.with_suffix('.json.tmp')
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-            
+            os.replace(tmp, self.history_path)
+
             # Invalidate prefix cache so it gets rebuilt
             self._prefix_stats_dirty = True
-            
-            logger.debug(f"Saved behavior history for {len(self._history)} stations")
-            
+
+            logger.debug(f"Saved behavior history for {len(records)} stations")
+
         except Exception as e:
             logger.error(f"Failed to save behavior history: {e}")
-    
+
+    # Live-session updates between periodic saves
+    SAVE_EVERY_N_UPDATES = 10
+
     def _update_history(self, callsign: str, belief: BehaviorPrior):
         """Update historical record for a callsign."""
-        if callsign not in self._history:
-            self._history[callsign] = HistoricalRecord(callsign=callsign)
-        
-        record = self._history[callsign]
-        
-        # Increment the most likely style count
-        most_likely = belief.most_likely_style
-        if most_likely == 'loudest_first':
-            record.loudest_first_count += 1
-        elif most_likely == 'methodical':
-            record.methodical_count += 1
-        else:
-            record.random_count += 1
-        
-        record.observations += 1
-        record.last_seen = datetime.now().isoformat()
-        
-        # Save periodically
-        if len(self._history) % 10 == 0:
+        with self._lock:
+            if callsign not in self._history:
+                self._history[callsign] = HistoricalRecord(callsign=callsign)
+
+            record = self._history[callsign]
+
+            # Increment the most likely style count
+            most_likely = belief.most_likely_style
+            if most_likely == 'loudest_first':
+                record.loudest_first_count += 1
+            elif most_likely == 'methodical':
+                record.methodical_count += 1
+            else:
+                record.random_count += 1
+
+            record.observations += 1
+            record.last_seen = datetime.now().isoformat()
+            self._prefix_stats_dirty = True
+            self._unsaved_updates += 1
+            due = self._unsaved_updates >= self.SAVE_EVERY_N_UPDATES
+
+        # Save periodically — counted in UPDATES. The old test,
+        # `len(self._history) % 10 == 0`, keyed on the number of stations
+        # and stopped firing forever once the dict settled on a size
+        # that wasn't a multiple of ten.
+        if due:
             self._save_history()
     
     def _cleanup_orphaned_pending_file(self):
@@ -1184,7 +1230,16 @@ class BehaviorPredictor:
         
         start_time = time.time()
         cutoff_date = datetime.now() - timedelta(days=max_days)
-        
+
+        # Idempotency watermark: the counters below are accumulators, so
+        # re-running over the same window doubled every station's
+        # sessions/QSOs (and shifted its persona). Only decodes newer
+        # than the previous bootstrap's high-water mark are counted.
+        watermark = self._read_bootstrap_watermark()
+        if watermark and watermark > cutoff_date:
+            cutoff_date = watermark
+            logger.info(f"bootstrap: resuming from previous watermark {watermark:%Y-%m-%d %H:%M}")
+
         logger.info(f"Fast bootstrap: last {max_days} days, max {max_decodes} decodes")
         logger.info(f"bootstrap: Starting: last {max_days} days, max {max_decodes} decodes")
         
@@ -1222,7 +1277,16 @@ class BehaviorPredictor:
         
         # Sort by timestamp for session detection
         all_decodes.sort(key=lambda d: d.timestamp or datetime.min)
-        
+        # Parsers apply start_date per file/line inconsistently; enforce
+        # the watermark here so nothing is counted twice.
+        all_decodes = [d for d in all_decodes
+                       if d.timestamp is None or d.timestamp > cutoff_date]
+        newest_ts = max((d.timestamp for d in all_decodes if d.timestamp),
+                        default=None)
+        if not all_decodes:
+            logger.info("bootstrap: nothing newer than the previous run")
+            return 0
+
         # First pass: find DX stations (anyone who CQ'd)
         dx_stations = set()
         for d in all_decodes:
@@ -1359,39 +1423,42 @@ class BehaviorPredictor:
             
             if total_qsos < 2:  # Need minimum activity
                 continue
-            
-            # Update or create history record
-            if dx_call not in self._history:
-                self._history[dx_call] = HistoricalRecord(callsign=dx_call)
-            
-            record = self._history[dx_call]
-            record.last_seen = datetime.now().isoformat()
-            
-            # Activity traits
-            record.sessions_seen += sessions_seen
-            record.total_qsos += total_qsos
-            record.completed_qsos += completed_qsos
-            record.abandoned_qsos += (total_qsos - completed_qsos)
-            record.total_cqs += cqs
-            record.total_session_seconds += total_session_seconds
-            
-            # Picking behavior
-            if answers:
-                record.observations += len(answers)
-                loudest_ratio = sum(answers) / len(answers)
-                
-                if loudest_ratio > 0.7:
-                    record.loudest_first_count += len(answers)
-                elif loudest_ratio < 0.3:
-                    record.random_count += len(answers)
-                else:
-                    record.methodical_count += len(answers)
-            
+
+            with self._lock:
+                # Update or create history record
+                if dx_call not in self._history:
+                    self._history[dx_call] = HistoricalRecord(callsign=dx_call)
+
+                record = self._history[dx_call]
+                record.last_seen = datetime.now().isoformat()
+
+                # Activity traits
+                record.sessions_seen += sessions_seen
+                record.total_qsos += total_qsos
+                record.completed_qsos += completed_qsos
+                record.abandoned_qsos += (total_qsos - completed_qsos)
+                record.total_cqs += cqs
+                record.total_session_seconds += total_session_seconds
+
+                # Picking behavior
+                if answers:
+                    record.observations += len(answers)
+                    loudest_ratio = sum(answers) / len(answers)
+
+                    if loudest_ratio > 0.7:
+                        record.loudest_first_count += len(answers)
+                    elif loudest_ratio < 0.3:
+                        record.random_count += len(answers)
+                    else:
+                        record.methodical_count += len(answers)
+
             stations_processed += 1
-        
+
         # Save
         self._save_history()
         self._prefix_stats_dirty = True  # Rebuild prefix stats
+        if newest_ts:
+            self._write_bootstrap_watermark(newest_ts)
         
         elapsed = time.time() - start_time
         logger.info(f"Fast bootstrap complete: {stations_processed} stations in {elapsed:.1f}s")
@@ -1404,7 +1471,23 @@ class BehaviorPredictor:
         
         return stations_processed
 
-    def bootstrap_from_history(self, 
+    def _read_bootstrap_watermark(self) -> Optional[datetime]:
+        try:
+            if self._bootstrap_timestamp_path.exists():
+                text = self._bootstrap_timestamp_path.read_text(encoding='utf-8').strip()
+                return datetime.fromisoformat(text)
+        except (OSError, ValueError) as e:
+            logger.debug(f"bootstrap: unreadable watermark ({e}); ignoring")
+        return None
+
+    def _write_bootstrap_watermark(self, ts: datetime):
+        try:
+            self._bootstrap_timestamp_path.parent.mkdir(parents=True, exist_ok=True)
+            self._bootstrap_timestamp_path.write_text(ts.isoformat(), encoding='utf-8')
+        except OSError as e:
+            logger.warning(f"bootstrap: could not write watermark: {e}")
+
+    def bootstrap_from_history(self,
                                decodes: List,
                                progress_callback: Callable[[int, int], None] = None) -> int:
         """
@@ -1575,34 +1658,40 @@ class BehaviorPredictor:
             return False
         
         callsign = callsign.upper()
-        
-        # Get or create history record
-        if callsign not in self._history:
-            self._history[callsign] = HistoricalRecord(callsign=callsign)
-        
-        record = self._history[callsign]
-        record.last_seen = datetime.now().isoformat()
-        
-        # Count picking behavior in this batch
-        loudest_count = sum(1 for was_loudest, _ in answers if was_loudest)
-        total = len(answers)
-        
-        # Calculate ratio for this batch
-        loudest_ratio = loudest_count / total if total > 0 else 0.5
-        
-        # Increment appropriate counts
-        record.observations += total
-        
-        if loudest_ratio > 0.7:
-            record.loudest_first_count += total
-        elif loudest_ratio < 0.3:
-            record.random_count += total
-        else:
-            record.methodical_count += total
-        
-        # Also count as QSOs
-        record.total_qsos += total
-        
+
+        with self._lock:
+            # Get or create history record
+            if callsign not in self._history:
+                self._history[callsign] = HistoricalRecord(callsign=callsign)
+
+            record = self._history[callsign]
+            record.last_seen = datetime.now().isoformat()
+
+            # Count picking behavior in this batch
+            loudest_count = sum(1 for was_loudest, _ in answers if was_loudest)
+            total = len(answers)
+
+            # Calculate ratio for this batch
+            loudest_ratio = loudest_count / total if total > 0 else 0.5
+
+            # Increment appropriate counts
+            record.observations += total
+
+            if loudest_ratio > 0.7:
+                record.loudest_first_count += total
+            elif loudest_ratio < 0.3:
+                record.random_count += total
+            else:
+                record.methodical_count += total
+
+            # NOTE: picking observations are NOT added to total_qsos.
+            # That counter feeds the persona traits (completion_rate,
+            # qso_rate) alongside completed_qsos / total_session_seconds,
+            # which this path never touches — inflating it alone drove
+            # every bootstrapped station's completion rate toward zero
+            # and into the dx_hunter persona.
+            self._prefix_stats_dirty = True
+
         logger.debug(f"Updated {callsign}: +{total} observations "
                     f"(L:{record.loudest_first_count} M:{record.methodical_count} "
                     f"R:{record.random_count})")
@@ -1680,9 +1769,10 @@ class BehaviorPredictor:
     
     def reload_history(self):
         """Reload behavior history from disk."""
-        self._history.clear()
-        self._session_beliefs.clear()
-        self._load_history()
+        with self._lock:
+            self._history.clear()
+            self._session_beliefs.clear()
+            self._load_history()
         logger.info(f"Reloaded behavior history: {len(self._history)} stations")
 
 

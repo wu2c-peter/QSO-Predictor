@@ -46,6 +46,9 @@ class TargetDashboard(QFrame):
         super().__init__()
         self._activity_state = 'unknown'    # v2.3.5: Track for competition override
         self._raw_competition = ''           # v2.3.5: Real competition before override
+        # Settings → Appearance colours (see set_prob_colors)
+        self._hi_color = "#00FF00"
+        self._lo_color = "#FF5555"
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setFixedHeight(120)
         self.setStyleSheet("""
@@ -256,8 +259,14 @@ class TargetDashboard(QFrame):
             original_text = text
             self.lbl_target.setText(f"✓ Copied!")
             self.status_message.emit(f"Copied to clipboard: {clean_text}")
-            # Restore after 1 second
-            QTimer.singleShot(1000, lambda: self.lbl_target.setText(original_text))
+
+            # Restore after 1 second — but only if nothing else has
+            # rewritten the label meanwhile (a target change inside that
+            # second used to be overwritten with the OLD callsign).
+            def _restore():
+                if self.lbl_target.text() == "✓ Copied!":
+                    self.lbl_target.setText(original_text)
+            QTimer.singleShot(1000, _restore)
 
     def _toggle_manual_entry(self):
         """v2.4.4: Toggle manual target entry field visibility."""
@@ -279,6 +288,15 @@ class TargetDashboard(QFrame):
         self.lbl_target.show()
         if call:
             self.manual_target_requested.emit(call)
+
+    def set_prob_colors(self, high, low):
+        """Apply Settings → Appearance colours (hex strings). Invalid
+        values keep the defaults."""
+        from PyQt6.QtGui import QColor
+        if high and QColor(high).isValid():
+            self._hi_color = high
+        if low and QColor(low).isValid():
+            self._lo_color = low
 
     def update_data(self, data):
         if not data:
@@ -324,7 +342,7 @@ class TargetDashboard(QFrame):
         self.val_prob.setText(prob)
         try:
             val = int(prob)
-            col = "#00FF00" if val > 75 else ("#FF5555" if val < 30 else "#DDDDDD")
+            col = self._hi_color if val > 75 else (self._lo_color if val < 30 else "#DDDDDD")
             self.val_prob.setStyleSheet(f"color: {col}; font-weight: bold;")
         except: self.val_prob.setStyleSheet("")
 

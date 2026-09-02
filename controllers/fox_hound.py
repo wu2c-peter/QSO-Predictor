@@ -12,7 +12,7 @@ Copyright (C) 2025 Peter Hirst (WU2C)
 
 import logging
 
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtWidgets import QMessageBox
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,14 @@ class FoxHoundController(QObject):
         mw._fh_dialog_shown = True
 
         logger.info(f"Fox/Hound: Disambiguation dialog triggered (source={source})")
+        # Defer out of the caller: this is reached from inside
+        # handle_status_update, and a modal exec() there spins a nested
+        # event loop mid-handler while the buffer/perspective timers keep
+        # mutating the same state underneath it.
+        QTimer.singleShot(0, lambda: self._exec_disambiguation_dialog(source))
 
+    def _exec_disambiguation_dialog(self, source):
+        mw = self.main_window
         title = "Hound Mode Detected"
         text = "WSJT-X reports Hound mode is active."
 
@@ -69,6 +76,7 @@ class FoxHoundController(QObject):
         btn_cancel = msg.addButton("Ignore", QMessageBox.ButtonRole.RejectRole)
 
         msg.exec()
+        msg.deleteLater()
 
         clicked = msg.clickedButton()
         if clicked == btn_fh:

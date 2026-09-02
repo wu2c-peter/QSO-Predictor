@@ -36,7 +36,7 @@ non-null value wins; later cycles never overwrite.
 | `near_me_heard` | int/null | NearMeWidget (`_near_me_data`) | "Others near me are getting through" — does neighbor success predict own success (path proxy independent of own TX)? |
 | `behavior_pattern` | str/null | BehaviorWidget | Does conversion differ vs Loudest-First / Methodical / Random targets? |
 | `behavior_confidence` | int/null | BehaviorWidget | Weight for the above. |
-| `behavior_source` | str/null | BehaviorWidget badge (live/historical/persona) | Does live observation outpredict persona inference? |
+| `behavior_source` | str/null | BehaviorWidget badge, resolved to live / historical / persona / prefix / bayesian / default (`TargetCoordinator._behavior_source_label`) | Does live observation outpredict persona inference? |
 | `persona` | str/null | behavior predictor | Are Contest Ops actually harder for this station? |
 | `target_state` | str/null | Target Activity State | Calling on fresh CQ vs mid-QSO vs idle. |
 | `rec_reason` | int | `score_reason[rec_freq]` (terminal, alongside existing `rec_score`) | Does following a *proven* rec outperform a gap-based rec? The missing field from the v1 analysis. |

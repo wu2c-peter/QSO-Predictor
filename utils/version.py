@@ -10,6 +10,7 @@ Copyright (C) 2025 Peter Hirst (WU2C)
 """
 
 import ctypes
+import functools
 import subprocess
 import sys
 from pathlib import Path
@@ -24,16 +25,22 @@ def _base_path() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+@functools.lru_cache(maxsize=1)
 def get_version() -> str:
-    """Get version from git tag or VERSION file."""
+    """Get version from git tag or VERSION file.
+
+    Cached: called from the GUI thread (window title, About box) and
+    the git lookup is a process spawn. The spawn is also bounded — a
+    repo on a slow share or a wrapped `git` must never hang the window.
+    """
     base_path = _base_path()
 
     # Try git first (works for developers running from repo)
-    if not getattr(sys, 'frozen', False):
+    if not getattr(sys, 'frozen', False) and (base_path / '.git').exists():
         try:
             result = subprocess.run(
                 ["git", "describe", "--tags", "--always"],
-                capture_output=True, text=True, cwd=base_path
+                capture_output=True, text=True, cwd=base_path, timeout=2
             )
             if result.returncode == 0:
                 return result.stdout.strip().lstrip('v')

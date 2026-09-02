@@ -28,8 +28,10 @@ Usage:
         print(f"SNR: {result['snr_db']:.1f} dB, FT8: {result['ft8_status']}")
 """
 
+import calendar
 import json
 import logging
+import math
 import os
 from datetime import datetime, timezone
 
@@ -221,6 +223,25 @@ class IonisEngine:
         """Check if the engine loaded successfully."""
         return self._available
 
+    # Input domain the model was trained on. Values outside are a feed
+    # or caller bug, not space weather: refuse rather than extrapolate
+    # (SFI 0 / Kp 0 from a failed NOAA fetch used to produce a slightly
+    # MORE optimistic prediction than real conditions).
+    SFI_RANGE = (50.0, 400.0)
+    KP_RANGE = (0.0, 9.0)
+
+    @classmethod
+    def _valid_inputs(cls, sfi, kp) -> bool:
+        try:
+            sfi = float(sfi)
+            kp = float(kp)
+        except (TypeError, ValueError):
+            return False
+        if not (math.isfinite(sfi) and math.isfinite(kp)):
+            return False
+        return (cls.SFI_RANGE[0] <= sfi <= cls.SFI_RANGE[1]
+                and cls.KP_RANGE[0] <= kp <= cls.KP_RANGE[1])
+
     def predict(self, tx_grid: str, rx_grid: str, band: str,
                 sfi: float, kp: float,
                 hour_utc: float = None, month: int = None,
@@ -260,6 +281,10 @@ class IonisEngine:
             logger.warning(f"IONIS: unknown band '{band}'")
             return None
 
+        if not self._valid_inputs(sfi, kp):
+            logger.warning(f"IONIS: refusing out-of-range inputs sfi={sfi!r} kp={kp!r}")
+            return None
+
         # Default to current UTC time
         now = datetime.now(timezone.utc)
         if hour_utc is None:
@@ -270,8 +295,13 @@ class IonisEngine:
             day_of_year = now.timetuple().tm_yday
 
         # Resolve grids to coordinates
-        tx_lat, tx_lon = grid4_to_latlon(tx_grid)
-        rx_lat, rx_lon = grid4_to_latlon(rx_grid)
+        tx = grid4_to_latlon(tx_grid)
+        rx = grid4_to_latlon(rx_grid)
+        if tx is None or rx is None:
+            logger.debug(f"IONIS: unresolvable grid tx={tx_grid!r} rx={rx_grid!r}")
+            return None
+        tx_lat, tx_lon = tx
+        rx_lat, rx_lon = rx
 
         freq_hz = BAND_FREQ_HZ[band]
         freq_mhz = freq_hz / 1e6
@@ -298,6 +328,11 @@ class IonisEngine:
         # Denormalize to dB
         norm = BAND_NORM[band]
         snr_db = sigma * norm["std"] + norm["mean"]
+        if not math.isfinite(snr_db):
+            # Every comparison below is False for NaN, which used to
+            # fall through to a confident-looking "CLOSED".
+            logger.warning("IONIS: non-finite prediction; dropping it")
+            return None
 
         # FT8 status
         ft8_threshold = MODE_THRESHOLDS_DB["FT8"]
@@ -352,22 +387,25 @@ class IonisEngine:
 
         now = datetime.now(timezone.utc)
         if start_hour is None:
-            start_hour = now.hour
+            # Same fractional "now" as predict() — the forecast's first
+            # column used to be the truncated hour, so at 14:55 the
+            # headline card (14.92) and the "now" column (14.00)
+            # disagreed by up to an hour of solar elevation.
+            start_hour = now.hour + now.minute / 60.0
         if month is None:
             month = now.month
         if day_of_year is None:
             day_of_year = now.timetuple().tm_yday
 
+        # Midnight wrap modulo the CURRENT year's length (the old `> 365`
+        # wrap skipped 1 January after a leap-year 31 December).
+        year_len = 366 if calendar.isleap(now.year) else 365
+
         results = []
         for offset in range(hours):
-            hour = (start_hour + offset) % 24
-            # Day of year advances when we wrap past midnight
-            doy = day_of_year
-            if start_hour + offset >= 24:
-                doy = day_of_year + (start_hour + offset) // 24
-                # Crude wrap — good enough for 12-hour forecasts
-                if doy > 365:
-                    doy = doy - 365
+            total = start_hour + offset
+            hour = total % 24
+            doy = (int(day_of_year) - 1 + int(total // 24)) % year_len + 1
 
             result = self.predict(
                 tx_grid, rx_grid, band, sfi, kp,

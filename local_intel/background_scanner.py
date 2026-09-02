@@ -10,6 +10,7 @@ Copyright (C) 2025 Peter Hirst (WU2C)
 
 import json
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -150,8 +151,13 @@ class BackgroundScanner(QThread):
                     for path, pos in self._positions.items()
                 }
             }
-            with open(self._positions_file, 'w') as f:
+            # Atomic: a crash mid-write used to leave a truncated file,
+            # which _load_positions reset to {} — triggering a full
+            # re-scan that double-counted every observation.
+            tmp = self._positions_file.with_suffix('.json.tmp')
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
+            os.replace(tmp, self._positions_file)
         except Exception as e:
             logger.error(f"Could not save file positions: {e}")
     
@@ -181,9 +187,13 @@ class BackgroundScanner(QThread):
         
         while not self._stop_requested:
             try:
-                # Discover current log files
-                sources = discovery.discover_all_files()
-                
+                # Discover current log files — refresh every pass, or a
+                # log created after startup (WSJT-X launched later, JTDX's
+                # monthly ALL.TXT rollover) is never scanned until the
+                # app restarts.
+                sources = discovery.discover_all_files(refresh=True)
+                self._prune_positions({str(s.path) for s in sources})
+
                 if not sources:
                     self._sleep_interruptible(self.SCAN_INTERVAL)
                     continue
@@ -258,6 +268,13 @@ class BackgroundScanner(QThread):
         self._running = False
         logger.info("Background scanner stopped")
     
+    def _prune_positions(self, live_paths):
+        """Forget positions for files that no longer exist on disk."""
+        gone = [p for p in self._positions
+                if p not in live_paths and not os.path.exists(p)]
+        for p in gone:
+            del self._positions[p]
+
     def _sleep_interruptible(self, seconds: float):
         """Sleep that can be interrupted by stop request."""
         end_time = time.time() + seconds
@@ -280,17 +297,29 @@ class BackgroundScanner(QThread):
                 # Seek to last position
                 if pos.byte_offset > 0:
                     f.seek(pos.byte_offset)
-                
-                # Read and parse new lines
-                for line in f:
+
+                # Read with readline(), not `for line in f`: the text
+                # iterator disables tell(), which raised OSError whenever
+                # stop() interrupted a scan mid-file — the offset was then
+                # never advanced, and the already-collected decodes were
+                # counted again on the next launch.
+                while True:
                     if self._stop_requested:
                         break
-                    
+                    line = f.readline()
+                    if not line:
+                        break
+                    if not line.endswith('\n'):
+                        # Partial trailing line still being written by
+                        # WSJT-X/JTDX: leave it for the next pass.
+                        f.seek(f.tell() - len(line.encode('utf-8', 'replace')))
+                        break
+
                     decode = parser.parse_line(line)
                     if decode:
                         new_decodes.append(decode)
                         progress.decodes_processed += 1
-                
+
                 # Update position
                 pos.byte_offset = f.tell()
                 pos.last_scanned = datetime.now().isoformat()
@@ -298,10 +327,13 @@ class BackgroundScanner(QThread):
                     last_ts = new_decodes[-1].timestamp
                     if last_ts:
                         pos.last_timestamp = last_ts.isoformat()
-                        
+
         except Exception as e:
             logger.error(f"Error scanning {source.path}: {e}")
-        
+            # Never process decodes whose position we failed to commit —
+            # that is exactly the double-count path.
+            return []
+
         return new_decodes
     
     def _process_decodes(self, decodes: List) -> int:

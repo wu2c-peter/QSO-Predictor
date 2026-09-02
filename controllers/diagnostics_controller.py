@@ -38,7 +38,10 @@ class DiagnosticsController(QObject):
     _checkup_ready = pyqtSignal(object)     # CheckupRun or None
 
     def __init__(self, main_window):
-        super().__init__()
+        # Parent to MainWindow like every other controller, so Qt owns
+        # the lifetime (and the _checkup_ready connection) rather than a
+        # bare Python reference.
+        super().__init__(main_window)
         self.main_window = main_window
         self._busy = False
         self._rig_hint_snapshot = ''
@@ -169,3 +172,6 @@ class DiagnosticsController(QObject):
                                tool_version=get_version(),
                                title=self._dialog_title)
         dialog.exec()
+        # Parented dialogs survive close — release explicitly or each
+        # checkup leaks a full widget tree on MainWindow.
+        dialog.deleteLater()

@@ -197,3 +197,6 @@ cython_debug/
 *.DS_Store
 .DS_Store
 current-state*.zip
+
+# Claude Code tool state (worktrees live here — a full second copy of the tree)
+.claude/

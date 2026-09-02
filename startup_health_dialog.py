@@ -14,8 +14,8 @@ guiding users through common configuration issues.
 
 import logging
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-    QPushButton, QCheckBox, QFrame, QGroupBox
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QFrame, QGroupBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -125,7 +125,11 @@ class StartupHealthDialog(QDialog):
         # Status box
         status_frame = QFrame()
         status_frame.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Sunken)
-        status_frame.setStyleSheet("QFrame { background-color: #f0f0f0; }")
+        # Light panel with an EXPLICIT text colour: under a dark system
+        # palette the inherited label colour is near-white, which used to
+        # render "Current Status" light-on-light.
+        status_frame.setStyleSheet(
+            "QFrame { background-color: #f0f0f0; } QLabel { color: #202020; }")
         status_layout = QVBoxLayout(status_frame)
         status_layout.setContentsMargins(10, 10, 10, 10)
         
@@ -150,11 +154,11 @@ class StartupHealthDialog(QDialog):
         status_layout.addWidget(mqtt_status)
         
         layout.addWidget(status_frame)
-        
-        # Don't show again checkbox
-        self.dont_show_checkbox = QCheckBox("Don't show this again on startup")
-        layout.addWidget(self.dont_show_checkbox)
-        
+
+        # (The "Don't show this again on startup" checkbox is gone: the
+        # dialog no longer auto-shows at startup — it's reached from
+        # Help → Connection Help — and nothing ever read the setting.)
+
         # Buttons
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -177,7 +181,6 @@ class StartupHealthDialog(QDialog):
     
     def accept(self):
         """Handle OK button."""
-        self.dont_show_again = self.dont_show_checkbox.isChecked()
         super().accept()
 
 

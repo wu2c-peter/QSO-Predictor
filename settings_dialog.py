@@ -101,14 +101,17 @@ class SettingsDialog(QDialog):
         
         # IP and Port fields
         fields_layout = QFormLayout()
-        self.inp_ip = QLineEdit(self.config.get('NETWORK', 'udp_ip'))
+        self.inp_ip = QLineEdit(self.config.get('NETWORK', 'udp_ip', fallback='127.0.0.1') or '127.0.0.1')
         self.inp_ip.textChanged.connect(self._on_manual_change)
         fields_layout.addRow("Listen IP:", self.inp_ip)
         
         port_layout = QHBoxLayout()
         self.inp_port = QSpinBox()
         self.inp_port.setRange(1024, 65535)
-        self.inp_port.setValue(int(self.config.get('NETWORK', 'udp_port', fallback='2237')))
+        try:
+            self.inp_port.setValue(int(self.config.get('NETWORK', 'udp_port', fallback='2237')))
+        except (TypeError, ValueError):
+            self.inp_port.setValue(2237)
         self.inp_port.valueChanged.connect(self._on_manual_change)
         port_layout.addWidget(self.inp_port)
         port_layout.addStretch()
@@ -134,7 +137,7 @@ class SettingsDialog(QDialog):
         # Forward ports
         fwd_group = QGroupBox("UDP Forwarding (Optional)")
         fwd_layout = QFormLayout(fwd_group)
-        self.inp_fwd = QLineEdit(self.config.get('NETWORK', 'forward_ports'))
+        self.inp_fwd = QLineEdit(self.config.get('NETWORK', 'forward_ports', fallback='') or '')
         fwd_layout.addRow("Forward to ports:", self.inp_fwd)
         fwd_help = QLabel(
             "<small>Comma-separated targets to forward received packets to.<br>"
@@ -183,14 +186,19 @@ class SettingsDialog(QDialog):
         form_app = QFormLayout()
         self.inp_font = QComboBox()
         self.inp_font.addItems(["Segoe UI", "Arial", "Consolas", "Verdana"])
-        self.inp_font.setCurrentText(self.config.get('APPEARANCE', 'font_family'))
-        self.inp_size = QLineEdit(self.config.get('APPEARANCE', 'font_size'))
-        self.inp_hi = QLineEdit(self.config.get('APPEARANCE', 'high_prob_color'))
-        self.inp_lo = QLineEdit(self.config.get('APPEARANCE', 'low_prob_color'))
-        form_app.addRow("Font:", self.inp_font)
-        form_app.addRow("Size:", self.inp_size)
+        self.inp_font.setCurrentText(
+            self.config.get('APPEARANCE', 'font_family', fallback='Segoe UI') or 'Segoe UI')
+        self.inp_size = QLineEdit(self.config.get('APPEARANCE', 'font_size', fallback='10') or '10')
+        self.inp_hi = QLineEdit(self.config.get('APPEARANCE', 'high_prob_color', fallback='#00FF00') or '#00FF00')
+        self.inp_lo = QLineEdit(self.config.get('APPEARANCE', 'low_prob_color', fallback='#FF5555') or '#FF5555')
+        form_app.addRow("Decode table font:", self.inp_font)
+        form_app.addRow("Size (6–24 pt):", self.inp_size)
         form_app.addRow("High Prob Color:", self.inp_hi)
         form_app.addRow("Low Prob Color:", self.inp_lo)
+        app_note = QLabel("<small>Applied at next launch. Colours are hex "
+                          "(#RRGGBB) and drive the Prob column and dashboard.</small>")
+        app_note.setStyleSheet("color: #888888;")
+        form_app.addRow(app_note)
         tab_app.setLayout(form_app)
         tabs.addTab(tab_app, "Appearance")
 

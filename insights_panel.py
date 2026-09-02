@@ -1464,7 +1464,13 @@ class InsightsPanel(QWidget):
             original_text = self.target_label.text()
             self.target_label.setText("✓ Copied!")
             self.status_message.emit(f"Copied to clipboard: {self._current_target}")
-            QTimer.singleShot(1000, lambda: self.target_label.setText(original_text))
+
+            # Restore only if the label still shows our feedback — a
+            # target change within the second must not be overwritten.
+            def _restore():
+                if self.target_label.text() == "✓ Copied!":
+                    self.target_label.setText(original_text)
+            QTimer.singleShot(1000, _restore)
     
     def _toggle_manual_entry(self):
         """v2.4.4: Toggle manual target entry field visibility."""

@@ -177,9 +177,12 @@ class LocalIntelligence(QObject):
             if hasattr(main_window, 'sync_to_jtdx'):
                 self.insights_panel.sync_requested.connect(main_window.sync_to_jtdx)
             
-            # v2.4.4: Connect manual target entry to main window
-            if hasattr(main_window, '_on_manual_target'):
-                self.insights_panel.manual_target_requested.connect(main_window._on_manual_target)
+            # v2.4.4: Connect manual target entry to the target coordinator
+            # (same handler the dashboard's "+" uses). A hasattr guard on a
+            # method that had moved off MainWindow left this silently
+            # unwired for two releases.
+            self.insights_panel.manual_target_requested.connect(
+                main_window.target.on_manual_entry)
             
             # v2.1.3: Connect clipboard feedback to status bar
             if hasattr(main_window, 'update_status_msg'):
@@ -292,20 +295,18 @@ class LocalIntelligence(QObject):
             # v2.0.3: Handle None/empty string to clear target
             if not callsign:
                 self._current_target = None
-                
-                # v2.0.3: Clear session tracker state WITHOUT triggering slow lookup
-                if hasattr(self.session_tracker, 'clear_target'):
-                    self.session_tracker.clear_target()
-                else:
-                    # Fallback: clear internal state directly
-                    self.session_tracker._current_target = None
-                    if hasattr(self.session_tracker, '_target_session'):
-                        self.session_tracker._target_session = None
-                
+
+                # v2.0.3: Clear session tracker state WITHOUT triggering a
+                # slow lookup. (The old hasattr fallback wrote attributes
+                # the tracker never had, so the previous target kept being
+                # tracked — and its sweep pattern kept tilting the band
+                # map — after "Clear Target".)
+                self.session_tracker.clear_target()
+
                 # Clear insights panel
                 if self.insights_panel:
                     self.insights_panel.clear()
-                
+
                 return
             
             if not self._enabled:
@@ -450,14 +451,20 @@ class LocalIntelligence(QObject):
         else:
             parent = None
         
-        dialog = TrainingDialog(self.training_manager, parent)
+        # Bootstrap runs against the LIVE predictor (the one the session
+        # tracker and background scanner share), so its results land in
+        # the in-memory history directly — no reload-from-disk race with
+        # the scanner's periodic save.
+        dialog = TrainingDialog(self.training_manager, parent,
+                                behavior_predictor=self.session_tracker._behavior_predictor)
         dialog.exec()
-        
+        # Parented dialogs survive close — release explicitly or each
+        # open/close leaks a full widget tree (and re-connects five
+        # TrainingManager signals) on MainWindow.
+        dialog.deleteLater()
+
         # Refresh model status after dialog closes
         self._update_model_status()
-        
-        # Reload behavior history in case bootstrap was run
-        self.session_tracker.reload_behavior_history()
     
     def clear_session(self):
         """Clear current session data."""
@@ -567,6 +574,10 @@ class LocalIntelligence(QObject):
     
     def _on_pattern_detected(self, pattern):
         """Handle picking pattern detection."""
+        if not self._current_target:
+            # Late-arriving pattern for a target that has since been
+            # cleared must not re-arm the band map tilt.
+            return
         logger.info(f"Pattern detected: {pattern.style.value} "
                    f"(confidence: {pattern.confidence:.0%})")
 

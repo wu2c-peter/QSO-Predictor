@@ -114,15 +114,40 @@ class QSOAnalyzer(QObject):
         self.responded_to_me = {}   # {call: last_seen} stations that addressed my_call
         
         self.running = True
+        self.current_mode = "FT8"
+        # Our own TX state, from the WSJT-X/JTDX status stream. The
+        # reception cache is per-band (v2.7.0), so "no spots of me"
+        # alone can't distinguish "not transmitting" from "on the air
+        # but unheard near the target" any more — this can.
+        self._tx_on = False
+        self._last_tx_time = 0.0
         self.mqtt.start()
-        
+
         # Subscribe to 20m default to catch startup traffic
         self.mqtt.update_subscriptions(self.my_call, 14074000)
-        
+
         self.worker_thread = threading.Thread(target=self._maintenance_loop, daemon=True)
         self.worker_thread.start()
 
-    def set_dial_freq(self, freq):
+    def set_tx_state(self, tx_on):
+        """Record whether we are transmitting / TX-enabled right now."""
+        tx_on = bool(tx_on)
+        if tx_on:
+            self._last_tx_time = time.time()
+        self._tx_on = tx_on
+
+    # How long after our last TX cycle we still count as "on the air"
+    # for path classification (a few FT8 cycles: PSK Reporter uploads
+    # lag by up to a couple of minutes).
+    TX_RECENT_WINDOW_S = 180
+
+    def transmitting_recently(self):
+        return self._tx_on or (time.time() - self._last_tx_time) < self.TX_RECENT_WINDOW_S
+
+    def set_dial_freq(self, freq, mode=None):
+        mode_changed = bool(mode) and mode != self.current_mode
+        if mode_changed:
+            self.current_mode = mode
         if self.current_dial_freq != freq:
             # LOCK: Modifying cache
             with self.lock:
@@ -135,9 +160,13 @@ class QSOAnalyzer(QObject):
                 self.decode_evidence.clear()   # v2.1.3: Local decode path evidence
                 self.call_grid_map.clear()
                 self.responded_to_me.clear()
-            
-            self.mqtt.update_subscriptions(self.my_call, freq)
+
+            self.mqtt.update_subscriptions(self.my_call, freq, self.current_mode)
             self.cache_updated.emit()
+        elif mode_changed:
+            # Same dial, different mode (FT8 ↔ FT4 on the same sub-band
+            # is unusual but possible): PSK Reporter topics are per-mode.
+            self.mqtt.update_subscriptions(self.my_call, freq, self.current_mode)
 
     def set_station_identity(self, my_call, my_grid):
         """Apply a Settings-dialog callsign/grid change at runtime.
@@ -165,7 +194,7 @@ class QSOAnalyzer(QObject):
             self.call_grid_map.clear()
             self.responded_to_me.clear()
         self.mqtt.update_subscriptions(
-            self.my_call, self.current_dial_freq or 14074000)
+            self.my_call, self.current_dial_freq or 14074000, self.current_mode)
         self.cache_updated.emit()
         logger.info(f"Analyzer: station identity changed to "
                     f"{my_call} ({my_grid or 'no grid'})")
@@ -174,7 +203,7 @@ class QSOAnalyzer(QObject):
     def force_refresh(self):
         # Read freq safely
         f = self.current_dial_freq if self.current_dial_freq > 0 else 14074000
-        self.mqtt.update_subscriptions(self.my_call, f)
+        self.mqtt.update_subscriptions(self.my_call, f, self.current_mode)
 
     def relay_status(self, msg):
         pass 
@@ -1012,32 +1041,28 @@ class QSOAnalyzer(QObject):
             target_major = target_grid[:2] 
             target_minor = target_grid[:4] if len(target_grid) >= 4 else ""
             
+            # Keep the STRONGEST regional match: a 4-char grid hit (25)
+            # beats a field match (15) beats a short-grid match (10).
+            # Only the grid-square branch used to break, so a later,
+            # weaker reporter overwrote a better one and the displayed
+            # bonus / SNR depended on cache insertion order.
             for my_rep in my_reception_snapshot:
                 r_grid = my_rep.get('grid', "")
-                if len(r_grid) >= 4:
-                    if target_minor and r_grid[:4] == target_minor:
-                        geo_bonus = 25 
-                        path_str = "Reported in Region"
-                        my_snr_at_target = my_rep.get('snr', None)
-                        my_snr_reporter = my_rep.get('receiver', '')
-                        path_heard_time = my_rep.get('time', 0)
+                bonus = 0
+                if len(r_grid) >= 4 and target_minor and r_grid[:4] == target_minor:
+                    bonus = 25
+                elif len(r_grid) >= 2 and r_grid[:2] == target_major:
+                    # v2.4.4: short (2-3 char) grids count too, at lower
+                    # confidence than a full-grid field match
+                    bonus = 15 if len(r_grid) >= 4 else 10
+                if bonus > geo_bonus:
+                    geo_bonus = bonus
+                    path_str = "Reported in Region"
+                    my_snr_at_target = my_rep.get('snr', None)
+                    my_snr_reporter = my_rep.get('receiver', '')
+                    path_heard_time = my_rep.get('time', 0)
+                    if bonus == 25:
                         break
-                    elif r_grid[:2] == target_major:
-                        geo_bonus = 15
-                        path_str = "Reported in Region"
-                        my_snr_at_target = my_rep.get('snr', None)
-                        my_snr_reporter = my_rep.get('receiver', '')
-                        path_heard_time = my_rep.get('time', 0)
-                elif len(r_grid) >= 2:
-                    # v2.4.4: Catch reporters with short grids (2-3 chars)
-                    # Previously skipped by the len>=4 gate, causing status bar
-                    # to show "near target" while path showed "Not Reported"
-                    if r_grid[:2] == target_major:
-                        geo_bonus = 10  # Lower confidence than full grid match
-                        path_str = "Reported in Region"
-                        my_snr_at_target = my_rep.get('snr', None)
-                        my_snr_reporter = my_rep.get('receiver', '')
-                        path_heard_time = my_rep.get('time', 0)
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
@@ -1067,16 +1092,8 @@ class QSOAnalyzer(QObject):
         
         # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
-            have_any_spots = len(my_reception_snapshot) > 0
-            
-            if has_nearby_reporters:
-                if have_any_spots:
-                    path_str = "Not Reported in Region"  # We're TXing (spotted elsewhere), just not reaching target
-                else:
-                    path_str = "Not Transmitting"  # No spots anywhere — likely not TXing
-            else:
-                path_str = "No Reporters in Region"
-        
+            path_str = self._no_path_label(has_nearby_reporters, my_reception_snapshot)
+
         # SNR-based probability adjustment (when no path data)
         if not direct_hit and geo_bonus == 0:
             if snr > -5: geo_bonus = 10 
@@ -1195,6 +1212,25 @@ class QSOAnalyzer(QObject):
         if update_callback:
             update_callback(decode_data)
 
+    def _no_path_label(self, has_nearby_reporters, my_reception_snapshot):
+        """Path label when no evidence links us to the target's area.
+
+        "Not Transmitting" used to mean "no spots of me anywhere". Since
+        v2.7.0 the reception cache holds the CURRENT BAND only and is
+        cleared on every QSY, so an empty cache is also what the first
+        minutes on a new band look like while we are calling — that
+        mislabelled every row (and poisoned the persisted
+        `path_at_select`). Now the label requires that we actually are
+        not on the air per the status stream.
+        """
+        if not has_nearby_reporters:
+            return "No Reporters in Region"
+        if my_reception_snapshot or self.transmitting_recently():
+            # Spotted elsewhere, or on the air but not (yet) spotted:
+            # either way we're not reaching the target's region.
+            return "Not Reported in Region"
+        return "Not Transmitting"
+
     def update_path_only(self, decode_data):
         """
         Lightweight path-only update. Much faster than full analyze_decode.
@@ -1249,24 +1285,22 @@ class QSOAnalyzer(QObject):
             target_major = target_grid[:2] 
             target_minor = target_grid[:4] if len(target_grid) >= 4 else ""
             
+            # Strongest regional match wins (see analyze_decode).
+            best = 0
             for my_rep in my_reception_snapshot:
                 r_grid = my_rep.get('grid', "")
-                if len(r_grid) >= 4:
-                    if target_minor and r_grid[:4] == target_minor:
-                        path_str = "Reported in Region"
-                        my_snr_at_target = my_rep.get('snr', None)
-                        my_snr_reporter = my_rep.get('receiver', '')
+                rank = 0
+                if len(r_grid) >= 4 and target_minor and r_grid[:4] == target_minor:
+                    rank = 3
+                elif len(r_grid) >= 2 and r_grid[:2] == target_major:
+                    rank = 2 if len(r_grid) >= 4 else 1
+                if rank > best:
+                    best = rank
+                    path_str = "Reported in Region"
+                    my_snr_at_target = my_rep.get('snr', None)
+                    my_snr_reporter = my_rep.get('receiver', '')
+                    if rank == 3:
                         break
-                    elif r_grid[:2] == target_major:
-                        path_str = "Reported in Region"
-                        my_snr_at_target = my_rep.get('snr', None)
-                        my_snr_reporter = my_rep.get('receiver', '')
-                elif len(r_grid) >= 2:
-                    # v2.4.4: Catch reporters with short grids (2-3 chars)
-                    if r_grid[:2] == target_major:
-                        path_str = "Reported in Region"
-                        my_snr_at_target = my_rep.get('snr', None)
-                        my_snr_reporter = my_rep.get('receiver', '')
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
@@ -1276,16 +1310,8 @@ class QSOAnalyzer(QObject):
         
         # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
-            have_any_spots = len(my_reception_snapshot) > 0
-            
-            if has_nearby_reporters:
-                if have_any_spots:
-                    path_str = "Not Reported in Region"  # We're TXing (spotted elsewhere), just not reaching target
-                else:
-                    path_str = "Not Transmitting"  # No spots anywhere — likely not TXing
-            else:
-                path_str = "No Reporters in Region"
-        
+            path_str = self._no_path_label(has_nearby_reporters, my_reception_snapshot)
+
         decode_data['path'] = path_str
         decode_data['my_snr_at_target'] = my_snr_at_target
         decode_data['my_snr_reporter'] = my_snr_reporter

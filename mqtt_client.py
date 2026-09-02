@@ -36,27 +36,38 @@ class MQTTClient(QObject):
         self.client.on_disconnect = self.on_disconnect
         
         self.my_call = "N0CALL"
-        self.current_band = "20m"
+        self.current_band = "20m"   # None when the dial is outside any FT8/FT4 band
+        self.current_mode = "FT8"
         self.running = False
-        
+        self._start_time = None
+        # Topic filters currently held at the broker. MQTT unsubscribe
+        # matches filter strings literally — `unsubscribe("#")` (the old
+        # code) matched nothing, so every band visited stayed subscribed
+        # and the main thread decoded all of them for the whole session.
+        self._subscribed = []
+
         # Track statistics for diagnostics and periodic logging
         self._spots_received = 0
         self._spots_since_last_log = 0
         self._last_spot_time = None
         self._last_stats_log_time = None
         self._stats_log_interval = 60  # Log spot rate every 60 seconds
-        
+
         # v2.1.1: Timeout detection
         self._timeout_warned = False
         self._timeout_threshold = 60  # MQTT can be bursty, allow 60s before warning
-        
+        # Grace before "never got a spot" becomes a warning (connect +
+        # first spot on a quiet band can legitimately take a while)
+        self._startup_grace = 120
+
         logger.debug(f"MQTT: Client initialized, broker={self.broker}:{self.port}")
 
     def start(self):
-        if self.running: 
+        if self.running:
             logger.debug("MQTT: Already running, ignoring start()")
             return
         self.running = True
+        self._start_time = time.time()
         try:
             logger.info(f"MQTT: Connecting to {self.broker}:{self.port}")
             self.status_message.emit("Connecting to Live Feed...")
@@ -76,31 +87,47 @@ class MQTTClient(QObject):
         except Exception as e:
             logger.debug(f"MQTT: Error during stop: {e}")
 
-    def update_subscriptions(self, my_call, freq_hz):
-        old_call = self.my_call
-        old_band = self.current_band
-        
+    def update_subscriptions(self, my_call, freq_hz, mode="FT8"):
+        old = (self.my_call, self.current_band, self.current_mode)
+
         self.my_call = my_call.upper()  # Normalize stored callsign
         self.current_band = self._freq_to_band(freq_hz)
-        
-        if old_call != self.my_call or old_band != self.current_band:
-            logger.info(f"MQTT: Subscription update - call={self.my_call}, band={self.current_band}")
-        
+        self.current_mode = (mode or "FT8").upper()
+
+        if old != (self.my_call, self.current_band, self.current_mode):
+            logger.info(f"MQTT: Subscription update - call={self.my_call}, "
+                        f"band={self.current_band or 'none (dial outside FT8/FT4 bands)'}, "
+                        f"mode={self.current_mode}")
+
         if self.client.is_connected():
             self._subscribe()
 
-    def _subscribe(self):
-        # 1. Band Activity (Who is transmitting on my band?)
-        topic_band = f"pskr/filter/v2/{self.current_band}/FT8/#"
-        
+    def desired_topics(self):
+        """Topic filters for the current (call, band, mode)."""
+        topics = []
+        # 1. Band Activity (Who is transmitting on my band?) — omitted
+        #    when the dial isn't on a known band rather than defaulting
+        #    to 20 m and filling the caches with the wrong band's spots.
+        if self.current_band:
+            topics.append(f"pskr/filter/v2/{self.current_band}/{self.current_mode}/#")
         # 2. Who Hears Me? (Reverse Beacon - GLOBAL)
-        topic_me = f"pskr/filter/v2/+/FT8/{self.my_call}/#"
-        
+        topics.append(f"pskr/filter/v2/+/{self.current_mode}/{self.my_call}/#")
+        return topics
+
+    def _subscribe(self):
+        wanted = self.desired_topics()
+        stale = [t for t in self._subscribed if t not in wanted]
+        new = [t for t in wanted if t not in self._subscribed]
         try:
-            self.client.unsubscribe("#") 
-            self.client.subscribe([(topic_band, 0), (topic_me, 0)])
-            logger.info(f"MQTT: Subscribed to {topic_band} and {topic_me}")
-            self.status_message.emit(f"Live: {self.current_band} + {self.my_call}")
+            if stale:
+                self.client.unsubscribe(stale)
+                logger.info(f"MQTT: Unsubscribed from {', '.join(stale)}")
+            if new:
+                self.client.subscribe([(t, 0) for t in new])
+                logger.info(f"MQTT: Subscribed to {', '.join(new)}")
+            self._subscribed = list(wanted)
+            self.status_message.emit(
+                f"Live: {self.current_band or 'no band'} + {self.my_call}")
         except Exception as e:
             logger.error(f"MQTT: Subscribe error - {e}")
 
@@ -108,6 +135,9 @@ class MQTTClient(QObject):
         if rc == 0:
             logger.info("MQTT: Connected to PSK Reporter")
             self.status_message.emit("Connected to PSK Reporter MQTT")
+            # A fresh session holds no subscriptions, whatever we held
+            # before the drop.
+            self._subscribed = []
             self._subscribe()
         else:
             logger.warning(f"MQTT: Connection failed with code {rc}")
@@ -116,15 +146,14 @@ class MQTTClient(QObject):
     def on_disconnect(self, client, userdata, flags, rc, properties=None):
         logger.warning(f"MQTT: Disconnected (rc={rc}, total spots received: {self._spots_received})")
         self.status_message.emit("Live Feed Disconnected")
-        # FIX v2.0.4: Auto-reconnect on unexpected disconnect
+        self._subscribed = []
+        # paho's loop_start() thread reconnects on its own with the
+        # backoff from reconnect_delay_set(); the old explicit
+        # client.reconnect() here ran a zero-delay blocking connect on
+        # paho's network thread and raced that loop.
         if self.running and rc != 0:  # rc=0 means clean disconnect
-            logger.info("MQTT: Unexpected disconnect, attempting reconnect...")
+            logger.info("MQTT: Unexpected disconnect — paho will reconnect with backoff")
             self.status_message.emit("Attempting reconnect...")
-            try:
-                self.client.reconnect()
-            except Exception as e:
-                logger.warning(f"MQTT: Reconnect failed - {e} - will retry")
-                self.status_message.emit(f"Reconnect failed: {e} - will retry")
 
     def on_message(self, client, userdata, msg):
         try:
@@ -179,6 +208,9 @@ class MQTTClient(QObject):
             logger.debug(f"MQTT: Message processing error - {e}")
 
     def _freq_to_band(self, freq):
+        """Band name for the PSK Reporter topic, or None if the dial is
+        outside every band we know (VHF+, or a bogus value). Returning
+        a default band here silently subscribed to 20 m's firehose."""
         f = freq / 1_000_000
         if 1.8 <= f <= 2.0: return "160m"
         if 3.5 <= f <= 4.0: return "80m"
@@ -191,7 +223,7 @@ class MQTTClient(QObject):
         if 24.89 <= f <= 24.99: return "12m"
         if 28.0 <= f <= 29.7: return "10m"
         if 50.0 <= f <= 54.0: return "6m"
-        return "20m"
+        return None
     
     def get_diagnostics(self) -> dict:
         """Return diagnostic information about MQTT status."""
@@ -202,6 +234,8 @@ class MQTTClient(QObject):
             'connected': self.client.is_connected() if self.client else False,
             'my_call': self.my_call,
             'current_band': self.current_band,
+            'current_mode': self.current_mode,
+            'subscribed': list(self._subscribed),
             'spots_received': self._spots_received,
             'last_spot_age': (time.time() - self._last_spot_time) if self._last_spot_time else None,
         }
@@ -216,19 +250,23 @@ class MQTTClient(QObject):
         """
         if not self.running:
             return (True, "")
-        
-        # If never connected or no spots yet, don't warn
-        # (MQTT can take a moment to connect and receive first spot)
+
+        connected = self.client.is_connected() if self.client else False
         if self._last_spot_time is None:
+            # Never got a spot. Quiet for a startup grace period, then
+            # say so — a broker that was unreachable from the start used
+            # to look healthy for the whole session.
+            if self._start_time and (time.time() - self._start_time) > self._startup_grace:
+                if not connected:
+                    return (False, "⚠ PSK Reporter not connected — check internet / port 1883")
+                return (False, "⚠ Connected to PSK Reporter but no spots yet — feed may be stalled")
             return (True, "")
-        
+
         age = time.time() - self._last_spot_time
         if age > self._timeout_threshold:
             if not self._timeout_warned:
                 self._timeout_warned = True
-                connected = self.client.is_connected() if self.client else False
                 logger.warning(f"MQTT: No spots received for {age:.0f}s (connected={connected})")
-            connected = self.client.is_connected() if self.client else False
             if not connected:
                 return (False, "⚠ PSK Reporter disconnected — check internet")
             else:

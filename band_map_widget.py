@@ -233,6 +233,7 @@ class BandMapWidget(QWidget):
         """
         self._sweep_direction = direction
         self._sweep_confidence = confidence
+        self.update()
 
     def set_target_grid(self, grid):
         self.target_grid = (grid or "").strip().upper()
@@ -275,7 +276,7 @@ class BandMapWidget(QWidget):
         Each spot may include 'sender' and 'sender_grid' for tooltip display (v2.1.1).
         """
         now = time.time()
-        
+
         # Process each tier
         for tier_name in ['tier1', 'tier2', 'tier3', 'global']:
             tier_spots = perspective_data.get(tier_name, [])
@@ -285,18 +286,27 @@ class BandMapWidget(QWidget):
                     freq = spot.get('freq', 0)
                     snr = spot.get('snr', -20)
                     receiver = spot.get('receiver', '')
+                    # Freshness comes from the spot's own receipt time.
+                    # Stamping `now` here (as before) re-marked every
+                    # spot brand new on each 3 s refresh, so the
+                    # 29/59/180 s decay in _cleanup_data never engaged
+                    # and a 3-minute-old spot drew as bright as a new one.
+                    seen = spot.get('time') or now
                     processed.append({
                         'freq': freq,
                         'snr': snr,
                         'receiver': receiver,
                         'sender': spot.get('sender', ''),        # v2.1.1: for tooltip
                         'sender_grid': spot.get('sender_grid', ''),  # v2.1.1: for tooltip
-                        'seen': now,
+                        'seen': min(seen, now),
                         'decay': 1.0,
                         'tier': spot.get('tier', 4)
                     })
                 except: pass
             self.perspective_data[tier_name] = processed
+        # Apply decay immediately so the first paint after a refresh is
+        # already age-correct.
+        self._cleanup_data()
         
         self.update()  # PERFORMANCE FIX: was repaint()
 
@@ -531,17 +541,26 @@ class BandMapWidget(QWidget):
             self.score_map[0:1000] = 0
             self.score_reason[0:1000] = 2  # hound zone
         
-        # Mark locally busy areas as low score (but not in hard-zero edge zones)
-        for i in range(200, 2800):
-            if local_busy[i]:
-                self.score_map[i] = 10  # Can't use - local QRM
-                self.score_reason[i] = 3
-        
+        # Mark locally busy areas as low score (but not in hard-zero edge
+        # zones, and not inside the hound zone which stays at 0)
+        usable_lo = 1000 if self.hound_mode else 200
+        busy_mid = local_busy.copy()
+        busy_mid[:usable_lo] = False
+        busy_mid[2800:] = False
+        self.score_map[busy_mid] = 10  # Can't use - local QRM
+        self.score_reason[busy_mid] = 3
+
+        # Lowest offset a recommendation may land on. Old-style F/H:
+        # hounds must stay above 1000 Hz. The click handler enforced this
+        # but the automatic path clamped to 300 and could draw the green
+        # line inside the red Fox TX zone.
+        min_rec = 1000 if self.hound_mode else 300
+
         # === STEP 2: Analyze tier1 (cyan) - frequencies where target IS decoding ===
         tier1_spots = self.perspective_data.get('tier1', [])
         tier1_freqs = [
-            s.get('freq', 0) for s in tier1_spots 
-            if s.get('decay', 0) > 0.4 and 200 < s.get('freq', 0) < 2800
+            s.get('freq', 0) for s in tier1_spots
+            if s.get('decay', 0) > 0.4 and usable_lo < s.get('freq', 0) < 2800
         ]
         
         # === STEP 3: Bucket tier1 frequencies to count density ===
@@ -646,10 +665,11 @@ class BandMapWidget(QWidget):
         for tier_name, penalty in tier_penalties.items():
             for s in self.perspective_data.get(tier_name, []):
                 if s.get('decay', 0) > 0.3:
-                    f = s.get('freq', 0)
+                    f = int(s.get('freq', 0))
                     if 200 < f < 2800:
-                        for i in range(max(0, f - 30), min(self.bandwidth, f + 30)):
-                            congestion_map[i] += penalty
+                        # Slice add: one vector op per spot instead of a
+                        # 60-iteration Python loop, 4× a second.
+                        congestion_map[max(0, f - 30):min(self.bandwidth, f + 30)] += penalty
 
         # 5b: Score non-tier1 frequencies using regional intelligence
         # Confidence is continuous: 0 reporters = baseline, 6+ = full trust.
@@ -715,6 +735,34 @@ class BandMapWidget(QWidget):
                 self.score_map[i] *= dampen
                 self.score_reason[i] = 11  # suspicious_gap
 
+        # 5c2: Break the regional-quiet plateau. Step 5b assigns every
+        # quiet index the identical `50 + confidence*32`, so Step 7b's
+        # argmax returned the FIRST tied index — the recommendation was
+        # pinned to ~300 Hz whenever there was no tier-1 data (the
+        # OH0ERF 1087 Hz pick). Two small continuous terms, capped well
+        # below the sweep tilt so they only decide ties:
+        #   • clearance: up to +2 for distance from the nearest busy /
+        #     congested index (a quiet slot in the middle of a quiet
+        #     stretch beats one hugging a signal);
+        #   • centrality: up to −1 toward the passband edges.
+        quiet = (self.score_reason == 6) | (self.score_reason == 0)
+        quiet[:200] = False
+        quiet[2800:] = False
+        if quiet.any():
+            occupied = local_busy | (congestion_map > 0)
+            occupied[:200] = True
+            occupied[2800:] = True
+            idx = np.arange(self.bandwidth)
+            occ_idx = idx[occupied]
+            # Distance from each index to the nearest occupied index
+            pos = np.searchsorted(occ_idx, idx)
+            left = occ_idx[np.clip(pos - 1, 0, len(occ_idx) - 1)]
+            right = occ_idx[np.clip(pos, 0, len(occ_idx) - 1)]
+            clearance = np.minimum(np.abs(idx - left), np.abs(idx - right))
+            tie_break = (2.0 * np.clip(clearance / 150.0, 0.0, 1.0)
+                         - 1.0 * np.abs(idx - 1500) / 1500.0)
+            self.score_map[quiet] += tie_break[quiet]
+
         # 5d: Apply the sweep-bias tilt to the whole map (same curve as
         # sweep_bias_multiplier, vectorized), then clamp back to the 0-100
         # scale so display and the persisted rec_score keep their contract.
@@ -747,7 +795,7 @@ class BandMapWidget(QWidget):
             self.score_map[i] *= (2800 - i) / 100.0  # 100% at 2700, 0% at 2800
         
         # === STEP 6: Check current position status ===
-        current_idx = max(200, min(2800, self.best_offset))
+        current_idx = max(usable_lo, min(2800, self.best_offset))
         current_bucket = round(current_idx / bucket_size) * bucket_size
         current_is_proven = current_bucket in tier1_buckets
         current_count = tier1_buckets.get(current_bucket, 0)
@@ -787,7 +835,7 @@ class BandMapWidget(QWidget):
                 # Smooth transition
                 self.best_offset = int((self.best_offset * 0.6) + (best_freq * 0.4))
                 # v2.4.5: Clamp to safe operating range (WSJT-X may reject edges)
-                self.best_offset = max(300, min(2700, self.best_offset))
+                self.best_offset = max(min_rec, min(2700, self.best_offset))
                 return
             elif current_is_proven:
                 # Stay in current proven spot
@@ -805,7 +853,7 @@ class BandMapWidget(QWidget):
             masked_scores = self.score_map.copy()
             local_but_not_proven = local_busy & ~np.isin(self.score_reason, [4, 5])
             masked_scores[local_but_not_proven] = 0
-            masked_scores[:300] = 0
+            masked_scores[:min_rec] = 0
             masked_scores[2700:] = 0
             best_regional_freq = int(np.argmax(masked_scores))
             best_regional_score = masked_scores[best_regional_freq]
@@ -821,7 +869,7 @@ class BandMapWidget(QWidget):
 
                 if should_move:
                     self.best_offset = int((self.best_offset * 0.6) + (best_regional_freq * 0.4))
-                    self.best_offset = max(300, min(2700, self.best_offset))
+                    self.best_offset = max(min_rec, min(2700, self.best_offset))
                     return
                 elif current_score >= 65:
                     # Current position is regionally validated — hold
@@ -894,7 +942,7 @@ class BandMapWidget(QWidget):
         if should_move:
             self.best_offset = int((self.best_offset * 0.7) + (best_center * 0.3))
             # v2.4.5: Clamp to safe operating range (WSJT-X may reject edges)
-            self.best_offset = max(300, min(2700, self.best_offset))
+            self.best_offset = max(min_rec, min(2700, self.best_offset))
 
     def _normalize_call(self, call):
         if not call: return ""
