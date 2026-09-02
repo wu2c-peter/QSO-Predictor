@@ -180,6 +180,15 @@ feature to FT8web upstream, so it works with the live site out of the box.
 
 The listener is off by default.
 
+**Self-hosted FT8web (v2.8.1):** the listener accepts WebSocket connections
+only from pages served by `ft8web.ok1cdj.com`, `localhost`, or
+`127.0.0.1` (a browser stamps every connection with its page's origin;
+without this check any open web page could push decodes into QSOP and on
+to your logger). If you run your own FT8web instance under another host
+name, add it to a comma-separated `allowed_origins` key in the `[FT8WEB]`
+section of `qso_predictor.ini` (see Config File Locations in the wiki).
+The listener also raises a status-bar warning if it cannot open its port.
+
 **In FT8web:**
 
 1. Open Settings → **External Data Stream**
@@ -264,6 +273,8 @@ Visual representation of the frequency recommendation algorithm:
 
 **Regional consensus (v2.5):** When multiple PSK Reporter stations near the target all show no activity at a frequency, confidence increases. The score scales continuously with reporter count — more independent reporters confirming quiet means a higher score. Frequencies flanked by heavy target activity but empty in between are flagged as suspicious (possible local QRM at target).
 
+**Sweep-aware recommendation (v2.8.1):** When the Insights panel's live pattern tracker sees the target working its pileup methodically from one end of the passband to the other (**High → Low** or **Low → High**, confidence 55% or better), the score curve is tilted by up to ±8% toward the end the target reaches first — so the green line leans toward where they will arrive next. It is a weight, not an override: a proven-ideal slot at the "wrong" end still beats a merely quiet slot at the favored end. The tilt clears when the target changes. Also since v2.8.1, when several quiet slots score identically the recommendation prefers the middle of the widest quiet stretch rather than simply the lowest frequency.
+
 #### Bottom Section: Your Local Decodes
 
 What your radio is receiving, color-coded by signal strength:
@@ -291,7 +302,7 @@ The decode table's **Path** column shows whether your signal is reaching each st
 | **Heard by Target** | Cyan | Target has decoded YOUR signal — call them! |
 | **Reported in Region** | Green | Stations near target heard you — path confirmed |
 | **Not Reported in Region** | Orange | Reporters exist but haven't heard you yet |
-| **Not Transmitting** | Gray | You haven't transmitted recently |
+| **Not Transmitting** | Gray | WSJT-X/JTDX reports you haven't transmitted in the last few minutes (v2.8.1: no longer shown merely because you just changed bands) |
 | **No Reporters in Region** | Dark gray | No PSK Reporter data from that area |
 
 ### Target Activity State (v2.3.0)
@@ -497,6 +508,10 @@ The Insights Panel shows:
 - **Loudest First** — favors strong signals
 - **Methodical** — works through pileup systematically
 - **Random/Fair** — no clear preference
+
+A detected sweep (**High → Low** / **Low → High**) also tilts the band map's
+frequency recommendation toward where the target will arrive next
+(v2.8.1) — see Section 4, Score Graph.
 
 **Persona:** Operating style classification
 - **Contest Op** — high rate, picks loudest
@@ -1091,6 +1106,10 @@ end
 - **IONIS propagation predictions** — enabled by default. Disable if you don't want the Path Prediction panel.
 - **Outcome recording** — enabled by default. See "Data Collection" below for what this is.
 
+**Appearance tab (v2.8.1):** decode-table font family and size, and the two
+colours used for high/low probability in the Prob column and on the
+dashboard. Applied at the next launch.
+
 ### Toolbar Options
 
 A few commonly-used behaviors live on the main toolbar rather than in Settings:
@@ -1393,6 +1412,24 @@ source at a time.
 browser client is connected, QSOP does not show its usual UDP-silence
 warning, because no UDP data is expected when the browser is your data
 source. Normal UDP monitoring resumes when the FT8web client disconnects.
+
+### PSK Reporter and Solar Warnings (v2.8.1)
+
+The status bar now reports the live-feed problems that used to fail silently:
+
+**"⚠ PSK Reporter not connected — check internet / port 1883"** — the MQTT
+broker could not be reached (no internet, a firewall on port 1883, or an
+outage). The band map's target perspective stays empty until it reconnects;
+QSOP retries on its own with backoff.
+
+**"⚠ Connected to PSK Reporter but no spots yet"** / **"⚠ No MQTT spots for Ns"**
+— connected, but the feed has gone quiet. Usually a PSK Reporter-side stall;
+it clears automatically when spots resume.
+
+**"Solar: unavailable"** or **"Solar: SFI 142 | K 2 (Good, 47 min old)"** —
+the NOAA space-weather fetch failed. QSOP keeps showing the last good
+reading with its age rather than displaying zeros; IONIS uses typical
+conditions (SFI 100, Kp 2) until real data returns.
 
 ### VPN Breaking Multicast (Multi-Computer Setups)
 

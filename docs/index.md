@@ -26,7 +26,8 @@ two stations — including Puerto Rico — with double-click-to-call.*
 - **Target perspective band map** — reconstructs what the DX station's region
   is decoding, using PSK Reporter data filtered by geographic proximity
 - **Frequency recommendations** — identifies clear frequencies at the target's
-  location, not just yours
+  location, not just yours, and leans toward where a target that sweeps its
+  pileup methodically will arrive next
 - **Propagation confirmation** — shows whether your signal is reaching the
   target's region before you call
 - **Click-to-call** — double-click a station and it's set up in WSJT-X:
