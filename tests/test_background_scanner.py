@@ -41,37 +41,54 @@ def scanner(tmp_path, monkeypatch):
     return BackgroundScanner(_Predictor())
 
 
-WSJTX_LINE = "260830_181500    14.074 Rx FT8    -12  0.3 1687 CQ JA1XYZ PM95\n"
+WSJTX_LINE = "260830_181500    14.074 Rx FT8    -12  0.3 1687 CQ JA1XYZ PM95"
+
+# Windows WSJT-X/JTDX write CRLF; macOS/Linux write LF. Files are written
+# as BYTES so the on-disk newline is exactly what the test says, on every
+# CI platform (Path.write_text would translate LF→CRLF on Windows and
+# make byte-offset expectations platform-dependent).
+NEWLINES = ["\n", "\r\n"]
 
 
-def test_offset_advances_to_end_of_complete_lines(scanner, tmp_path):
+def _write(path, lines, newline, partial=""):
+    data = "".join(line + newline for line in lines) + partial
+    path.write_bytes(data.encode('utf-8'))
+    return data.encode('utf-8')
+
+
+@pytest.mark.parametrize("newline", NEWLINES, ids=["lf", "crlf"])
+def test_offset_advances_to_end_of_complete_lines(scanner, tmp_path, newline):
     log = tmp_path / 'ALL.TXT'
-    log.write_text(WSJTX_LINE * 3, encoding='utf-8')
+    _write(log, [WSJTX_LINE] * 3, newline)
     pos = FilePosition(path=str(log))
     decodes = scanner._scan_file_incremental(_Source(log), LogParser(), pos, ScanProgress())
     assert len(decodes) == 3
     assert pos.byte_offset == log.stat().st_size
 
 
-def test_partial_trailing_line_is_left_for_next_pass(scanner, tmp_path):
+@pytest.mark.parametrize("newline", NEWLINES, ids=["lf", "crlf"])
+def test_partial_trailing_line_is_left_for_next_pass(scanner, tmp_path, newline):
     """WSJT-X writes lines incrementally; a half-written tail must not be
     parsed now AND re-read later."""
     log = tmp_path / 'ALL.TXT'
-    log.write_text(WSJTX_LINE + WSJTX_LINE[:30], encoding='utf-8')
+    _write(log, [WSJTX_LINE], newline, partial=WSJTX_LINE[:30])
+    one_line = len((WSJTX_LINE + newline).encode())
     pos = FilePosition(path=str(log))
     decodes = scanner._scan_file_incremental(_Source(log), LogParser(), pos, ScanProgress())
     assert len(decodes) == 1
-    assert pos.byte_offset == len(WSJTX_LINE.encode())
+    assert pos.byte_offset == one_line
     # Complete the line; the next pass picks up exactly the one new decode
-    log.write_text(WSJTX_LINE * 2, encoding='utf-8')
+    _write(log, [WSJTX_LINE] * 2, newline)
     decodes = scanner._scan_file_incremental(_Source(log), LogParser(), pos, ScanProgress())
     assert len(decodes) == 1
     assert pos.byte_offset == log.stat().st_size
 
 
-def test_stop_mid_file_commits_a_consistent_offset(scanner, tmp_path):
+@pytest.mark.parametrize("newline", NEWLINES, ids=["lf", "crlf"])
+def test_stop_mid_file_commits_a_consistent_offset(scanner, tmp_path, newline):
     log = tmp_path / 'ALL.TXT'
-    log.write_text(WSJTX_LINE * 5, encoding='utf-8')
+    _write(log, [WSJTX_LINE] * 5, newline)
+    one_line = len((WSJTX_LINE + newline).encode())
     pos = FilePosition(path=str(log))
 
     class StopAfterTwo(LogParser):
@@ -84,7 +101,7 @@ def test_stop_mid_file_commits_a_consistent_offset(scanner, tmp_path):
 
     decodes = scanner._scan_file_incremental(_Source(log), StopAfterTwo(), pos, ScanProgress())
     # Whatever was returned, the offset points exactly past those lines
-    assert pos.byte_offset == len(decodes) * len(WSJTX_LINE.encode())
+    assert pos.byte_offset == len(decodes) * one_line
 
 
 def test_positions_file_is_written_atomically(scanner, tmp_path):
