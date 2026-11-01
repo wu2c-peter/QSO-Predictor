@@ -340,14 +340,18 @@ class TargetCoordinator(QObject):
                 t['competition_src'] = src
                 t['my_snr_at_target'] = row_data.get('my_snr_at_target')
                 t['best_rival_snr_at_target'] = row_data.get('best_rival_snr')
+                # SNR rank at the target's end (analyzer), not the session
+                # tracker's local rank — that one is only ever None or '?'.
+                rank = row_data.get('my_snr_rank')
+                t['my_rank_at_select'] = rank if isinstance(rank, int) else None
 
             intel = getattr(mw, 'local_intel', None)
             tracker = getattr(intel, 'session_tracker', None) if intel else None
             if tracker:
+                # Usually 0 here (fresh target session); the recorder
+                # promotes the first TX cycle's local-caller count.
                 pileup = tracker.get_pileup_info()
                 t['local_callers_at_select'] = pileup.get('size', 0) if pileup else 0
-                rank = (tracker.get_your_status() or {}).get('rank')
-                t['my_rank_at_select'] = rank if isinstance(rank, int) else None
                 behavior = tracker.get_target_behavior()
                 if behavior:
                     t['behavior_pattern'] = behavior.get('bayesian_style')

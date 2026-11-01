@@ -61,6 +61,21 @@ def count_unique_reporters_near(reports: List[Dict],
                 and r.get('grid', '')[:2] == target_field})
 
 
+def snr_rank_at_target(my_snr: Optional[int],
+                       rival_snrs: List[Optional[int]]) -> Optional[int]:
+    """Our SNR rank among callers heard at the target's end: 1 + the
+    number of rivals spotted strictly louder (ties share the rank).
+    None when our own SNR at the target is unknown.
+
+    Outcome schema v2 `my_rank_at_select` — the session tracker's local
+    rank can never be numeric (we can't hear ourselves), so the only
+    knowable rank is this one, from the target's perspective spots.
+    """
+    if my_snr is None:
+        return None
+    return 1 + sum(1 for s in rival_snrs if s is not None and s > my_snr)
+
+
 class QSOAnalyzer(QObject):
     cache_updated = pyqtSignal()
     status_message = pyqtSignal(str)
@@ -1120,6 +1135,8 @@ class QSOAnalyzer(QObject):
             competition_count = 0
             strong_qrm = False
             best_rival_snr = None  # schema v2: strongest rival at target's end
+            rival_snrs = []        # schema v2: for my_snr_rank
+            my_call_upper = self.my_call.upper()
 
             # Count Tier 1 and Tier 2 at full weight
             for tier_name in ['tier1', 'tier2']:
@@ -1134,8 +1151,11 @@ class QSOAnalyzer(QObject):
                             if snr is not None:
                                 if snr > 0:
                                     strong_qrm = True
-                                if best_rival_snr is None or snr > best_rival_snr:
-                                    best_rival_snr = snr
+                                # Our own spot is not a rival
+                                if sender.upper() != my_call_upper:
+                                    rival_snrs.append(snr)
+                                    if best_rival_snr is None or snr > best_rival_snr:
+                                        best_rival_snr = snr
             
             # Count Tier 3 at 50% weight
             tier3_count = 0
@@ -1201,6 +1221,8 @@ class QSOAnalyzer(QObject):
             
             decode_data['competition'] = comp_str
             decode_data['best_rival_snr'] = best_rival_snr  # schema v2
+            decode_data['my_snr_rank'] = snr_rank_at_target(
+                my_snr_at_target, rival_snrs)  # schema v2
             geo_bonus -= qrm_penalty  # Factor competition into probability
         else:
             # For bulk analysis, just use path status as competition placeholder

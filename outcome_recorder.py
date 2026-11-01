@@ -380,6 +380,19 @@ class OutcomeRecorder:
                     value = ctx.pop(key)
                     if self._at_select.get(key) is None and value is not None:
                         self._at_select[key] = value
+            # Targets set from WSJT-X's DX Call often have no decode-table
+            # row at select, so path_at_select arrives blank — backfill it
+            # from the first cycle with a label (fill-only-if-empty).
+            label = ctx.pop('path_label', None)
+            if label and not self._path_at_select:
+                self._path_at_select = label
+            # The session tracker's pileup for a just-selected target is
+            # still empty at select; its first-TX-cycle size is the
+            # at-select value. Later cycles live in the trace only.
+            lcall = ctx.get('lcall')
+            if self._tx_cycle_count == 1 and isinstance(lcall, int):
+                prior = self._at_select.get('local_callers_at_select') or 0
+                self._at_select['local_callers_at_select'] = max(prior, lcall)
             comp = ctx.get('comp')
             if isinstance(comp, int) and comp > self._competition_max:
                 self._competition_max = comp

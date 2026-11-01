@@ -1205,16 +1205,17 @@ class MainWindow(QMainWindow):
             if row:
                 comp, _ = parse_competition(str(row.get('competition', '')))
                 ctx['comp'] = comp
-                ctx['path'] = PathStatus.from_display(
-                    str(row.get('path', ''))).compact_code
+                path_label = str(row.get('path', ''))
+                ctx['path'] = PathStatus.from_display(path_label).compact_code
+                ctx['path_label'] = path_label  # popped: path_at_select backfill
+                rank = row.get('my_snr_rank')
+                ctx['rank'] = rank if isinstance(rank, int) else None
 
             intel = self.local_intel
             tracker = getattr(intel, 'session_tracker', None) if intel else None
             if tracker:
                 pileup = tracker.get_pileup_info()
                 ctx['lcall'] = pileup.get('size', 0) if pileup else 0
-                rank = (tracker.get_your_status() or {}).get('rank')
-                ctx['rank'] = rank if isinstance(rank, int) else None
 
             tx_df = status.get('tx_df', 0)
             ctx['txf'] = tx_df

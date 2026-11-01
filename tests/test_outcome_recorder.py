@@ -418,3 +418,60 @@ def test_set_station_updates_responded_detection(outcome_recorder_home):
     assert rec._target_responded is False
     rec.on_decode('JA1XYZ', 'W2NEW JA1XYZ -05')   # new identity: detected
     assert rec._target_responded is True
+
+
+def test_blank_path_at_select_filled_at_first_tx(outcome_recorder_home):
+    """2026-10 analysis: path_at_select was blank in 32% of v2 events —
+    targets set from WSJT-X's DX Call before they have a decode-table row.
+    The first TX cycle's full path label backfills it (fill-only-if-empty,
+    first non-blank wins) and never lands in the trace."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    contexts = iter([
+        {'path': '', 'path_label': ''},
+        {'path': 'R', 'path_label': 'Reported in Region'},
+        {'path': 'H', 'path_label': 'Heard by Target'},
+    ])
+    rec.on_target_selected('JA1XYZ', 'PM95', band='20m', path_at_select='')
+    for _ in range(3):
+        rec.on_status_update(True, cycle_context_fn=lambda: next(contexts))
+        rec.on_status_update(False)
+    rec._target_selected_at -= timedelta(seconds=60)
+    rec.record_outcome('QSO_LOGGED', SNAPSHOT)
+
+    ev = [e for e in read_events(outcome_recorder_home)
+          if e['type'] == 'outcome'][0]
+    assert ev['path_at_select'] == 'Reported in Region'
+    assert all('path_label' not in t for t in ev['trace'])
+
+
+def test_select_time_path_never_overwritten_by_first_tx(outcome_recorder_home):
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    make_attempt(rec, path='Not Reported in Region',
+                 cycle_ctx={'path': 'H', 'path_label': 'Heard by Target'})
+    rec.record_outcome('QSO_LOGGED', SNAPSHOT)
+
+    ev = [e for e in read_events(outcome_recorder_home)
+          if e['type'] == 'outcome'][0]
+    assert ev['path_at_select'] == 'Not Reported in Region'
+
+
+def test_local_callers_at_select_promoted_from_first_tx(outcome_recorder_home):
+    """2026-10 analysis: local_callers_at_select was non-zero in 0.5% of v2
+    events while trace lcall was non-zero in 39 attempts — the session
+    tracker's pileup for a just-selected target is empty at select. The
+    first TX cycle's lcall is the at-select value; later cycles don't
+    move it (they're in the trace)."""
+    rec = OutcomeRecorder('WU2C', 'FN30')
+    contexts = iter([{'lcall': 3}, {'lcall': 7}])
+    rec.on_target_selected('JA1XYZ', 'PM95', band='20m',
+                           tactical={'local_callers_at_select': 0})
+    for _ in range(2):
+        rec.on_status_update(True, cycle_context_fn=lambda: next(contexts))
+        rec.on_status_update(False)
+    rec._target_selected_at -= timedelta(seconds=60)
+    rec.record_outcome('QSO_LOGGED', SNAPSHOT)
+
+    ev = [e for e in read_events(outcome_recorder_home)
+          if e['type'] == 'outcome'][0]
+    assert ev['local_callers_at_select'] == 3
+    assert [t['lcall'] for t in ev['trace']] == [3, 7]

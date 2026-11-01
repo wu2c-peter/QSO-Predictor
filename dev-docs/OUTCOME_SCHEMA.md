@@ -22,6 +22,30 @@ km) are indistinguishable from exact ones — treat `distance_km` as
 band-scale, not precise. Before this fix, such records persisted
 `distance_km: null` / `target_continent: ""` (~20% of the April sample;
 see BACKLOG.md, resolved).
+**Capture fixes (2026-10-31, from `OUTCOME_ANALYSIS_2026-10.md`):**
+events written before this date have these known gaps — analysis scripts
+should treat the fields as unusable before the fix.
+- `my_rank_at_select` / trace `rank` were **always null**: the source
+  (`SessionTracker.get_your_status()['rank']`) is only ever None or `'?'`
+  — we can't hear our own signal. Now the **SNR rank at the target's end**:
+  `1 + #rivals spotted strictly louder` near the target's frequency
+  (`analyzer.core.snr_rank_at_target`, row key `my_snr_rank`). Null when
+  `my_snr_at_target` is unknown, so expect fill ≈ that field's (~18%).
+- `best_rival_snr_at_target` / trace rivals no longer include **our own
+  spot** when the target hears us near its frequency (it could make us
+  our own "best rival").
+- `local_callers_at_select` was ~always 0 (fresh target session at
+  select); now promoted from the **first TX cycle's** `lcall`
+  (max with the select-time value).
+- `path_at_select` was blank in ~32% of events (target set from WSJT-X's
+  DX Call before it has a decode-table row); a blank value is now
+  **backfilled from the first TX cycle with a path label** — the same
+  first-TX timing as `success_prob`. A select-time value is never
+  overwritten. 98 of the 140 blank events had no row at first TX either,
+  so some blanks remain by nature.
+- `persona` (0.5% fill) is **not a bug**: the key is correct; the persona
+  prior simply rarely wins (needs a station with ≥3 historical QSOs and a
+  session seen, and loses to historical/live data).
 **Drafted:** 2026-07-01, WU2C + Claude
 **Motivation:** `OUTCOME_ANALYSIS_2026-07.md`. v1 logs the scoring engine's view of each attempt but discards the tactical picture the operator actually saw — competition, rank, behavioral assessment, the tool's own predictions. v2 captures the *inputs to the decision*, plus a compact per-cycle trace enabling survival/hazard analysis.
 
@@ -105,8 +129,8 @@ All line numbers against main @ v2.5.7 (abf3d5d).
 | `strategy` | **NEW** `InsightsPanel._last_strategy` — retain the `strategy` local (insights_panel.py:1601-1605); capture `.recommended_action` | Same caveat: the integration's `get_strategy()` getter recomputes differently. Clear both new attrs in `clear()`. |
 | `competition_at_select` | `row_data.get('competition')` in the same target_coordinator block that reads `path_at_select` (~line 300), parsed with the paren regex | Third competition parser in the codebase (main_v2.py:983, insights_panel.py:1622) — consolidate into one helper as part of v2. |
 | `competition_max` | recorder-internal running max, fed per cycle | — |
-| `local_callers_at_select` | `mw.local_intel.session_tracker.get_pileup_info()['size']` (session_tracker.py:408) | 0 when getter returns None. |
-| `my_rank_at_select` | `session_tracker.get_your_status()['rank']` (session_tracker.py:503) | Can be int, None, or `'?'` (in pileup, own signal not decodable) — map non-int → null. |
+| `local_callers_at_select` | `mw.local_intel.session_tracker.get_pileup_info()['size']` (session_tracker.py:408), **promoted from first TX cycle's `lcall`** (2026-10-31) | 0 when getter returns None. |
+| `my_rank_at_select` | ~~`session_tracker.get_your_status()['rank']`~~ (never numeric — see capture fixes 2026-10-31) → `row_data['my_snr_rank']` (analyzer competition loop, `snr_rank_at_target`) | Null when `my_snr_at_target` is unknown. |
 | `my_snr_at_target` | `row_data.get('my_snr_at_target')` (set by analyzer/core.py:1010) | Null when target hasn't uploaded spots of us. |
 | `best_rival_snr_at_target` | **Needs a ~3-line analyzer addition**: the tier1/tier2 competition loop (analyzer/core.py:1029-1038) already reads each rival spot's `snr` for the strong-QRM flag but discards it; track the max → `decode_data['best_rival_snr']` | Only field not already computed. Alternative: drop from v2. |
 | `near_me_heard` | `InsightsPanel._near_me_count` (set in `update_near_me`, insights_panel.py:1655) | 0 means both "none heard" and "never updated" — acceptable, documented. |
