@@ -829,6 +829,12 @@ You can set up one-click transfer of **frequencies** and **callsigns** using Aut
 ;
 ; NOTE: Check JTDX first! JTDX's title bar contains "WSJT-X"
 ; so WinExist("WSJT-X") matches both apps.
+;
+; NOTE: WinExist matches any window whose title CONTAINS the text
+; (AutoHotkey's default), so "WSJT-X" also covers WSJT-X Improved.
+; The WS successor to Improved is titled "WS  v3.x Digital Mode
+; Suite" — no "WSJT-X" in it — so the WSJT-X branch below also tries
+; "Digital Mode Suite". Don't hard-code a version number; it changes.
 
 ; JTDX coordinates
 JTDX_TX_X := 800     ; TX frequency field
@@ -868,8 +874,8 @@ ClipboardChanged(dataType)
         ; JTDX first — its title contains "WSJT-X" so must check first!
         if WinExist("JTDX")
             PasteToField("JTDX", JTDX_TX_X, JTDX_TX_Y, clip)
-        else if WinExist("WSJT-X")
-            PasteToField("WSJT-X", WSJTX_TX_X, WSJTX_TX_Y, clip)
+        else if (hwnd := WinExist("WSJT-X")) || (hwnd := WinExist("Digital Mode Suite"))
+            PasteToField("ahk_id " hwnd, WSJTX_TX_X, WSJTX_TX_Y, clip)
         return
     }
 
@@ -881,8 +887,8 @@ ClipboardChanged(dataType)
     if RegExMatch(clip, "^[A-Z0-9/]{3,10}$") && RegExMatch(clip, "[A-Z]") && RegExMatch(clip, "\d") {
         if WinExist("JTDX")
             PasteCallsign("JTDX", JTDX_DX_X, JTDX_DX_Y, clip, JTDX_GEN_X, JTDX_GEN_Y, JTDX_ENTX_X, JTDX_ENTX_Y)
-        ; else if WinExist("WSJT-X")
-        ;     PasteCallsign("WSJT-X", WSJTX_DX_X, WSJTX_DX_Y, clip, WSJTX_GEN_X, WSJTX_GEN_Y, WSJTX_ENTX_X, WSJTX_ENTX_Y)
+        ; else if (hwnd := WinExist("WSJT-X")) || (hwnd := WinExist("Digital Mode Suite"))
+        ;     PasteCallsign("ahk_id " hwnd, WSJTX_DX_X, WSJTX_DX_Y, clip, WSJTX_GEN_X, WSJTX_GEN_Y, WSJTX_ENTX_X, WSJTX_ENTX_Y)
         return
     }
 }
@@ -904,7 +910,7 @@ PasteToField(windowTitle, clickX, clickY, text)
         ToolTip "TX Freq → " text
         SetTimer () => ToolTip(), -1500
     } catch {
-        ToolTip "Could not paste to " windowTitle
+        ToolTip "Could not paste — is the WSJT-X/WS/JTDX window open?"
         SetTimer () => ToolTip(), -2000
     }
 }
@@ -937,7 +943,7 @@ PasteCallsign(windowTitle, dxX, dxY, text, genX, genY, enTxX, enTxY)
         ToolTip "DX Call → " text
         SetTimer () => ToolTip(), -1500
     } catch {
-        ToolTip "Could not paste to " windowTitle
+        ToolTip "Could not paste — is the WSJT-X/WS/JTDX window open?"
         SetTimer () => ToolTip(), -2000
     }
 }
@@ -960,8 +966,13 @@ PasteCallsign(windowTitle, dxX, dxY, text, genX, genY, enTxX, enTxY)
 -- UPDATE these coordinates using Hammerspoon console:
 --   hs.mouse.absolutePosition()  (then subtract window origin)
 --
--- NOTE: Check JTDX first! JTDX's title bar contains "WSJT-X"
--- so hs.application.find("WSJT-X") matches both apps.
+-- NOTE on hs.application.find(): a string hint is a Lua PATTERN unless
+-- the 3rd arg (stringLiteral) is true. In Lua patterns "-" is a
+-- quantifier, so a bare find("WSJT-X") never matches the app named
+-- "WSJT-X" — always pass true for a plain-text match. "WS" (the
+-- successor to WSJT-X Improved; its macOS app is named exactly "WS")
+-- is matched with exact=true, because a substring "WS" would also hit
+-- "WSJT-X". Check JTDX first so its coordinates win if both are open.
 
 -- JTDX coordinates
 local JTDX_TX_X, JTDX_TX_Y = 800, 630       -- TX frequency field
@@ -1009,8 +1020,10 @@ hs.timer.doEvery(0.5, function()
 end)
 
 function findAppCoords(fieldType)
-    -- JTDX first! Its title contains "WSJT-X" so must check first
-    local app = hs.application.find("JTDX") or hs.application.find("WSJT-X")
+    -- find(hint, exact, stringLiteral) — see NOTE at top
+    local app = hs.application.find("JTDX", false, true)      -- JTDX
+        or hs.application.find("WSJT-X", false, true)          -- WSJT-X / Improved
+        or hs.application.find("WS", true)                     -- WS (exact name)
     if not app then return nil end
     local name = app:name()
     local isJTDX = name:find("JTDX")
@@ -1069,6 +1082,18 @@ end
 3. Reload Hammerspoon config (⌘+R in console).
 
 > **Note:** Both scripts check for JTDX first because JTDX's title bar contains "WSJT-X" (it's a fork). If you check WSJT-X first, it will match JTDX and use the wrong coordinates. You can also skip the scripts entirely and just Ctrl+V / ⌘+V manually.
+
+> **Forks and successors:** The scripts find the app by its window
+> title (AutoHotkey) or app name (Hammerspoon), so a fork that changes
+> either silently stops the paste.
+> WSJT-X Improved keeps "WSJT-X" in its title and needs no change. Its
+> successor **WS** is titled "WS  v3.x Digital Mode Suite", which the
+> AutoHotkey script above now matches on "Digital Mode Suite". On a Mac
+> the WS app bundle is named exactly "WS" (executable `ws`), and the
+> Hammerspoon script matches that name exactly. Switching apps also
+> means re-measuring the field coordinates —
+> the layout is not the same as stock WSJT-X. QSO Predictor itself talks
+> to all of these over UDP and doesn't care about the title.
 
 📖 **Finding coordinates:** In AutoHotkey use Window Spy; in Hammerspoon use `hs.mouse.absolutePosition()` while hovering over each field. You need coordinates for: TX frequency field, DX Call field, Generate Std Msgs button, and Enable TX button.
 
