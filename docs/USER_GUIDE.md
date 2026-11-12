@@ -800,6 +800,14 @@ You can set up one-click transfer of **frequencies** and **callsigns** using Aut
 > - **Callsigns on JTDX** — JTDX ignores the UDP Configure message, so
 >   when you double-click a non-CQ station QSOP copies the callsign to
 >   the clipboard, and this script completes the paste automatically.
+>
+> **Copy callsigns from another program?** If you rely on the script to
+> paste callsigns you copy elsewhere (GridTracker's call roster, a DX
+> cluster window), that no longer works on WSJT-X/WS with the branch
+> disabled. Re-enable it by removing the `;` from the two commented
+> `else if` lines in the callsign section. Set `WSJTX_ENTX_X` and
+> `WSJTX_ENTX_Y` to `0` if you want it to stop after Generate Std Msgs
+> rather than clicking Enable TX.
 
 **The workflow:**
 1. Click band map → frequency auto-pastes to TX field (both apps)
@@ -884,6 +892,10 @@ ClipboardChanged(dataType)
     ; to WSJT-X over UDP; pasting too would double-drive it. JTDX stays
     ; active: JTDX ignores the UDP Configure message, so QSOP copies the
     ; callsign to the clipboard and this completes it.
+    ; Copy callsigns from ANOTHER program (e.g. GridTracker's call
+    ; roster)? Remove the ";" from the two "else if" lines below to
+    ; turn the WSJT-X/WS branch back on. To stop after Generate Std
+    ; Msgs, set WSJTX_ENTX_X and WSJTX_ENTX_Y to 0 at the top.
     if RegExMatch(clip, "^[A-Z0-9/]{3,10}$") && RegExMatch(clip, "[A-Z]") && RegExMatch(clip, "\d") {
         if WinExist("JTDX")
             PasteCallsign("JTDX", JTDX_DX_X, JTDX_DX_Y, clip, JTDX_GEN_X, JTDX_GEN_Y, JTDX_ENTX_X, JTDX_ENTX_Y)
