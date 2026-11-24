@@ -72,3 +72,18 @@ def outcome_recorder_home(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setenv('USERPROFILE', str(tmp_path))
     return tmp_path / '.qso-predictor' / 'outcome_history.jsonl'
+
+
+@pytest.fixture(autouse=True)
+def _no_real_hostname_lookup(monkeypatch):
+    """Keep the suite off the resolver.
+
+    `udp_handler.multicast_join_addrs()` resolves the machine's own
+    hostname, and every `UDPHandler()` calls it. On GitHub's macOS
+    runners that lookup takes ~35 s before giving up, which turned a
+    4-second suite into a 30+ minute job (56 tests x 35 s). 'localhost'
+    resolves instantly everywhere. Tests that care about the lookup
+    patch `gethostname` / `getaddrinfo` themselves, after this fixture.
+    """
+    import socket
+    monkeypatch.setattr(socket, 'gethostname', lambda: 'localhost')
