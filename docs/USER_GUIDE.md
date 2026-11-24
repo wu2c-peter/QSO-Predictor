@@ -12,7 +12,7 @@ description: >-
 
 # QSO Predictor User Guide
 
-**Current as of Version 2.8.2**  
+**Current as of Version 2.8.3**  
 **By Peter Hirst (WU2C)**
 
 > 📋 **See [README](https://github.com/wu2c-peter/qso-predictor/blob/main/README.md) for What's New, Version History, and Installation**
@@ -1141,6 +1141,8 @@ end
 ## 11. Settings
 
 ### File → Settings
+
+> **macOS:** Settings is on **QSO Predictor → Preferences…** (⌘,), the usual Mac location, not the File menu. Wherever this guide says "File → Settings", use that.
 
 **My Callsign:** Your callsign (required for "who hears me" tracking)
 

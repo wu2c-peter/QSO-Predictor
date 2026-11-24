@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.8.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.8.3-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9MWCW2FTB866)
@@ -46,20 +46,22 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.8.2
+## 🆕 What's New in v2.8.3
 
-**Saying what the evidence shows.** A small bug-fix release driven by two user reports. Nothing changes in how you operate the app:
+**Two fixes from a user report.** Both were reported, diagnosed and patched by IW5DNZ. Nothing changes in how you operate the app:
 
-- **Path Intelligence no longer claims a spot that didn't happen.** A green "Reported in Region" path can come from a PSK Reporter receiver near the target spotting *you*, or from QSO Predictor's own decodes — including "the target just answered another station in your grid field", which says the band is open your way but not that anyone heard you. The panel used to call all of it "Your signal reported nearby". It now says **"Target is working your area"** (and "you are not confirmed heard") when that is all the evidence shows.
-- **WS - Digital Mode Suite works**, the successor to WSJT-X Improved, and is now covered by tests. You do not need WS's "WSJT-X compatibility mode". The AutoHotkey and Hammerspoon auto-paste scripts in the User Guide find WS too — and the Hammerspoon one now actually finds stock WSJT-X.
-- **Startup can't stall on a hostname lookup.** The UDP listener starts immediately and picks up the machine's remaining network addresses in the background.
-- **Outcome recording** (research data): four schema-v2 fields that were null or wrong are repaired.
+- **A large `ALL.TXT` no longer eats memory or gets rescanned on every launch.** The background log scanner read each WSJT-X / JTDX log into memory whole — several GB for a log of a few hundred MB, enough to make macOS show "Not Responding" — and only saved its place between files, so quitting mid-scan threw the progress away and the next launch started that file again from the beginning. It now reads in bounded batches and saves its place as it goes.
+- **macOS: Preferences… (⌘,) opens Settings again.** Since the Diagnostics menu arrived, ⌘, opened Config Doctor and Settings had vanished from the File menu. Settings is back on QSO Predictor → Preferences…, and Config Doctor stays under Diagnostics.
 
-See [RELEASE_NOTES_v2.8.2.md](dev-docs/RELEASE_NOTES_v2.8.2.md) for the full list.
+See [RELEASE_NOTES_v2.8.3.md](dev-docs/RELEASE_NOTES_v2.8.3.md) for the details.
 
 ---
 
 ## Previous Releases
+
+### v2.8.2
+
+**Saying what the evidence shows.** Path Intelligence no longer says "Your signal reported nearby" when a green "Reported in Region" path comes only from your own decodes — it now says "Target is working your area" and that you are not confirmed heard. WS - Digital Mode Suite (the successor to WSJT-X Improved) works and is covered by tests, with updated AutoHotkey / Hammerspoon auto-paste scripts. Startup can no longer stall on a hostname lookup, and four outcome-recording fields are repaired. See [RELEASE_NOTES_v2.8.2.md](dev-docs/RELEASE_NOTES_v2.8.2.md).
 
 ### v2.8.1
 
@@ -293,7 +295,7 @@ Settings → Reporting → UDP Server = `127.0.0.1`, Port = `2237`. Check "Accep
 
 ### First-Time Setup
 
-1. **File → Settings** — enter your callsign and grid
+1. **File → Settings** (macOS: **QSO Predictor → Preferences…**, ⌘,) — enter your callsign and grid
 2. **Tools → Bootstrap Behavior** — analyze your logs for behavior prediction (optional but recommended)
 
 ## Features
