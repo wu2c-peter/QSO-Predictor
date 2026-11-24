@@ -117,3 +117,73 @@ def test_prune_forgets_deleted_files(scanner, tmp_path):
     scanner._positions[str(gone)] = FilePosition(path=str(gone))
     scanner._prune_positions(set())
     assert str(gone) not in scanner._positions
+
+
+# --- GitHub #9: a huge ALL.TXT must be scanned in bounded memory, and
+# progress must be committed mid-file. Before the fix the whole file was
+# materialised as one decode list (several GB for a few-hundred-MB log)
+# and positions were saved only BETWEEN files, so a quit / force-quit
+# during the big file restarted it from byte 0 on every launch.
+
+@pytest.mark.parametrize("newline", NEWLINES, ids=["lf", "crlf"])
+def test_large_file_is_read_in_bounded_batches(scanner, tmp_path, newline):
+    scanner.MAX_BATCH_DECODES = 4
+    log = tmp_path / 'ALL.TXT'
+    _write(log, [WSJTX_LINE] * 10, newline)
+    one_line = len((WSJTX_LINE + newline).encode())
+    pos = FilePosition(path=str(log))
+    sizes = []
+    while True:
+        batch = scanner._scan_file_incremental(_Source(log), LogParser(), pos, ScanProgress())
+        if not batch:
+            break
+        sizes.append(len(batch))
+        assert pos.byte_offset == sum(sizes) * one_line
+    assert sizes == [4, 4, 2]
+    assert pos.byte_offset == log.stat().st_size
+
+
+def test_progress_is_saved_mid_file(scanner, tmp_path):
+    """The positions file on disk must advance while one big file is
+    still being scanned — not only once the whole file is done."""
+    scanner.MAX_BATCH_DECODES = 4
+    scanner.SAVE_INTERVAL = -1          # every batch is "due" for a save
+    log = tmp_path / 'ALL.TXT'
+    _write(log, [WSJTX_LINE] * 10, "\n")
+    one_line = len((WSJTX_LINE + "\n").encode())
+    pos = FilePosition(path=str(log))
+    scanner._positions[str(log)] = pos
+
+    saved_offsets = []
+    real_save = scanner._save_positions
+
+    def spy():
+        real_save()
+        saved_offsets.append(
+            BackgroundScanner(_Predictor())._positions[str(log)].byte_offset)
+
+    scanner._save_positions = spy
+    scanner._scan_file(_Source(log), LogParser(), pos, ScanProgress())
+
+    assert saved_offsets[0] == 4 * one_line      # committed mid-file
+    assert saved_offsets[-1] == log.stat().st_size
+
+
+def test_scan_file_stops_between_batches(scanner, tmp_path):
+    """stop() during a long file must end the scan at a batch boundary
+    with the offset pointing exactly past what was processed."""
+    scanner.MAX_BATCH_DECODES = 4
+    log = tmp_path / 'ALL.TXT'
+    _write(log, [WSJTX_LINE] * 10, "\n")
+    one_line = len((WSJTX_LINE + "\n").encode())
+    pos = FilePosition(path=str(log))
+
+    real_process = scanner._process_decodes
+
+    def stop_after_first(decodes):
+        scanner._stop_requested = True
+        return real_process(decodes)
+
+    scanner._process_decodes = stop_after_first
+    scanner._scan_file(_Source(log), LogParser(), pos, ScanProgress())
+    assert pos.byte_offset == 4 * one_line

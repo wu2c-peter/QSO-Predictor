@@ -76,6 +76,11 @@ class BackgroundScanner(QThread):
     
     # Save interval (seconds between history saves)
     SAVE_INTERVAL = 60
+
+    # Max decodes held in memory at once while scanning a file (see
+    # _scan_file). Also the granularity of pileup tracking: a pileup
+    # spanning a batch boundary is split, negligible at this size.
+    MAX_BATCH_DECODES = 20000
     
     # Session gap for behavior analysis
     SESSION_GAP_SECONDS = 300  # 5 minutes
@@ -228,16 +233,12 @@ class BackgroundScanner(QThread):
                         progress.files_done += 1
                         continue
                     
-                    # Process new data from this file
-                    new_decodes = self._scan_file_incremental(
+                    # Process new data from this file (bounded batches,
+                    # progress committed as it goes)
+                    stations_updated += self._scan_file(
                         source, parser, pos, progress
                     )
-                    
-                    if new_decodes:
-                        # Process decodes for behavior analysis
-                        updated = self._process_decodes(new_decodes)
-                        stations_updated += updated
-                        progress.stations_updated = stations_updated
+                    progress.stations_updated = stations_updated
                     
                     progress.files_done += 1
                     self.progress_updated.emit(progress)
@@ -281,12 +282,48 @@ class BackgroundScanner(QThread):
         while time.time() < end_time and not self._stop_requested:
             time.sleep(0.5)
     
+    def _scan_file(self, source, parser, pos: FilePosition,
+                   progress: ScanProgress) -> int:
+        """
+        Scan everything new in one file, in bounded batches.
+
+        GitHub #9: the whole file used to be read into one decode list
+        (each parsed line costs ~10x its text as Python objects, so a
+        few-hundred-MB ALL.TXT became several GB of RAM), and positions
+        were saved only between files — a quit or force-quit during a
+        big file threw the progress away and the next launch restarted
+        it from byte 0. Now each batch is processed and freed before the
+        next is read, and the periodic save runs mid-file too.
+
+        Returns number of stations updated.
+        """
+        stations_updated = 0
+        while not self._stop_requested:
+            start_offset = pos.byte_offset
+            batch = self._scan_file_incremental(source, parser, pos, progress)
+            # A full batch that advanced the offset means there may be
+            # more to read; anything else is EOF, a stop, or an error.
+            more = (len(batch) >= self.MAX_BATCH_DECODES
+                    and pos.byte_offset > start_offset)
+            if batch:
+                stations_updated += self._process_decodes(batch)
+            del batch
+
+            # Save only after the batch is processed, so the offset on
+            # disk never runs ahead of the history it describes.
+            if time.time() - self._last_save_time > self.SAVE_INTERVAL:
+                self._save_all()
+            if not more:
+                break
+        return stations_updated
+
     def _scan_file_incremental(self, source, parser, pos: FilePosition, 
                                 progress: ScanProgress) -> List:
         """
         Scan a file from last known position.
         
-        Returns list of new Decode objects.
+        Returns list of new Decode objects — at most MAX_BATCH_DECODES;
+        call again to continue the same file.
         """
         from local_intel.log_parser import LogParser
         
@@ -319,6 +356,8 @@ class BackgroundScanner(QThread):
                     if decode:
                         new_decodes.append(decode)
                         progress.decodes_processed += 1
+                        if len(new_decodes) >= self.MAX_BATCH_DECODES:
+                            break
 
                 # Update position
                 pos.byte_offset = f.tell()
