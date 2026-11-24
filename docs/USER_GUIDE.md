@@ -300,10 +300,19 @@ The decode table's **Path** column shows whether your signal is reaching each st
 | Status | Color | Meaning |
 |--------|-------|---------|
 | **Heard by Target** | Cyan | Target has decoded YOUR signal — call them! |
-| **Reported in Region** | Green | Stations near target heard you — path confirmed |
+| **Reported in Region** | Green | Evidence the path is open: a station near the target spotted or answered you, or the target answered a station near you (see note below) |
 | **Not Reported in Region** | Orange | Reporters exist but haven't heard you yet |
 | **Not Transmitting** | Gray | WSJT-X/JTDX reports you haven't transmitted in the last few minutes (v2.8.1: no longer shown merely because you just changed bands) |
 | **No Reporters in Region** | Dark gray | No PSK Reporter data from that area |
+
+> **"Reported in Region" without a PSK Reporter spot.** QSO Predictor
+> also reads your own decodes. If it sees the target answer another
+> station in your grid field (the first two letters of your grid — a
+> large area), it marks the path green even though nobody has reported
+> *your* signal. Path Intelligence tells the two apart: "Your signal
+> reported nearby" names the receiver and SNR from PSK Reporter, while
+> "Target is working your area" means the evidence is only that the
+> target is working stations from your part of the world.
 
 ### Target Activity State (v2.3.0)
 

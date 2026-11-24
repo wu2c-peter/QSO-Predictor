@@ -1618,7 +1618,9 @@ class MainWindow(QMainWindow):
         my_snr_reporter = row_data.get('my_snr_reporter', None)
 
         if status in (PathStatus.HEARD_BY_TARGET, PathStatus.REPORTED_IN_REGION):
-            self.local_intel.set_path_status(status, my_snr=my_snr, reporter=my_snr_reporter)
+            self.local_intel.set_path_status(
+                status, my_snr=my_snr, reporter=my_snr_reporter,
+                evidence=row_data.get('path_evidence'))
         else:
             self.local_intel.set_path_status(status)
 

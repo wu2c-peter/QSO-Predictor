@@ -895,12 +895,18 @@ class QSOAnalyzer(QObject):
         Check local decode evidence for path status to target.
         
         Returns:
-            ('Heard by Target', geo_bonus) if target responded to my call
-            ('Reported in Region', geo_bonus) if regional evidence found
-            (None, 0) if no evidence
+            (path, geo_bonus, kind). `kind` says what the decodes actually
+            showed, because "Reported in Region" covers two very different
+            things here and neither is a PSK Reporter spot of my signal:
+              'target_answered_me'      -> 'Heard by Target'
+              'target_working_my_area'  -> 'Reported in Region' (the target
+                  answered someone else in my grid field; nobody heard ME)
+              'near_target_answered_me' -> 'Reported in Region' (a station
+                  in the target's field answered my call)
+            (None, 0, None) if no evidence
         """
         if not target_call:
-            return None, 0
+            return None, 0, None
         
         target_upper = target_call.upper()
         my_call_upper = self.my_call.upper()
@@ -912,7 +918,7 @@ class QSOAnalyzer(QObject):
             evidence = self.decode_evidence.get(target_upper, {})
             if my_call_upper in evidence.get('responded_to', set()):
                 logger.debug(f"Decode path: {target_upper} → Heard by Target (responded to {my_call_upper})")
-                return 'Heard by Target', 100
+                return 'Heard by Target', 100, 'target_answered_me'
             
             # Case 2: Target responded to someone near me → Reported in Region
             if my_field and evidence.get('responded_to'):
@@ -920,7 +926,7 @@ class QSOAnalyzer(QObject):
                     heard_grid = self.call_grid_map.get(heard_call, '')
                     if heard_grid and len(heard_grid) >= 2 and heard_grid[:2] == my_field:
                         logger.debug(f"Decode path: {target_upper} → Reported in Region (responded to {heard_call} in {heard_grid})")
-                        return 'Reported in Region', 15
+                        return 'Reported in Region', 15, 'target_working_my_area'
             
             # Case 3: Someone near target responded to my call → Reported in Region
             if target_field:
@@ -928,9 +934,9 @@ class QSOAnalyzer(QObject):
                     responder_grid = self.call_grid_map.get(responder_call, '')
                     if responder_grid and len(responder_grid) >= 2 and responder_grid[:2] == target_field:
                         logger.debug(f"Decode path: {target_upper} → Reported in Region ({responder_call} in {responder_grid} heard me)")
-                        return 'Reported in Region', 15
+                        return 'Reported in Region', 15, 'near_target_answered_me'
         
-        return None, 0
+        return None, 0, None
 
     def _count_local_callers(self, target_call):
         """
@@ -1040,12 +1046,14 @@ class QSOAnalyzer(QObject):
         # Check for direct connection (target heard us)
         my_snr_at_target = None
         my_snr_reporter = None
+        path_evidence = None  # 'pskr' or a _check_decode_path kind
         path_heard_time = 0  # v2.5.1: When the "heard" spot was received
         for my_rep in my_reception_snapshot:
             if my_rep['receiver'] == target_call:
                 geo_bonus = 100
                 direct_hit = True
                 path_str = "Heard by Target"
+                path_evidence = 'pskr'
                 my_snr_at_target = my_rep.get('snr', None)
                 my_snr_reporter = target_call
                 path_heard_time = my_rep.get('time', 0)
@@ -1073,6 +1081,7 @@ class QSOAnalyzer(QObject):
                 if bonus > geo_bonus:
                     geo_bonus = bonus
                     path_str = "Reported in Region"
+                    path_evidence = 'pskr'
                     my_snr_at_target = my_rep.get('snr', None)
                     my_snr_reporter = my_rep.get('receiver', '')
                     path_heard_time = my_rep.get('time', 0)
@@ -1081,9 +1090,10 @@ class QSOAnalyzer(QObject):
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
-            decode_path, decode_bonus = self._check_decode_path(target_call, target_grid)
+            decode_path, decode_bonus, decode_kind = self._check_decode_path(target_call, target_grid)
             if decode_path:
                 path_str = decode_path
+                path_evidence = decode_kind
                 geo_bonus = decode_bonus
                 if decode_path == "Heard by Target":
                     direct_hit = True
@@ -1118,6 +1128,7 @@ class QSOAnalyzer(QObject):
         decode_data['path'] = path_str
         decode_data['my_snr_at_target'] = my_snr_at_target
         decode_data['my_snr_reporter'] = my_snr_reporter
+        decode_data['path_evidence'] = path_evidence
         # v2.5.1: Path freshness for dashboard display
         decode_data['path_heard_age'] = int(time.time() - path_heard_time) if path_heard_time > 0 else None
         decode_data['path_stale'] = path_stale
@@ -1295,9 +1306,11 @@ class QSOAnalyzer(QObject):
         # Check for direct connection (target heard us)
         my_snr_at_target = None
         my_snr_reporter = None
+        path_evidence = None  # 'pskr' or a _check_decode_path kind
         for my_rep in my_reception_snapshot:
             if my_rep['receiver'] == target_call:
                 path_str = "Heard by Target"
+                path_evidence = 'pskr'
                 my_snr_at_target = my_rep.get('snr', None)
                 my_snr_reporter = target_call
                 break
@@ -1319,6 +1332,7 @@ class QSOAnalyzer(QObject):
                 if rank > best:
                     best = rank
                     path_str = "Reported in Region"
+                    path_evidence = 'pskr'
                     my_snr_at_target = my_rep.get('snr', None)
                     my_snr_reporter = my_rep.get('receiver', '')
                     if rank == 3:
@@ -1326,9 +1340,10 @@ class QSOAnalyzer(QObject):
         
         # v2.1.3: Check local decode evidence (works without PSK Reporter)
         if not path_str:
-            decode_path, _ = self._check_decode_path(target_call, target_grid)
+            decode_path, _, decode_kind = self._check_decode_path(target_call, target_grid)
             if decode_path:
                 path_str = decode_path
+                path_evidence = decode_kind
         
         # If no path found, distinguish between "no reporters" vs "not heard" vs "not TXing"
         if not path_str:
@@ -1337,6 +1352,7 @@ class QSOAnalyzer(QObject):
         decode_data['path'] = path_str
         decode_data['my_snr_at_target'] = my_snr_at_target
         decode_data['my_snr_reporter'] = my_snr_reporter
+        decode_data['path_evidence'] = path_evidence
         
         # v2.3.3: Recalculate score when path changes — previously score was
         # only set on initial decode, so stale path data left scores out of sync
