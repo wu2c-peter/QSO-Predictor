@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.8.1-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.8.2-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9MWCW2FTB866)
@@ -46,22 +46,24 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.8.1
+## 🆕 What's New in v2.8.2
 
-**The audit release.** A systematic code audit of 2.8.0 found a family of defects with a common shape — a subsystem failed quietly and kept showing confident output — and fixed forty of them, each with a regression test (the suite grew from 688 to 798 tests). Nothing changes in how you operate the app; a few things will look different:
+**Saying what the evidence shows.** A small bug-fix release driven by two user reports. Nothing changes in how you operate the app:
 
-- **Sweep-aware recommendations now work in the packaged builds.** When the Insights panel sees a target working its pileup high-to-low (or low-to-high), the band map's green line tilts toward the end of the passband the target reaches first. The correlation behind it needed scipy, which the exe/DMG never carried, so packaged users always got "Random".
-- **The green line is no longer pinned to 300 Hz** when the target has no tier-1 spots — a tie-break now picks the middle of the widest quiet stretch (the real mechanism behind the OH0ERF 1087 Hz pick).
-- **Warnings you were never getting**: a PSK Reporter outage, a broker that never connected, or an FT8web listener that can't bind its port now reach the status bar. The solar header shows the last good reading with its age, or "unavailable", instead of "SFI 0 (Poor)".
-- **"Not Transmitting" only when you aren't** — the first minutes after a band change no longer mislabel every row while you're calling.
-- **Two dead controls work again**: right-click → "Set as Target" in the decode table, and the Insights panel's "+" manual-target entry. **Settings → Appearance** now does something (decode-table font, Prob colours).
-- **FT4 is handled as FT4** (PSK Reporter topic, 7.5 s cycle clock). **Clear Target really clears.** **Behavior bootstrap runs in the background** instead of freezing the window.
+- **Path Intelligence no longer claims a spot that didn't happen.** A green "Reported in Region" path can come from a PSK Reporter receiver near the target spotting *you*, or from QSO Predictor's own decodes — including "the target just answered another station in your grid field", which says the band is open your way but not that anyone heard you. The panel used to call all of it "Your signal reported nearby". It now says **"Target is working your area"** (and "you are not confirmed heard") when that is all the evidence shows.
+- **WS - Digital Mode Suite works**, the successor to WSJT-X Improved, and is now covered by tests. You do not need WS's "WSJT-X compatibility mode". The AutoHotkey and Hammerspoon auto-paste scripts in the User Guide find WS too — and the Hammerspoon one now actually finds stock WSJT-X.
+- **Startup can't stall on a hostname lookup.** The UDP listener starts immediately and picks up the machine's remaining network addresses in the background.
+- **Outcome recording** (research data): four schema-v2 fields that were null or wrong are repaired.
 
-One compatibility note: FT8web connections now check the browser's `Origin` header (any page could previously inject decodes into your logger). Self-hosted FT8web users add their host to a new `FT8WEB/allowed_origins` setting. See [RELEASE_NOTES_v2.8.1.md](dev-docs/RELEASE_NOTES_v2.8.1.md) for the full list.
+See [RELEASE_NOTES_v2.8.2.md](dev-docs/RELEASE_NOTES_v2.8.2.md) for the full list.
 
 ---
 
 ## Previous Releases
+
+### v2.8.1
+
+**The audit release.** A systematic code audit of 2.8.0 fixed forty defects with a common shape — a subsystem failed quietly and kept showing confident output — each with a regression test (688 → 798 tests). Sweep-aware frequency recommendations finally work in the packaged builds (they needed scipy, which the exe/DMG never carried); the green line is no longer pinned to 300 Hz; PSK Reporter, broker and FT8web failures now reach the status bar; "Not Transmitting" is shown only when you aren't; two dead controls and Settings → Appearance work; FT4 is handled as FT4. FT8web connections now check the browser's `Origin` header. See [RELEASE_NOTES_v2.8.1.md](dev-docs/RELEASE_NOTES_v2.8.1.md).
 
 ### v2.8.0
 
