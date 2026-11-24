@@ -185,7 +185,13 @@ class UDPHandler(QObject):
         # addresses on OUR listen port is our own forward coming back
         # (the config-time filter only catches spellings it recognises).
         # Such packets are parsed once but never re-forwarded.
-        self._own_addrs = frozenset(multicast_join_addrs())
+        # Loopback only for now: the full list needs a hostname lookup
+        # that can take tens of seconds on some machines, and this
+        # constructor runs on the main thread. _resolve_local_addrs()
+        # fills in the rest from a background thread.
+        self._own_addrs = frozenset(['127.0.0.1'])
+        self._addr_lock = threading.Lock()
+        self._closed = False
         self._loop_packets_dropped = 0
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -223,8 +229,11 @@ class UDPHandler(QObject):
                 # see multicast_join_addrs().
                 self.sock.bind(('', self.port))
                 joined = []
+                # Default route + loopback now; the other local
+                # addresses are joined by _resolve_local_addrs() once
+                # the hostname lookup returns (off the main thread).
                 for label, mreq in multicast_membership_requests(
-                        self.ip, multicast_join_addrs()):
+                        self.ip, ['127.0.0.1']):
                     try:
                         self.sock.setsockopt(socket.IPPROTO_IP,
                                              socket.IP_ADD_MEMBERSHIP, mreq)
@@ -283,6 +292,13 @@ class UDPHandler(QObject):
         if self.forward_targets:
             logger.info("UDP: Forwarding enabled to: " + ", ".join(
                 f"{h}:{p}" for h, p in self.forward_targets))
+
+        # Last, so the socket and is_multicast are settled (the unicast
+        # fallback above replaces both) before the thread touches them.
+        self._addr_thread = threading.Thread(
+            target=self._resolve_local_addrs, daemon=True,
+            name="udp-local-addrs")
+        self._addr_thread.start()
     
     def _is_multicast_address(self, ip: str) -> bool:
         """Check if IP is in multicast range (224.0.0.0 - 239.255.255.255)"""
@@ -295,6 +311,39 @@ class UDPHandler(QObject):
         except (ValueError, AttributeError):
             return False
 
+    def _resolve_local_addrs(self):
+        """Background half of startup: look up this machine's addresses,
+        extend the loop guard, and join the multicast group on each one.
+
+        Kept off the main thread because getaddrinfo(gethostname()) can
+        stall for ~35 s where the hostname does not resolve locally.
+        """
+        try:
+            addrs = multicast_join_addrs()
+        except Exception as e:
+            logger.debug(f"UDP: Local address lookup failed - {e}")
+            return
+        with self._addr_lock:
+            if self._closed:
+                return
+            self._own_addrs = frozenset(self._own_addrs | set(addrs))
+            if not self.is_multicast:
+                return
+            extra = [a for a in addrs if a != '127.0.0.1']
+            joined = []
+            # [1:] skips the INADDR_ANY request, already made in __init__
+            for label, mreq in multicast_membership_requests(self.ip, extra)[1:]:
+                try:
+                    self.sock.setsockopt(socket.IPPROTO_IP,
+                                         socket.IP_ADD_MEMBERSHIP, mreq)
+                    self._joined_memberships.append(mreq)
+                    joined.append(label)
+                except OSError as e:
+                    logger.debug(f"UDP: Multicast join on {label} failed - {e}")
+            if joined:
+                logger.info(f"UDP: Multicast also joined {self.ip}:{self.port} "
+                            f"on: {', '.join(joined)}")
+
     def start(self):
         self.running = True
         self._start_time = time.time()
@@ -305,16 +354,20 @@ class UDPHandler(QObject):
     def stop(self):
         logger.info(f"UDP: Stopping listener (total: {self.messages_received} packets, {self._decodes_received} decodes, {self._status_received} status)")
         self.running = False
-        for mreq in self._joined_memberships:
+        # Under the lock so a late _resolve_local_addrs() can't join a
+        # membership on a socket that is being torn down
+        with self._addr_lock:
+            self._closed = True
+            for mreq in self._joined_memberships:
+                try:
+                    self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq)
+                except Exception as e:
+                    logger.debug(f"UDP: Error leaving multicast group: {e}")
+            self._joined_memberships = []
             try:
-                self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq)
+                self.sock.close()
             except Exception as e:
-                logger.debug(f"UDP: Error leaving multicast group: {e}")
-        self._joined_memberships = []
-        try: 
-            self.sock.close()
-        except Exception as e:
-            logger.debug(f"UDP: Error closing socket: {e}")
+                logger.debug(f"UDP: Error closing socket: {e}")
         logger.info("UDP: Listener stopped")
 
     def _listen_loop(self):

@@ -328,3 +328,73 @@ def test_udp_port_missing_from_config_does_not_crash():
         assert handler.port == 2237
     finally:
         handler.sock.close()
+
+
+# ---------------------------------------------------------------------------
+# 2026-11: the hostname lookup must not block construction. UDPHandler is
+# built on the main thread at startup; on a machine whose own hostname
+# resolves slowly (GitHub's macOS runners: ~35 s) the window would hang.
+# ---------------------------------------------------------------------------
+
+def _slow_resolver(monkeypatch, result):
+    """Make multicast_join_addrs block until released."""
+    import threading
+    release = threading.Event()
+
+    def slow():
+        release.wait(10)
+        return list(result)
+    monkeypatch.setattr(udp_mod, 'multicast_join_addrs', slow)
+    return release
+
+
+def test_slow_hostname_lookup_does_not_block_construction(monkeypatch):
+    import time
+    from tests.conftest import StubConfig
+    release = _slow_resolver(monkeypatch, ['127.0.0.1', '10.9.8.7'])
+    t0 = time.monotonic()
+    handler = udp_mod.UDPHandler(StubConfig())
+    try:
+        assert time.monotonic() - t0 < 2.0
+        # Loopback is known without any lookup
+        assert handler._is_own_forward(('127.0.0.1', handler.port))
+        assert not handler._is_own_forward(('10.9.8.7', handler.port))
+        release.set()
+        handler._addr_thread.join(5)
+        # The late result still reaches the loop guard
+        assert handler._is_own_forward(('10.9.8.7', handler.port))
+    finally:
+        release.set()
+        handler.stop()
+
+
+def test_multicast_joins_loopback_before_lookup_and_survives_late_result(monkeypatch):
+    from tests.conftest import StubConfig
+    # 192.0.2.1 (TEST-NET-1) is no local interface: the late join fails
+    # and must be swallowed like any other per-interface join failure.
+    release = _slow_resolver(monkeypatch, ['127.0.0.1', '192.0.2.1'])
+    handler = udp_mod.UDPHandler(StubConfig(
+        overrides={('NETWORK', 'udp_ip'): '239.255.0.0'}))
+    try:
+        group = socket.inet_aton('239.255.0.0')
+        loopback_mreq = struct.pack('4s4s', group, socket.inet_aton('127.0.0.1'))
+        assert handler._bind_ok
+        assert loopback_mreq in handler._joined_memberships
+        release.set()
+        handler._addr_thread.join(5)
+        assert loopback_mreq in handler._joined_memberships
+    finally:
+        release.set()
+        handler.stop()
+    assert handler._joined_memberships == []
+
+
+def test_late_lookup_result_after_stop_joins_nothing(monkeypatch):
+    from tests.conftest import StubConfig
+    release = _slow_resolver(monkeypatch, ['127.0.0.1'])
+    handler = udp_mod.UDPHandler(StubConfig(
+        overrides={('NETWORK', 'udp_ip'): '239.255.0.0'}))
+    handler.stop()
+    release.set()
+    handler._addr_thread.join(5)
+    assert handler._joined_memberships == []
