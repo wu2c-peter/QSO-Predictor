@@ -331,3 +331,24 @@ def test_audio_doctor_core_stays_free_of_qt_and_windows_imports():
         f"audio_doctor core must stay pure stdlib (COM/registry access "
         f"belongs in probe_windows.py): {offenders}"
     )
+
+
+def test_heuristic_named_menu_actions_set_an_explicit_menu_role():
+    """GitHub #8: on macOS Qt's default TextHeuristicRole moves any
+    menu-bar action whose text starts with config/setting/preference/
+    option/setup/about/quit/exit into the application menu. "Config
+    Doctor..." took the Preferences slot (⌘,) and "Settings" vanished
+    from the File menu. Any action with such a name must say what it is
+    with setMenuRole() instead of leaving Qt to guess."""
+    import re
+    src = (REPO_ROOT / "main_v2.py").read_text(encoding="utf-8")
+    heuristic = re.compile(
+        r'^\s*(\w+)\s*=\s*QAction\(\s*"&?'
+        r'(?:config|setting|preference|option|setup|about|quit|exit)',
+        re.IGNORECASE | re.MULTILINE)
+    names = heuristic.findall(src)
+    assert names, "expected to find Settings / About / Exit actions"
+    missing = [n for n in names if f"{n}.setMenuRole(" not in src]
+    assert not missing, (
+        f"QAction(s) {missing} match Qt's macOS text heuristic but set "
+        "no explicit menu role")

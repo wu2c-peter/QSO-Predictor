@@ -708,9 +708,14 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self.analyzer.force_refresh)
         file_menu.addAction(refresh_action)
         settings_action = QAction("Settings", self)
+        # macOS: explicit roles on every action Qt's text heuristic would
+        # otherwise move into the app menu (GitHub #8: "Config Doctor..."
+        # hijacked Preferences / Cmd-, and Settings vanished).
+        settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)
         settings_action.triggered.connect(self.open_settings)
         file_menu.addAction(settings_action)
         exit_action = QAction("Exit", self)
+        exit_action.setMenuRole(QAction.MenuRole.QuitRole)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
@@ -797,6 +802,7 @@ class MainWindow(QMainWindow):
         diag_menu.addAction(clock_doctor_action)
 
         config_doctor_action = QAction("Config Doctor...", self)
+        config_doctor_action.setMenuRole(QAction.MenuRole.NoRole)
         config_doctor_action.setToolTip(
             "Check app configs: duplicates, stale audio bindings, callsign")
         config_doctor_action.triggered.connect(
@@ -864,6 +870,7 @@ class MainWindow(QMainWindow):
             help_menu.addAction(check_update_action)
         
         about_action = QAction("About", self)
+        about_action.setMenuRole(QAction.MenuRole.AboutRole)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
 
@@ -886,6 +893,7 @@ class MainWindow(QMainWindow):
         tray_menu.addAction(show_action)
         
         quit_action = QAction("Exit", self)
+        quit_action.setMenuRole(QAction.MenuRole.NoRole)  # tray menu, not the menu bar
         quit_action.triggered.connect(self.close)
         tray_menu.addAction(quit_action)
         
