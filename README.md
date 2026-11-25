@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.8.3-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.8.4-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9MWCW2FTB866)
@@ -46,18 +46,23 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.8.3
+## 🆕 What's New in v2.8.4
 
-**Two fixes from a user report.** Both were reported, diagnosed and patched by IW5DNZ. Nothing changes in how you operate the app:
+**One more log-scanner fix.** Found while checking 2.8.3 on a live station. Nothing changes in how you operate the app:
 
-- **A large `ALL.TXT` no longer eats memory or gets rescanned on every launch.** The background log scanner read each WSJT-X / JTDX log into memory whole — several GB for a log of a few hundred MB, enough to make macOS show "Not Responding" — and only saved its place between files, so quitting mid-scan threw the progress away and the next launch started that file again from the beginning. It now reads in bounded batches and saves its place as it goes.
-- **macOS: Preferences… (⌘,) opens Settings again.** Since the Diagnostics menu arrived, ⌘, opened Config Doctor and Settings had vanished from the File menu. Settings is back on QSO Predictor → Preferences…, and Config Doctor stays under Diagnostics.
+- **A log file that has been archived, split or restarted is read again.** The background scanner remembers how far it has read each WSJT-X / JTDX log. If you cut `ALL.TXT` down — archived it, split it into monthly files, or deleted it and let the program start a fresh one — the new, smaller file sat *below* the remembered position, and the scanner took that to mean "nothing new". It then ignored the live log until it grew back past its old size, which for a large file is months. Station behavior history quietly stopped learning. The scanner now recognises a file that has shrunk and reads it again from the start.
 
-See [RELEASE_NOTES_v2.8.3.md](dev-docs/RELEASE_NOTES_v2.8.3.md) for the details.
+If this affected you, the first launch of 2.8.4 catches up on its own: the log shows one "Log file shrank … rescanning from start" line, and the scan runs in the background in bounded memory.
+
+See [RELEASE_NOTES_v2.8.4.md](dev-docs/RELEASE_NOTES_v2.8.4.md) for the details.
 
 ---
 
 ## Previous Releases
+
+### v2.8.3
+
+**Two fixes from a user report**, both reported, diagnosed and patched by IW5DNZ. The background log scanner no longer reads a large `ALL.TXT` into memory whole (several GB, "Not Responding" on macOS) or restarts it from the beginning on every launch — it reads in bounded batches and saves its place as it goes. On macOS, Preferences… (⌘,) opens Settings again instead of Config Doctor. See [RELEASE_NOTES_v2.8.3.md](dev-docs/RELEASE_NOTES_v2.8.3.md).
 
 ### v2.8.2
 
