@@ -228,8 +228,7 @@ class BackgroundScanner(QThread):
                     except OSError:
                         continue
                     
-                    if file_size <= pos.byte_offset:
-                        # No new data
+                    if not self._file_has_new_data(pos, file_size):
                         progress.files_done += 1
                         continue
                     
@@ -269,6 +268,26 @@ class BackgroundScanner(QThread):
         self._running = False
         logger.info("Background scanner stopped")
     
+    def _file_has_new_data(self, pos: FilePosition, file_size: int) -> bool:
+        """
+        True if there is something to read past the saved offset.
+
+        A file SMALLER than its saved offset has been truncated or
+        replaced (the operator archived or split ALL.TXT, or deleted it
+        and the program started a new one). Treating that as "no new
+        data" skipped the live log until it regrew past its old size —
+        months, for a large file. Restart it from byte 0 instead.
+
+        Known limit: if the file was trimmed but still holds lines that
+        were already scanned, those are counted a second time.
+        """
+        if file_size < pos.byte_offset:
+            logger.info(
+                f"Log file shrank ({pos.byte_offset:,} -> {file_size:,} "
+                f"bytes), rescanning from start: {pos.path}")
+            pos.byte_offset = 0
+        return file_size > pos.byte_offset
+
     def _prune_positions(self, live_paths):
         """Forget positions for files that no longer exist on disk."""
         gone = [p for p in self._positions

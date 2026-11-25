@@ -187,3 +187,33 @@ def test_scan_file_stops_between_batches(scanner, tmp_path):
     scanner._process_decodes = stop_after_first
     scanner._scan_file(_Source(log), LogParser(), pos, ScanProgress())
     assert pos.byte_offset == 4 * one_line
+
+
+# --- A log that SHRINKS has been replaced, not "has no new data".
+# Found 2026-11-24 on the shack PC: ALL.TXT was split into monthly files
+# in August (1.19 GB -> a fresh file), the saved offset stayed at 1.19 GB,
+# and `file_size <= byte_offset` skipped the live log for three months —
+# it would not have been read again until it regrew past the old size.
+
+def test_shrunken_file_is_rescanned_from_the_start(scanner, tmp_path):
+    log = tmp_path / 'ALL.TXT'
+    _write(log, [WSJTX_LINE] * 3, "\n")
+    size = log.stat().st_size
+    pos = FilePosition(path=str(log), byte_offset=size * 10,
+                       last_timestamp='2026-08-05T22:01:00')
+
+    assert scanner._file_has_new_data(pos, size) is True
+    assert pos.byte_offset == 0
+
+    progress = ScanProgress()
+    scanner._scan_file(_Source(log), LogParser(), pos, progress)
+    assert progress.decodes_processed == 3
+    assert pos.byte_offset == size
+
+
+def test_unchanged_and_grown_files_keep_their_offset(scanner, tmp_path):
+    pos = FilePosition(path='x', byte_offset=100)
+    assert scanner._file_has_new_data(pos, 100) is False
+    assert pos.byte_offset == 100
+    assert scanner._file_has_new_data(pos, 250) is True
+    assert pos.byte_offset == 100
