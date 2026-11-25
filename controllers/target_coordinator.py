@@ -21,6 +21,7 @@ import time as _time
 
 from PyQt6.QtCore import QObject
 
+from local_intel.models import PathStatus
 from utils.parsing import parse_competition
 
 logger = logging.getLogger(__name__)
@@ -282,6 +283,13 @@ class TargetCoordinator(QObject):
                     comp_str = str(row_data.get('competition', ''))
                     if hasattr(mw.local_intel, 'insights_panel'):
                         mw.local_intel.insights_panel.set_target_competition(comp_str)
+                else:
+                    # No decode row for this target (synced from WSJT-X/
+                    # JTDX, typed in, or cleared), so nothing recomputes
+                    # the path until it is decoded. Without this reset
+                    # the Insights panel keeps showing the PREVIOUS
+                    # target's "reported nearby / spotted by X".
+                    mw.local_intel.set_path_status(PathStatus.UNKNOWN)
             except Exception as e:
                 logger.debug(f"Error updating local intel target: {e}")
 
