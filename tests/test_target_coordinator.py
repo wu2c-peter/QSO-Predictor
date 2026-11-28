@@ -15,12 +15,24 @@ recomputed the path — and the Insights panel went on showing K4JJL's
 LY5A header, while the status bar correctly said "0 near target".
 """
 
+import importlib.util
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from PyQt6.QtCore import QObject
 
-from controllers.target_coordinator import TargetCoordinator
 from local_intel.models import PathStatus
+
+# Load the module by path: `from controllers.target_coordinator import …`
+# runs controllers/__init__.py, which imports every controller — some
+# pull in QtWidgets, and the Linux CI runners have no display libraries
+# (libEGL). target_coordinator.py itself needs only QtCore.
+_spec = importlib.util.spec_from_file_location(
+    "_target_coordinator_under_test",
+    Path(__file__).resolve().parent.parent / "controllers" / "target_coordinator.py")
+_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_module)
+TargetCoordinator = _module.TargetCoordinator
 
 
 def _coordinator(rows):
