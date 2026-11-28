@@ -1,6 +1,6 @@
 # QSO Predictor
 
-[![Version](https://img.shields.io/badge/version-2.8.4-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
+[![Version](https://img.shields.io/badge/version-2.8.5-blue.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/wu2c-peter/qso-predictor/releases)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9MWCW2FTB866)
@@ -46,19 +46,21 @@ Belize in the log. This is what "see the band from the DX station's perspective"
 
 ---
 
-## 🆕 What's New in v2.8.4
+## 🆕 What's New in v2.8.5
 
-**One more log-scanner fix.** Found while checking 2.8.3 on a live station. Nothing changes in how you operate the app:
+**Path Intelligence no longer shows the last target's result.** One fix, found on the air. Nothing changes in how you operate the app:
 
-- **A log file that has been archived, split or restarted is read again.** The background scanner remembers how far it has read each WSJT-X / JTDX log. If you cut `ALL.TXT` down — archived it, split it into monthly files, or deleted it and let the program start a fresh one — the new, smaller file sat *below* the remembered position, and the scanner took that to mean "nothing new". It then ignored the live log until it grew back past its old size, which for a large file is months. Station behavior history quietly stopped learning. The scanner now recognises a file that has shrunk and reads it again from the start.
+- **Switching to a target you haven't decoded yet clears the old path result.** When WSJT-X / JTDX hands QSO Predictor a new DX call that isn't in the decode table (or you type one in), the Insights panel used to keep the *previous* target's Path Intelligence under the new callsign — for example "Your signal reported nearby — Spotted at -9 dB by NK5B" while targeting a station in Lithuania, with the status bar correctly saying "0 near target". The panel now resets when the target changes and shows only what is known about the new one.
 
-If this affected you, the first launch of 2.8.4 catches up on its own: the log shows one "Log file shrank … rescanning from start" line, and the scan runs in the background in bounded memory.
-
-See [RELEASE_NOTES_v2.8.4.md](dev-docs/RELEASE_NOTES_v2.8.4.md) for the details.
+See [RELEASE_NOTES_v2.8.5.md](dev-docs/RELEASE_NOTES_v2.8.5.md) for the details.
 
 ---
 
 ## Previous Releases
+
+### v2.8.4
+
+**One more log-scanner fix.** A WSJT-X / JTDX log that had been archived, split or restarted sat below the scanner's remembered position and was ignored until it grew back past its old size — months, for a large file — so station behavior history quietly stopped learning. The scanner now recognises a file that has shrunk and reads it again from the start. See [RELEASE_NOTES_v2.8.4.md](dev-docs/RELEASE_NOTES_v2.8.4.md).
 
 ### v2.8.3
 
